@@ -1,6 +1,6 @@
 etcd:
   hostname: etcd
-  image: gcr.io/google_containers/etcd-amd64:2.2.5
+  image: gcr.io/google_containers/etcd-amd64:3.0.4
   ports: [ "4001:4001" ]
   command: >
     /usr/local/bin/etcd
