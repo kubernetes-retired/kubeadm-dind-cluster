@@ -12,39 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM ubuntu:16.04
-
-RUN apt-get update -qq && \
-    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -qqy \
-        apt-transport-https \
-        ca-certificates \
-        wget \
-        curl \
-        lxc \
-        iptables \
-        ipcalc \
-        ethtool \
-        dmsetup \
-        iproute2 \
-        net-tools \
-        iputils-ping \
-        tcpdump \
-        && \
-    apt-get clean
-
-# Install specific Docker version
-ENV DOCKER_VERSION 1.11.2-0~xenial
-#ENV DOCKER_VERSION 1.12.1-0~xenial
-RUN apt-key adv --keyserver hkp://p80.pool.sks-keyservers.net:80 --recv-keys 58118E89F3A912897C070ADBF76221572C52609D && \
-    mkdir -p /etc/apt/sources.list.d && \
-    echo deb https://apt.dockerproject.org/repo ubuntu-xenial main > /etc/apt/sources.list.d/docker.list && \
-    apt-get update -qq && \
-    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -qqy \
-        docker-engine=${DOCKER_VERSION} \
-        && \
-    apt-get clean
-
-RUN curl -o- https://raw.githubusercontent.com/karlkfi/resolveip/v1.0.2/install.sh | bash
+FROM kubernetes-dind-base:v1
 
 COPY ./bin/* /usr/local/bin/
-RUN mkdir -p /var/lib/kubelet/manifests

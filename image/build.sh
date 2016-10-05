@@ -39,6 +39,20 @@ find-binary() {
   echo -n "${bin}"
 }
 
+pull-or-build() {
+    local image="$1"
+    local dir="$2"
+    local prepull="$3"
+    if docker images "${image}" | grep -q "${image/:*/}"; then
+        return 0
+    elif [ -n "${prepull}" ]; then
+        docker pull "${prepull}"
+        docker tag "${prepull}" "${image}"
+    else
+        docker build -t "${image}" "${dir}"
+    fi
+}
+
 hyperkube_path=$(find-binary hyperkube linux/amd64)
 if [ -z "$hyperkube_path" ]; then
   echo "Failed to find hyperkube binary for linux/amd64" 1>&2
@@ -46,18 +60,13 @@ if [ -z "$hyperkube_path" ]; then
 fi
 kube_bin_path=$(dirname ${hyperkube_path})
 
-# possibly build socat container
-SOCAT_IMG=kubernetes-socat:v1
-if ! docker images ${SOCAT_IMG} | grep -q ${SOCAT_IMG}; then
-  docker build -t ${SOCAT_IMG} "${script_dir}/socat"
-fi
+pull-or-build kubernetes-dind-base:v1 "${script_dir}/base" "${DIND_PREPULL_BASE:-}"
 
-# download nsenter and socat
+# download nsenter
 overlay_dir=${DOCKER_IN_DOCKER_OVERLAY_DIR:-${script_dir}/overlay}
 mkdir -p "${overlay_dir}"
 ! which selinuxenabled &>/dev/null || ! selinuxenabled 2>&1 || sudo chcon -Rt svirt_sandbox_file_t -l s0 "${overlay_dir}"
 docker run --rm -v "${overlay_dir}:/target" jpetazzo/nsenter
-docker run --rm -v "${overlay_dir}:/target" ${SOCAT_IMG}
 
 # create temp workspace to place compiled binaries with image-specific scripts
 # create temp workspace dir in KUBE_ROOT to avoid permission issues of TMPDIR on mac os x
@@ -79,7 +88,6 @@ mkdir -p "${workspace}/bin"
 cp -a "${script_dir}/wrapdocker"* "${workspace}/bin/"
 cp -a "${kube_bin_path}/hyperkube" "${workspace}/bin/"
 cp -a "${overlay_dir}/nsenter" "${workspace}/bin"
-cp -a "${overlay_dir}/socat" "${workspace}/bin"
 
 # docker
 cp "${script_dir}/Dockerfile" "${workspace}/"
