@@ -1,0 +1,33 @@
+#!/bin/bash
+
+set -o errexit
+set -o nounset
+set -o pipefail
+set -o errtrace
+
+# wait for systemd to start in the container
+(( timeout = 60 + SECONDS ))
+until systemctl status >/dev/null 2>&1; do
+  if (( SECONDS >= timeout )); then
+    echo 'Timed out trying to connect to internal docker host.' >&2
+    exit 1
+  fi
+  sleep 1
+done
+
+# start docker & kubelet
+systemctl start docker kubelet
+
+# start kubeadm init
+# FIXME: I kargo-culted --masquerade-all from docker-compose.yml,
+# need to describe here why exactly it's needed
+# FIXME: --hostname-override / --cluster-cidr are already obtained
+# in wrapdocker for kubelet config
+hostname_override="$(getent hosts $(hostname) | cut -d' ' -f1 | sort -u | tail -1)"
+cluster_cidr="$(ip addr show docker0 | grep -w inet | awk '{ print $2; }')"
+# --hostname-override=${hostname_override}
+# makes no sense because it would be passed to every pod :(
+# perhaps should just put all nodes into /etc/hosts on each node(?)
+KUBE_HYPERKUBE_IMAGE=${HYPERKUBE_IMAGE} \
+  KUBE_PROXY_FLAGS="${PROXY_FLAGS:-} --masquerade-all --cluster-cidr=${cluster_cidr}" \
+  kubeadm "$@"

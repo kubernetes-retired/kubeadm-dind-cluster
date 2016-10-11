@@ -25,3 +25,32 @@ $ _output/local/bin/<OS>/<ARCH>/e2e.test --provider=dind \
 
 $ dind/dind-down-cluster.sh
 ```
+
+## kubeadm support
+
+**NOTE:** this is highly experimental
+
+`dind/kubeadm.sh` makes it possible to bring up a DIND cluster using kubeadm.
+
+```shell
+$ cd kubernetes
+$ git clone git@github.com:sttts/kubernetes-dind-cluster.git dind
+
+$ build/run.sh make WHAT=cmd/hyperkube
+$ make WHAT=cmd/kubeadm
+$ make WHAT=cmd/kubectl
+$ make WHAT=cmd/kubelet
+
+$ # create master
+$ dind/kubeadm-up.sh init
+
+$ # add a couple of nodes
+$ dind/kubeadm-up.sh join --token TOKEN_DISPLAYED_BY_INIT 172.17.0.2
+$ dind/kubeadm-up.sh join --token TOKEN_DISPLAYED_BY_INIT 172.17.0.2
+
+$ docker exec kube-master kubectl get nodes
+NAME         STATUS    AGE
+172.17.0.2   Ready     3m
+172.17.0.3   Ready     2m
+172.17.0.4   Ready     28s
+```
