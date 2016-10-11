@@ -21,7 +21,7 @@ node:
     hostname $$(echo $${NAME} | tr _ -) &&
     HOSTNAME_OVERRIDE=$$(getent hosts node | cut -d' ' -f1 | sort -u | tail -1) &&
     DOCKER_NETWORK_OFFSET=0.0.$${N}.0
-    exec wrapdocker bash -c "
+    exec wrapdocker startdocker bash -c "
     hyperkube kubelet
     --hostname-override=$${HOSTNAME_OVERRIDE}
     --node-labels="rack=$${N},gen=201$${N}"

@@ -12,6 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM kubernetes-dind-base:v1
+FROM k8s.io/kubernetes-dind-base:v1
 
 COPY ./bin/* /usr/local/bin/

@@ -14,7 +14,11 @@
 
 FROM ubuntu:16.04
 
+# See https://github.com/docker/docker/pull/5534/files
+ENV container=docker
+
 RUN apt-get update -qq && \
+    DEBIAN_FRONTEND=noninteractive apt-get upgrade -qqy && \
     DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -qqy \
         apt-transport-https \
         ca-certificates \
@@ -34,8 +38,8 @@ RUN apt-get update -qq && \
     apt-get clean
 
 # Install specific Docker version
-ENV DOCKER_VERSION 1.11.2-0~xenial
-#ENV DOCKER_VERSION 1.12.1-0~xenial
+ENV DOCKER_VERSION 1.12.1-0~xenial
+#ENV DOCKER_VERSION 1.11.2-0~xenial
 RUN apt-key adv --keyserver hkp://p80.pool.sks-keyservers.net:80 --recv-keys 58118E89F3A912897C070ADBF76221572C52609D && \
     mkdir -p /etc/apt/sources.list.d && \
     echo deb https://apt.dockerproject.org/repo ubuntu-xenial main > /etc/apt/sources.list.d/docker.list && \
@@ -43,8 +47,13 @@ RUN apt-key adv --keyserver hkp://p80.pool.sks-keyservers.net:80 --recv-keys 581
     DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -qqy \
         docker-engine=${DOCKER_VERSION} \
         && \
+    apt-mark hold docker-engine && \
     apt-get clean
 
 RUN curl -o- https://raw.githubusercontent.com/karlkfi/resolveip/v1.0.2/install.sh | bash
 
 RUN mkdir -p /var/lib/kubelet/manifests
+
+COPY wrapdocker startdocker /usr/local/bin/
+ENTRYPOINT ["/usr/local/bin/wrapdocker"]
+CMD ["/bin/bash", "--login"]

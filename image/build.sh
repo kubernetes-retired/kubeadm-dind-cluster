@@ -85,7 +85,6 @@ echo "Copying files to workspace"
 
 # binaries & scripts
 mkdir -p "${workspace}/bin"
-cp -a "${script_dir}/wrapdocker"* "${workspace}/bin/"
 cp -a "${kube_bin_path}/hyperkube" "${workspace}/bin/"
 cp -a "${overlay_dir}/nsenter" "${workspace}/bin"
 
