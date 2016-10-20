@@ -15,7 +15,8 @@ until systemctl status >/dev/null 2>&1; do
   sleep 1
 done
 
-# start docker & kubelet
+# enable & start docker & kubelet
+systemctl enable docker kubelet
 systemctl start docker kubelet
 
 # start kubeadm init
@@ -29,5 +30,4 @@ cluster_cidr="$(ip addr show docker0 | grep -w inet | awk '{ print $2; }')"
 # makes no sense because it would be passed to every pod :(
 # perhaps should just put all nodes into /etc/hosts on each node(?)
 KUBE_HYPERKUBE_IMAGE=${HYPERKUBE_IMAGE} \
-  KUBE_PROXY_FLAGS="${PROXY_FLAGS:-} --masquerade-all --cluster-cidr=${cluster_cidr}" \
   kubeadm "$@"

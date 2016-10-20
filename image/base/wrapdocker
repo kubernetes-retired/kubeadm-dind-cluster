@@ -28,7 +28,10 @@ set -o nounset
 set -o pipefail
 
 # Ensure that all nodes in /dev/mapper correspond to mapped devices currently loaded by the device-mapper kernel driver
-dmsetup mknodes
+# TBD: is this necessary?
+if [ -e /dev/mapper/control ]; then
+    dmsetup mknodes
+fi
 
 if [ -d /sys/kernel/security ] && ! mountpoint -q /sys/kernel/security; then
   mount -t securityfs none /sys/kernel/security || {
@@ -37,8 +40,7 @@ if [ -d /sys/kernel/security ] && ! mountpoint -q /sys/kernel/security; then
   }
 fi
 
-# Ensure shared mount propagation to ensure volume mounting works for
-# Kubernetes and OpenShift.
+# Ensure shared mount propagation to ensure volume mounting works for Kubernetes
 mount --make-shared /
 
 # Mount /tmp (conditionally)
@@ -46,59 +48,7 @@ if ! mountpoint -q /tmp; then
   mount -t tmpfs none /tmp
 fi
 
-# find supported filesystem to use for docker image mounts
-if grep -q overlay /proc/filesystems; then
-  STORAGE_FS=overlay2
-elif grep -q aufs /proc/filesystems; then
-  STORAGE_FS=aufs
-else
-  echo "No supported filesystem found (aufs, overlay)"
-  exit 1
-fi
-
-# find filesystem below /var/lib/docker
-STORAGE_DIR="/var/lib/docker/$(hostname)"
-mkdir -p "${STORAGE_DIR}"
-
-# Smoke test the overlay filesystem:
-# 1. create smoke dir in the storage dir being mounted (possibly on an overlay fs)
-# 2. try to mount an overlay fs on top of the smoke dir
-# 3. try to write a file in the overlay mount
-# 4. if that succeeds set OVERLAY_WORKS=true
-#
-# Rational: There are kernels with broken overlay-over-overlay support (4.2 and
-# probably 3.19). On those it's possible to mount an overlay in an overlay, but
-# writing to a file results in a "No device" error.
-OVERLAY_WORKS=true
-if [ "${STORAGE_FS}" = "overlay2" ]; then
-  D="${STORAGE_DIR}/smoke"
-  mkdir -p "${D}/upper" "${D}/lower" "${D}/work" "${D}/mount"
-
-  mount -t overlay overlay -o"lowerdir=${D}/lower,upperdir=${D}/upper,workdir=${D}/work" "${D}/mount" &&
-  echo foo > "${D}/mount/probe" || OVERLAY_WORKS=false
-
-  umount -f "${D}/mount" || true
-  rm -rf "${D}" || true
-fi
-
-# If another filesystem than overlay is used or overlay does not work, create
-# an ext3 loop device as an intermediary layer. The max size of the loop device
-# is $VAR_LIB_DOCKER_SIZE in GB (default=5).
-if [ "${STORAGE_FS}" != "overlay2" -o "${OVERLAY_WORKS}" == false ]; then
-  STORAGE_FILE="/data/docker"
-  VAR_LIB_DOCKER_SIZE=${VAR_LIB_DOCKER_SIZE:-5}
-  mkdir -p "$(dirname "${STORAGE_FILE}")"
-  if [ ! -f "${STORAGE_FILE}" ]; then
-    dd if=/dev/zero of="${STORAGE_FILE}" bs=1G seek=${VAR_LIB_DOCKER_SIZE} count=0
-    echo y | mkfs.ext3 "${STORAGE_FILE}"
-  fi
-  mount -o loop "${STORAGE_FILE}" "${STORAGE_DIR}"
-fi
-
-# bind mount it back to /var/lib/docker
-mount -o bind "${STORAGE_DIR}" /var/lib/docker
-
-export DOCKER_DAEMON_ARGS="${DOCKER_DAEMON_ARGS:-} --storage-driver=${STORAGE_FS} --log-driver=json-file"
+export DOCKER_DAEMON_ARGS="${DOCKER_DAEMON_ARGS:-} --storage-driver=vfs --log-driver=json-file"
 
 docker_net_opts=""
 

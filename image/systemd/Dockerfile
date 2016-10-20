@@ -19,7 +19,7 @@ RUN apt-get -qq update && \
        ls /etc/systemd/system/*.wants/*; \
        ls /var/lib/apt/lists/*) | xargs -n 1 rm -f -v && \
     ln -v -f /lib/systemd/system/multi-user.target /lib/systemd/system/default.target && \
-    sed -i 's@ExecStart=.*@ExecStart=/usr/bin/dockerd -H fd:// -H tcp://0.0.0.0:8899 --storage-driver=overlay2@' \
+    sed -i 's@ExecStart=.*@ExecStart=/usr/bin/dockerd -H fd:// -H tcp://0.0.0.0:8899 --storage-driver=vfs@' \
         /lib/systemd/system/docker.service && \
     mkdir -p /etc/systemd/system/kubelet.service.d
 
@@ -29,9 +29,6 @@ COPY wrapkubeadm /usr/local/bin
 
 CMD [ "/sbin/init" ]
 
-# FIXME: --storage-driver=overlay2 fails with the following error:
-# 'overlay2' is not supported over <unknown>
-# (although it works fine when docker is started without systemd)
 # See here:
 # https://github.com/docker/docker/blob/b826bebda0cff2cc2d3083b954c810d2889eefe5/daemon/graphdriver/driver_linux.go#L89
 # (GetFSMagic func)

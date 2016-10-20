@@ -43,28 +43,22 @@ if [ ! -f cluster/kubectl.sh ]; then
   exit 1
 fi
 
-# Here we generate k8s tag using k8s scripts for the sake of convenience
-. build/util.sh
-k8s_version_tag="$(kube::release::semantic_image_tag_version)"
-hyperkube_image_with_tag="gcr.io/google_containers/hyperkube-amd64:${k8s_version_tag}"
-
 # FIXME: find-binary is copied from build.sh
 # Find a platform specific binary, whether it was cross compiled or locally built (on Linux)
 function find-binary {
   local lookfor="${1}"
   local platform="${2}"
   local locations=(
-    "_output/dockerized/bin/${platform}/${lookfor}"
+    "$PWD/_output/dockerized/bin/${platform}/${lookfor}"
   )
   if [ "$(uname)" = Linux ]; then
-    locations[${#locations[*]}]="_output/local/bin/${platform}/${lookfor}"
+    locations[${#locations[*]}]="$PWD/_output/local/bin/${platform}/${lookfor}"
   fi
   local bin=$( (ls -t "${locations[@]}" 2>/dev/null || true) | head -1 )
   echo -n "${bin}"
 }
 
 source "${DIND_ROOT}/config.sh"
-storage_dir="${DOCKER_IN_DOCKER_STORAGE_DIR:-${DOCKER_IN_DOCKER_WORK_DIR}/storage}"
 
 function dind::kubeadm::maybe-rebuild-base-containers {
   if [[ "${DIND_KUBEADM_FORCE_REBUILD:-}" ]] || ! docker images "${systemd_image_with_tag}" | grep -q "${systemd_image_with_tag}"; then
@@ -79,37 +73,33 @@ function dind::kubeadm::prepare {
   trap "docker rm -f ${tmp_container} 2>/dev/null" EXIT
 
   # Start DIND and make it accessible via TCP.
-  # We mount /var/lib/docker here because overlay-over-overlay no longer
-  # works in the current docker. Because of this, we must grab the contents
-  # of container's /var/lib/docker later. Note that actual
-  # /var/lib/docker from the inner docker will be created under
-  # ${storage_dir}/kubeadm-base because of extra bind-mount in
-  # image/base/wrapdocker script.
   #
   # For details, see
   # https://github.com/docker/docker/commit/824c72f4727504e3a8d37f87ce88733c560d4129#commitcomment-17402152
   docker run \
-         -v "${storage_dir}":/var/lib/docker \
          -d --privileged \
          --name ${tmp_container} \
          --hostname kubeadm-base \
-         -p 127.0.0.1:${TMP_DOCKER_PORT}:${TMP_DOCKER_PORT} \
-         -e DOCKER_DAEMON_ARGS="-H tcp://0.0.0.0:${TMP_DOCKER_PORT} -H unix:///var/run/docker.sock" \
+         -v "$DIND_ROOT/image:/image" \
+         -v "$(find-binary hyperkube linux/amd64):/image/hypokube/hyperkube" \
          "${systemd_image_with_tag}" \
          startdocker sleep infinity
+  # FIXME: start docker via systemd
 
-  # build hyperkube image and place it into the container's inner Docker
-  DOCKER_HOST=tcp://127.0.0.1:${TMP_DOCKER_PORT}/ VERSION="${k8s_version_tag}" make -C cluster/images/hyperkube build
+  # k8s.io/hypokube
+  docker exec ${tmp_container} docker build -t k8s.io/hypokube:v1 /image/hypokube
 
   # copy binaries needed for kubeadm into the temporary container
   docker cp "$(find-binary kubectl linux/amd64)" ${tmp_container}:/usr/bin/
   docker cp "$(find-binary kubeadm linux/amd64)" ${tmp_container}:/usr/sbin/
   docker cp "$(find-binary kubelet linux/amd64)" ${tmp_container}:/usr/sbin/
 
-  # copy CNI stuff from hyperkube image we built
-  docker exec ${tmp_container} mkdir -p /usr/lib/kubernetes
-  docker exec ${tmp_container} \
-         bash -c "docker run ${hyperkube_image_with_tag} tar -C /opt -c cni | tar -C /usr/lib/kubernetes -x"
+  # TBD: sha256sum
+  ARCH="${ARCH:-amd64}"
+  CNI_RELEASE="${CNI_RELEASE:-07a8a28637e97b22eb8dfe710eeae1344f69d16e}"
+  docker exec ${tmp_container} mkdir -p /usr/lib/kubernetes/cni/bin
+  curl -sSL --retry 5 https://storage.googleapis.com/kubernetes-release/network-plugins/cni-${ARCH}-${CNI_RELEASE}.tar.gz |
+      docker exec -i ${tmp_container} tar -C /usr/lib/kubernetes/cni/bin -xz
 
   # stop the container & commit the image
   docker stop ${tmp_container}
@@ -125,45 +115,43 @@ function dind::kubeadm::run {
   # remove any previously created containers with the same name
   docker rm -f "${new_container}" 2>/dev/null || true
 
-  # copy /var/lib/docker data with hyperkube image
-  # Some files may be inaccessible to the current user so we use
-  # a container to access the files.
-  # We can't use busybox here because cp -a must preserve hardlinks.
-  # ubuntu:16.04 is already pulled because it's used by the dind base image
-  # (FIXME: don't hardcode ubuntu:16.04 in multiple places)
-  docker run -v "${storage_dir}:/storage" ubuntu:16.04 \
-         bash -c "rm -rf /storage/'${new_container}' && cp -a /storage/kubeadm-base /storage/'${new_container}'"
-
   # start the new container and bridge its inner docker network to the 'outer' docker
   # See also image/systemd/wrapkubeadm
   docker run \
-         -v "${storage_dir}":/var/lib/docker \
          -d --privileged \
          --name "${new_container}" \
          --hostname "${new_container}" \
          -e DOCKER_NETWORK_OFFSET=0.0.${netshift}.0 \
-         -e HYPERKUBE_IMAGE="${hyperkube_image_with_tag}" \
-         -e PROXY_FLAGS="${proxy_flags}" \
+         -e HYPERKUBE_IMAGE=k8s.io/hypokube:v1 \
          "${IMAGE_REPO}:${IMAGE_TAG}"
 
   docker exec "${new_container}" wrapkubeadm "$@"
 }
 
 function dind::kubeadm::init {
-  dind::kubeadm::maybe-rebuild-base-containers
-  dind::kubeadm::prepare
   dind::kubeadm::run kube-master 1 init "$@"
+  # recipe by @errordeveloper:
+  # https://github.com/kubernetes/kubernetes/pull/34522#issuecomment-253248985
+  # TODO: use proxy flags for kubeadm when/if #34522 is merged
+  # KUBE_PROXY_FLAGS="${PROXY_FLAGS:-} --masquerade-all --cluster-cidr=${cluster_cidr}"
+  docker exec kube-master bash -c 'kubectl -n kube-system get ds -l "component=kube-proxy-amd64" -o json |
+    jq ".items[0].spec.template.spec.containers[0].command |= .+ [\"--conntrack-max=0\", \"--conntrack-max-per-core=0\"]" |
+    kubectl apply -f - && kubectl -n kube-system delete pods -l "component=kube-proxy-amd64"'
 }
 
 function dind::kubeadm::join {
   # if there's just one node currently, it's master, thus we need to use
   # kube-node-1 hostname, if there are two nodes, we should pick
   # kube-node-2 and so on
-  local next_node_index=$(docker exec kube-master kubectl get nodes -o name | wc -l)
+  local next_node_index=$(docker exec kube-master kubectl get nodes -o name | wc -l | sed 's/^ *//g')
   dind::kubeadm::run kube-node-${next_node_index} $((next_node_index + 1)) join "$@"
 }
 
 case "${1:-}" in
+  prepare)
+    dind::kubeadm::maybe-rebuild-base-containers
+    dind::kubeadm::prepare
+    ;;        
   init)
     shift
     dind::kubeadm::init "$@"

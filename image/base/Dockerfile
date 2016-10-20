@@ -34,6 +34,9 @@ RUN apt-get update -qq && \
         iputils-ping \
         tcpdump \
         socat \
+        ebtables \
+        ethtool \
+        jq \
         && \
     apt-get clean
 
@@ -51,8 +54,6 @@ RUN apt-key adv --keyserver hkp://p80.pool.sks-keyservers.net:80 --recv-keys 581
     apt-get clean
 
 RUN curl -o- https://raw.githubusercontent.com/karlkfi/resolveip/v1.0.2/install.sh | bash
-
-RUN mkdir -p /var/lib/kubelet/manifests
 
 COPY wrapdocker startdocker /usr/local/bin/
 ENTRYPOINT ["/usr/local/bin/wrapdocker"]
