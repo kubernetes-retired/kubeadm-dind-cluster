@@ -55,6 +55,6 @@ RUN apt-key adv --keyserver hkp://p80.pool.sks-keyservers.net:80 --recv-keys 581
 
 RUN curl -o- https://raw.githubusercontent.com/karlkfi/resolveip/v1.0.2/install.sh | bash
 
-COPY wrapdocker startdocker /usr/local/bin/
+COPY wrapdocker /usr/local/bin/
 ENTRYPOINT ["/usr/local/bin/wrapdocker"]
 CMD ["/bin/bash", "--login"]
