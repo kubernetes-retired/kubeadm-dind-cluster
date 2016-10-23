@@ -90,9 +90,8 @@ function dind::kubeadm::prepare {
          --hostname kubeadm-base \
          -v "$DIND_ROOT/image:/image" \
          -v "$(find-binary hyperkube linux/amd64):/image/hypokube/hyperkube" \
-         "${systemd_image_with_tag}" \
-         startdocker sleep infinity
-  # FIXME: start docker via systemd
+         "${systemd_image_with_tag}"
+  docker exec ${tmp_container} start_services docker
 
   # k8s.io/hypokube
   docker exec ${tmp_container} docker build -t k8s.io/hypokube:v1 /image/hypokube

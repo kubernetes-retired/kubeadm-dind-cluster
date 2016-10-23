@@ -26,6 +26,7 @@ RUN apt-get -qq update && \
 COPY kubelet.service /lib/systemd/system/
 COPY 10-kubeadm.conf /etc/systemd/system/kubelet.service.d/
 COPY wrapkubeadm /usr/local/bin
+COPY start_services /usr/local/bin
 
 CMD [ "/sbin/init" ]
 

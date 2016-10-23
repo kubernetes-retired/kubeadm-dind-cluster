@@ -5,23 +5,9 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 
-# wait for systemd to start in the container
-(( timeout = 60 + SECONDS ))
-until systemctl status >/dev/null 2>&1; do
-  if (( SECONDS >= timeout )); then
-    echo 'Timed out trying to connect to internal docker host.' >&2
-    exit 1
-  fi
-  sleep 1
-done
-
-# enable & start docker & kubelet
-systemctl enable docker kubelet
-systemctl start docker kubelet
+/usr/local/bin/start_services docker kubelet
 
 # start kubeadm init
-# FIXME: I kargo-culted --masquerade-all from docker-compose.yml,
-# need to describe here why exactly it's needed
 # FIXME: --hostname-override / --cluster-cidr are already obtained
 # in wrapdocker for kubelet config
 hostname_override="$(getent hosts $(hostname) | cut -d' ' -f1 | sort -u | tail -1)"
