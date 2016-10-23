@@ -23,6 +23,14 @@ IMAGE_REPO=${IMAGE_REPO:-k8s.io/kubeadm-dind}
 IMAGE_TAG=${IMAGE_TAG:-latest}
 base_image_with_tag="k8s.io/kubernetes-dind-base:v1"
 systemd_image_with_tag="k8s.io/kubernetes-dind-systemd:v1"
+# fixme: don't hardcode versions here
+PREPULL_IMAGES=(gcr.io/google_containers/kube-discovery-amd64:1.0
+                debian:jessie
+                gcr.io/google_containers/kubedns-amd64:1.7
+                gcr.io/google_containers/exechealthz-amd64:1.1
+                gcr.io/google_containers/kube-dnsmasq-amd64:1.3
+                gcr.io/google_containers/pause-amd64:3.0
+                gcr.io/google_containers/etcd-amd64:2.2.5)
 
 # Trying to change conntrack settings fails even in priveleged containers,
 # so we need to avoid it. Here's sample error message from kube-proxy:
@@ -88,6 +96,9 @@ function dind::kubeadm::prepare {
 
   # k8s.io/hypokube
   docker exec ${tmp_container} docker build -t k8s.io/hypokube:v1 /image/hypokube
+  for image in "${PREPULL_IMAGES[@]}"; do
+    docker exec ${tmp_container} docker pull "$image"
+  done
 
   # copy binaries needed for kubeadm into the temporary container
   docker cp "$(find-binary kubectl linux/amd64)" ${tmp_container}:/usr/bin/
