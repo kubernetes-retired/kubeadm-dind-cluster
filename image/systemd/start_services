@@ -15,6 +15,4 @@ until systemctl status >/dev/null 2>&1; do
   sleep 1
 done
 
-# enable & start services
-systemctl enable "$@"
 systemctl start "$@"

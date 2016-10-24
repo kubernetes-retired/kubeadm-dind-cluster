@@ -5,7 +5,7 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 
-docker_net_opts=""
+docker_net_opts=
 
 # Bridge the containerized docker network to the host docker network.
 # To enable this bridge, specify an IP offset for this container to use.
@@ -59,7 +59,8 @@ if [[ "${docker_net_opts}" ]]; then
   # only do this when starting the actual cluster and not during initial image preparation
 
   if [ -f /lib/systemd/system/docker.service ]; then
-    sed -i "s@\(ExecStart=.*\)@\1 ${docker_net_opts}@" /lib/systemd/system/docker.service
+    echo -e "[Service]\nEnvironment='DOCKER_EXTRA_OPTS=${docker_net_opts}'" \
+         >/etc/systemd/system/docker.service.d/00-dind-net.conf
   fi
 
   # This ensures that node names are IPs so we don't need dnsmasq
@@ -67,20 +68,16 @@ if [[ "${docker_net_opts}" ]]; then
   kubeadm_kubelet_conf=/etc/systemd/system/kubelet.service.d/10-kubeadm.conf
   if [ -f "${kubeadm_kubelet_conf}" ] && ! grep hostname-override "${kubeadm_kubelet_conf}"; then
     hostname_override="$(getent hosts $(hostname) | cut -d' ' -f1 | sort -u | tail -1)"
-    sed -i "s@\(KUBELET_EXTRA_ARGS=\)@\1--hostname-override=${hostname_override} @" \
-        "${kubeadm_kubelet_conf}"
+    echo -e "[Service]\nEnvironment='KUBELET_EXTRA_ARGS=--hostname-override=${hostname_override} --v=4'" \
+         >/etc/systemd/system/kubelet.service.d/20-hostname-override.conf
   fi
 fi
 
-/usr/local/bin/start_services docker kubelet
+systemctl daemon-reload
+
+start_services docker kubelet
+systemctl enable docker kubelet
 
 # start kubeadm init
-# FIXME: --hostname-override / --cluster-cidr are already obtained
-# in wrapdocker for kubelet config
-hostname_override="$(getent hosts $(hostname) | cut -d' ' -f1 | sort -u | tail -1)"
-cluster_cidr="$(ip addr show docker0 | grep -w inet | awk '{ print $2; }')"
-# --hostname-override=${hostname_override}
-# makes no sense because it would be passed to every pod :(
-# perhaps should just put all nodes into /etc/hosts on each node(?)
 KUBE_HYPERKUBE_IMAGE=${HYPERKUBE_IMAGE} \
   kubeadm "$@"
