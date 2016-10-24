@@ -17,6 +17,3 @@ RUN ln -s /hyperkube /apiserver \
  && ln -s /hyperkube /kubelet \
  && ln -s /hyperkube /proxy \
  && ln -s /hyperkube /scheduler
-
-# Copy the hyperkube binary
-COPY hyperkube /hyperkube

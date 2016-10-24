@@ -21,6 +21,7 @@ set -o errtrace
 
 IMAGE_REPO=${IMAGE_REPO:-k8s.io/kubeadm-dind}
 IMAGE_TAG=${IMAGE_TAG:-latest}
+IMAGE_BASE_TAG=base
 base_image_with_tag="k8s.io/kubernetes-dind-base:v1"
 systemd_image_with_tag="k8s.io/kubernetes-dind-systemd:v1"
 # fixme: don't hardcode versions here
@@ -51,21 +52,6 @@ if [ ! -f cluster/kubectl.sh ]; then
   exit 1
 fi
 
-# FIXME: find-binary is copied from build.sh
-# Find a platform specific binary, whether it was cross compiled or locally built (on Linux)
-function find-binary {
-  local lookfor="${1}"
-  local platform="${2}"
-  local locations=(
-    "$PWD/_output/dockerized/bin/${platform}/${lookfor}"
-  )
-  if [ "$(uname)" = Linux ]; then
-    locations[${#locations[*]}]="$PWD/_output/local/bin/${platform}/${lookfor}"
-  fi
-  local bin=$( (ls -t "${locations[@]}" 2>/dev/null || true) | head -1 )
-  echo -n "${bin}"
-}
-
 source "${DIND_ROOT}/config.sh"
 
 function dind::kubeadm::maybe-rebuild-base-containers {
@@ -74,34 +60,29 @@ function dind::kubeadm::maybe-rebuild-base-containers {
   fi
 }
 
-function dind::kubeadm::prepare {
-  TMP_DOCKER_PORT="${TMP_DOCKER_PORT:-8899}"
-  local tmp_container="kubeadm-base-$(openssl rand -hex 16)"
+function dind::kubeadm::start-tmp-container {
+  tmp_container="kubeadm-base-$(openssl rand -hex 16)"
   trap "docker rm -f ${tmp_container} 2>/dev/null" EXIT
-
-  # Start DIND and make it accessible via TCP.
-  #
-  # For details, see
-  # https://github.com/docker/docker/commit/824c72f4727504e3a8d37f87ce88733c560d4129#commitcomment-17402152
   docker run \
          -d --privileged \
          --name ${tmp_container} \
          --hostname kubeadm-base \
-         -v "$DIND_ROOT/image:/image" \
-         -v "$(find-binary hyperkube linux/amd64):/image/hypokube/hyperkube" \
-         "${systemd_image_with_tag}"
+         "$@"
   docker exec ${tmp_container} start_services docker
+}
+
+# dind::kubeadm::prepare prepares a DIND image with base
+# 'hypokube' image inside it & pre-pulls images used by k8s into it.
+# It doesn't place actual k8s binaries into the image though.
+function dind::kubeadm::prepare {
+  dind::kubeadm::start-tmp-container "${systemd_image_with_tag}"
+  docker cp "$DIND_ROOT/image/hypokube" ${tmp_container}:/
 
   # k8s.io/hypokube
-  docker exec ${tmp_container} docker build -t k8s.io/hypokube:v1 /image/hypokube
+  docker exec ${tmp_container} docker build -t k8s.io/hypokube:base -f /hypokube/base.dkr /hypokube
   for image in "${PREPULL_IMAGES[@]}"; do
     docker exec ${tmp_container} docker pull "$image"
   done
-
-  # copy binaries needed for kubeadm into the temporary container
-  docker cp "$(find-binary kubectl linux/amd64)" ${tmp_container}:/usr/bin/
-  docker cp "$(find-binary kubeadm linux/amd64)" ${tmp_container}:/usr/sbin/
-  docker cp "$(find-binary kubelet linux/amd64)" ${tmp_container}:/usr/sbin/
 
   # TBD: sha256sum
   ARCH="${ARCH:-amd64}"
@@ -114,6 +95,18 @@ function dind::kubeadm::prepare {
   docker exec ${tmp_container} systemctl disable docker
 
   # stop the container & commit the image
+  docker stop ${tmp_container}
+  docker commit --change 'CMD ["/sbin/init"]' "${tmp_container}" "${IMAGE_REPO}:${IMAGE_BASE_TAG}"
+}
+
+# dind::kubeadm::push-binaries creates a DIND image
+# with kubectl, kubeadm and kubelet binaris along with 'hypokube'
+# image with hyperkube binary inside it.
+function dind::kubeadm::push-binaries {
+  dind::kubeadm::start-tmp-container \
+      -v "$PWD:/go/src/k8s.io/kubernetes" \
+      "${IMAGE_REPO}:${IMAGE_BASE_TAG}"
+  docker exec ${tmp_container} /hypokube/place_binaries.sh
   docker stop ${tmp_container}
   docker commit --change 'CMD ["/sbin/init"]' "${tmp_container}" "${IMAGE_REPO}:${IMAGE_TAG}"
 }
@@ -146,9 +139,9 @@ function dind::kubeadm::init {
   # https://github.com/kubernetes/kubernetes/pull/34522#issuecomment-253248985
   # TODO: use proxy flags for kubeadm when/if #34522 is merged
   # KUBE_PROXY_FLAGS="${PROXY_FLAGS:-} --masquerade-all --cluster-cidr=${cluster_cidr}"
-  docker exec kube-master bash -c 'kubectl -n kube-system get ds -l "component=kube-proxy-amd64" -o json |
+  docker exec kube-master bash -c 'kubectl -n kube-system get ds -l "component=kube-proxy" -o json |
     jq ".items[0].spec.template.spec.containers[0].command |= .+ [\"--conntrack-max=0\", \"--conntrack-max-per-core=0\"]" |
-    kubectl apply -f - && kubectl -n kube-system delete pods -l "component=kube-proxy-amd64"'
+    kubectl apply -f - && kubectl -n kube-system delete pods -l "component=kube-proxy"'
 }
 
 function dind::kubeadm::join {
@@ -163,7 +156,11 @@ case "${1:-}" in
   prepare)
     dind::kubeadm::maybe-rebuild-base-containers
     dind::kubeadm::prepare
-    ;;        
+    dind::kubeadm::push-binaries
+    ;;
+  push)
+    dind::kubeadm::push-binaries
+    ;;    
   init)
     shift
     dind::kubeadm::init "$@"
