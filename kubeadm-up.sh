@@ -70,7 +70,6 @@ source "${DIND_ROOT}/config.sh"
 
 function dind::kubeadm::maybe-rebuild-base-containers {
   if [[ "${DIND_KUBEADM_FORCE_REBUILD:-}" ]] || ! docker images "${systemd_image_with_tag}" | grep -q "${systemd_image_with_tag}"; then
-    docker build -t "${base_image_with_tag}" "${DIND_ROOT}/image/base"
     docker build -t "${systemd_image_with_tag}" "${DIND_ROOT}/image/systemd"
   fi
 }
@@ -110,6 +109,9 @@ function dind::kubeadm::prepare {
   docker exec ${tmp_container} mkdir -p /usr/lib/kubernetes/cni/bin
   curl -sSL --retry 5 https://storage.googleapis.com/kubernetes-release/network-plugins/cni-${ARCH}-${CNI_RELEASE}.tar.gz |
       docker exec -i ${tmp_container} tar -C /usr/lib/kubernetes/cni/bin -xz
+
+  # make sure Docker doesn't start before docker0 bridge is created
+  docker exec ${tmp_container} systemctl disable docker
 
   # stop the container & commit the image
   docker stop ${tmp_container}
