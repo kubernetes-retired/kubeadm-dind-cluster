@@ -96,9 +96,16 @@ function dind::kubeadm::prepare {
 # with kubectl, kubeadm and kubelet binaris along with 'hypokube'
 # image with hyperkube binary inside it.
 function dind::kubeadm::push-binaries {
-  dind::kubeadm::start-tmp-container \
-      -v "$PWD:/go/src/k8s.io/kubernetes" \
-      "${IMAGE_REPO}:${IMAGE_BASE_TAG}"
+  local -a volume_args
+  if [ -n "${KUBEADM_DIND_LOCAL:-}" ]; then
+    volume_args=(-v "$PWD:/go/src/k8s.io/kubernetes")
+  else
+    volume_args=(--volumes-from "$(KUBE_ROOT=$PWD &&
+                                   . build-tools/common.sh &&
+                                   kube::build::verify_prereqs >&2 &&
+                                   echo "$KUBE_DATA_CONTAINER_NAME")")
+  fi
+  dind::kubeadm::start-tmp-container "${volume_args[@]}" "${IMAGE_REPO}:${IMAGE_BASE_TAG}"
   docker exec ${tmp_container} /hypokube/place_binaries.sh
   docker stop ${tmp_container}
   docker commit --change 'CMD ["/sbin/init"]' "${tmp_container}" "${IMAGE_REPO}:${IMAGE_TAG}"
