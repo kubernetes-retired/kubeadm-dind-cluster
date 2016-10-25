@@ -33,13 +33,6 @@ PREPULL_IMAGES=(gcr.io/google_containers/kube-discovery-amd64:1.0
                 gcr.io/google_containers/pause-amd64:3.0
                 gcr.io/google_containers/etcd-amd64:2.2.5)
 
-# Trying to change conntrack settings fails even in priveleged containers,
-# so we need to avoid it. Here's sample error message from kube-proxy:
-# I1010 21:53:00.525940       1 conntrack.go:57] Setting conntrack hashsize to 49152
-# Error: write /sys/module/nf_conntrack/parameters/hashsize: operation not supported
-# write /sys/module/nf_conntrack/parameters/hashsize: operation not supported
-proxy_flags="--conntrack-max=0 --conntrack-max-per-core=0"
-
 if [ $(uname) = Darwin ]; then
   readlinkf(){ perl -MCwd -e 'print Cwd::abs_path shift' "$1";}
 else
@@ -135,7 +128,13 @@ function dind::kubeadm::run {
 
 function dind::kubeadm::init {
   dind::kubeadm::run kube-master 1 init "$@"
-  # recipe by @errordeveloper:
+  # Trying to change conntrack settings fails even in priveleged containers,
+  # so we need to avoid it. Here's sample error message from kube-proxy:
+  # I1010 21:53:00.525940       1 conntrack.go:57] Setting conntrack hashsize to 49152
+  # Error: write /sys/module/nf_conntrack/parameters/hashsize: operation not supported
+  # write /sys/module/nf_conntrack/parameters/hashsize: operation not supported
+  #
+  # Recipe by @errordeveloper:
   # https://github.com/kubernetes/kubernetes/pull/34522#issuecomment-253248985
   # TODO: use proxy flags for kubeadm when/if #34522 is merged
   # KUBE_PROXY_FLAGS="${PROXY_FLAGS:-} --masquerade-all --cluster-cidr=${cluster_cidr}"
