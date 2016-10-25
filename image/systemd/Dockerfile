@@ -8,7 +8,6 @@ RUN apt-get -qq update && \
     mkdir -p /etc/systemd/system/kubelet.service.d
 
 COPY kubelet.service /lib/systemd/system/
-COPY 10-kubeadm.conf /etc/systemd/system/kubelet.service.d/
 COPY wrapkubeadm /usr/local/bin
 COPY start_services /usr/local/bin
 

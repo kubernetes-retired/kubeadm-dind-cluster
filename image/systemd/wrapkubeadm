@@ -56,21 +56,18 @@ if [ ! -z "${DOCKER_NETWORK_OFFSET:-}" ]; then
 fi
 
 if [[ "${docker_net_opts}" ]]; then
-  # only do this when starting the actual cluster and not during initial image preparation
-
-  if [ -f /lib/systemd/system/docker.service ]; then
-    echo -e "[Service]\nEnvironment='DOCKER_EXTRA_OPTS=${docker_net_opts}'" \
+  echo -e "[Service]\nEnvironment='DOCKER_EXTRA_OPTS=${docker_net_opts}'" \
          >/etc/systemd/system/docker.service.d/00-dind-net.conf
-  fi
 
   # This ensures that node names are IPs so we don't need dnsmasq
   # FIXME: put proper dns / domain from config.sh there (KUBELET_DNS_ARGS)
-  kubeadm_kubelet_conf=/etc/systemd/system/kubelet.service.d/10-kubeadm.conf
-  if [ -f "${kubeadm_kubelet_conf}" ] && ! grep hostname-override "${kubeadm_kubelet_conf}"; then
-    hostname_override="$(getent hosts $(hostname) | cut -d' ' -f1 | sort -u | tail -1)"
-    echo -e "[Service]\nEnvironment='KUBELET_EXTRA_ARGS=--hostname-override=${hostname_override} --v=4'" \
-         >/etc/systemd/system/kubelet.service.d/20-hostname-override.conf
-  fi
+  hostname_override="$(getent hosts $(hostname) | cut -d' ' -f1 | sort -u | tail -1)"
+  kubelet_extra_conf=/etc/systemd/system/kubelet.service.d/20-hostname-override.conf
+  mkdir -p "$(dirname "${kubelet_extra_conf}")"
+  cat >"${kubelet_extra_conf}" <<EOF
+[Service]
+Environment='KUBELET_EXTRA_ARGS=--hostname-override=${hostname_override} --v=4'
+EOF
 fi
 
 systemctl daemon-reload
@@ -79,5 +76,4 @@ start_services docker kubelet
 systemctl enable docker kubelet
 
 # start kubeadm init
-KUBE_HYPERKUBE_IMAGE=${HYPERKUBE_IMAGE} \
-  kubeadm "$@"
+KUBE_HYPERKUBE_IMAGE=${HYPERKUBE_IMAGE} kubeadm "$@"
