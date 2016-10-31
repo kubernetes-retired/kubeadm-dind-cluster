@@ -19,6 +19,16 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 
+tmp_containers=()
+function cleanup {
+  if [ ${#tmp_containers[@]} -gt 0 ]; then
+    for name in "${tmp_containers[@]}"; do
+      docker rm -f "${name}" 2>/dev/null
+    done
+  fi
+}
+trap cleanup EXIT
+
 IMAGE_REPO=${IMAGE_REPO:-k8s.io/kubeadm-dind}
 IMAGE_TAG=${IMAGE_TAG:-latest}
 IMAGE_BASE_TAG=base
@@ -54,13 +64,12 @@ function dind::kubeadm::maybe-rebuild-base-containers {
 }
 
 function dind::kubeadm::start-tmp-container {
-  tmp_container="kubeadm-base-$(openssl rand -hex 16)"
-  trap "docker rm -f ${tmp_container} 2>/dev/null" EXIT
-  docker run \
-         -d --privileged \
-         --name ${tmp_container} \
-         --hostname kubeadm-base \
-         "$@"
+  tmp_container=$(docker run \
+                         -d --privileged \
+                         --name kubeadm-base-$(openssl rand -hex 16) \
+                         --hostname kubeadm-base \
+                         "$@")
+  tmp_containers+=("${tmp_container}")
   docker exec ${tmp_container} start_services docker
 }
 
@@ -113,23 +122,22 @@ function dind::kubeadm::push-binaries {
 
 function dind::kubeadm::run {
   # FIXME (create several containers)
-  local new_container="$1"
+  local container_name="$1"
   local netshift="$2"
   shift 2
 
   # remove any previously created containers with the same name
-  docker rm -f "${new_container}" 2>/dev/null || true
+  docker rm -f "${container_name}" 2>/dev/null || true
 
   # start the new container and bridge its inner docker network to the 'outer' docker
   # See also image/systemd/wrapkubeadm
-  docker run \
-         -d --privileged \
-         --name "${new_container}" \
-         --hostname "${new_container}" \
-         -e DOCKER_NETWORK_OFFSET=0.0.${netshift}.0 \
-         -e HYPERKUBE_IMAGE=k8s.io/hypokube:v1 \
-         "${IMAGE_REPO}:${IMAGE_TAG}"
-
+  new_container=$(docker run \
+                         -d --privileged \
+                         --name "${container_name}" \
+                         --hostname "${container_name}" \
+                         -e DOCKER_NETWORK_OFFSET=0.0.${netshift}.0 \
+                         -e HYPERKUBE_IMAGE=k8s.io/hypokube:v1 \
+                         "${IMAGE_REPO}:${IMAGE_TAG}")
   docker exec "${new_container}" wrapkubeadm "$@"
 }
 
