@@ -98,7 +98,9 @@ function dind::kubeadm::prepare {
 
   # stop the container & commit the image
   docker stop ${tmp_container}
-  docker commit --change 'CMD ["/sbin/init"]' "${tmp_container}" "${IMAGE_REPO}:${IMAGE_BASE_TAG}"
+  # XXX should be 'ENTRYPOINT ["/sbin/dind_init"]' but looks like outdated
+  # gcr.io/kubeadm/ci-xenial-systemd:bare is being used...
+  docker commit --change 'ENTRYPOINT ["/sbin/init"]' "${tmp_container}" "${IMAGE_REPO}:${IMAGE_BASE_TAG}"
 }
 
 # dind::kubeadm::push-binaries creates a DIND image
