@@ -135,19 +135,6 @@ function dind::kubeadm::run {
 
 function dind::kubeadm::init {
   dind::kubeadm::run kube-master 1 init "$@"
-  # Trying to change conntrack settings fails even in priveleged containers,
-  # so we need to avoid it. Here's sample error message from kube-proxy:
-  # I1010 21:53:00.525940       1 conntrack.go:57] Setting conntrack hashsize to 49152
-  # Error: write /sys/module/nf_conntrack/parameters/hashsize: operation not supported
-  # write /sys/module/nf_conntrack/parameters/hashsize: operation not supported
-  #
-  # Recipe by @errordeveloper:
-  # https://github.com/kubernetes/kubernetes/pull/34522#issuecomment-253248985
-  # TODO: use proxy flags for kubeadm when/if #34522 is merged
-  # KUBE_PROXY_FLAGS="${PROXY_FLAGS:-} --masquerade-all --cluster-cidr=${cluster_cidr}"
-  docker exec kube-master bash -c 'kubectl -n kube-system get ds -l "component=kube-proxy" -o json |
-    jq ".items[0].spec.template.spec.containers[0].command |= .+ [\"--conntrack-max=0\", \"--conntrack-max-per-core=0\"]" |
-    kubectl apply -f - && kubectl -n kube-system delete pods -l "component=kube-proxy"'
 }
 
 function dind::kubeadm::join {
