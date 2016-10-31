@@ -29,12 +29,14 @@ function cleanup {
 }
 trap cleanup EXIT
 
+APISERVER_PORT=${APISERVER_PORT:-8080}
 IMAGE_REPO=${IMAGE_REPO:-k8s.io/kubeadm-dind}
 IMAGE_TAG=${IMAGE_TAG:-latest}
 IMAGE_BASE_TAG=base
 base_image_with_tag="k8s.io/kubernetes-dind-base:v1"
 systemd_image_with_tag="k8s.io/kubernetes-dind-systemd:v1"
 # fixme: don't hardcode versions here
+# TBD: try to extract versions from cmd/kubeadm/app/images/images.go
 PREPULL_IMAGES=(gcr.io/google_containers/kube-discovery-amd64:1.0
                 debian:jessie
                 gcr.io/google_containers/kubedns-amd64:1.7
@@ -126,25 +128,36 @@ function dind::kubeadm::run {
   # FIXME (create several containers)
   local container_name="$1"
   local netshift="$2"
-  shift 2
+  local portforward="$3"
+  local -a portforward_opts=()
+  shift 3
 
   # remove any previously created containers with the same name
   docker rm -f "${container_name}" 2>/dev/null || true
 
-  # start the new container and bridge its inner docker network to the 'outer' docker
-  # See also image/systemd/wrapkubeadm
+  if [[ "$portforward" ]]; then
+    portforward_opts=(-p "$portforward")
+  fi
+
+  # Start the new container.
   new_container=$(docker run \
                          -d --privileged \
                          --name "${container_name}" \
                          --hostname "${container_name}" \
                          -e DOCKER_NETWORK_OFFSET=0.0.${netshift}.0 \
                          -e HYPERKUBE_IMAGE=k8s.io/hypokube:v1 \
+                         ${portforward_opts[@]+"${portforward_opts[@]}"} \
                          "${IMAGE_REPO}:${IMAGE_TAG}")
+
+  # See also image/systemd/wrapkubeadm
   docker exec "${new_container}" wrapkubeadm "$@"
 }
 
 function dind::kubeadm::init {
-  dind::kubeadm::run kube-master 1 init "$@"
+  dind::kubeadm::run kube-master 1 127.0.0.1:${APISERVER_PORT}:8080 init "$@"
+  kubectl config set-cluster dind --server="http://localhost:${APISERVER_PORT}" --insecure-skip-tls-verify=true
+  kubectl config set-context dind --cluster=dind
+  kubectl config use-context dind
 }
 
 function dind::kubeadm::join {
@@ -152,7 +165,7 @@ function dind::kubeadm::join {
   # kube-node-1 hostname, if there are two nodes, we should pick
   # kube-node-2 and so on
   local next_node_index=$(docker exec kube-master kubectl get nodes -o name | wc -l | sed 's/^ *//g')
-  dind::kubeadm::run kube-node-${next_node_index} $((next_node_index + 1)) join "$@"
+  dind::kubeadm::run kube-node-${next_node_index} $((next_node_index + 1)) "" join "$@"
 }
 
 case "${1:-}" in
@@ -177,3 +190,5 @@ case "${1:-}" in
     exit 1
     ;;
 esac
+
+# TBD: add APISERVER_PORT to config.sh

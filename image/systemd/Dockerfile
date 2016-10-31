@@ -12,3 +12,5 @@ RUN apt-get -qq update && \
 COPY kubelet.service /lib/systemd/system/
 COPY wrapkubeadm /usr/local/bin
 COPY start_services /usr/local/bin
+
+EXPOSE 8080
