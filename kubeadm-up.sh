@@ -39,6 +39,7 @@ IMAGE_TAG=${IMAGE_TAG:-latest}
 IMAGE_BASE_TAG=base
 base_image_with_tag="k8s.io/kubernetes-dind-base:v1"
 systemd_image_with_tag="k8s.io/kubernetes-dind-systemd:v1"
+e2e_base_image="golang:1.7.1"
 # fixme: don't hardcode versions here
 # fixme: consistent var name case
 # TBD: try to extract versions from cmd/kubeadm/app/images/images.go
@@ -169,6 +170,30 @@ function dind::kubeadm::join {
   dind::kubeadm::run kube-node-${next_node_index} $((next_node_index + 1)) "" join "$@"
 }
 
+function dind::run-e2e {
+  local num_nodes
+  num_nodes="$(kubectl get nodes -o name|wc -l|sed 's/ //g')"
+  docker run \
+         --rm -it \
+         --net=host \
+         "${volume_args[@]}" \
+         -e KUBERNETES_PROVIDER=dind \
+         -e KUBE_MASTER_IP=http://localhost:${APISERVER_PORT} \
+         -e KUBE_MASTER=local \
+         -e KUBERNETES_CONFORMANCE_TEST=y \
+         -e GINKGO_PARALLEL_NODES=${num_nodes} \
+         -e GINKGO_PARALLEL=y \
+         -w /go/src/k8s.io/kubernetes \
+         "${e2e_base_image}" \
+         bash -c "cluster/kubectl.sh config set-cluster dind --server='http://localhost:${APISERVER_PORT}' --insecure-skip-tls-verify=true &&
+         cluster/kubectl.sh config set-context dind --cluster=dind &&
+         cluster/kubectl.sh config use-context dind &&
+         go run hack/e2e.go --v --test -check_version_skew=false \
+         --test_args='--ginkgo.focus=\[Conformance\] --ginkgo.skip=\[Serial\] --host=http://localhost:${APISERVER_PORT}'"
+  # TBD: specify filter
+  # TBD: serial tests
+}
+
 case "${1:-}" in
   prepare)
     dind::kubeadm::maybe-rebuild-base-containers
@@ -185,6 +210,10 @@ case "${1:-}" in
   join)
     shift
     dind::kubeadm::join "$@"
+    ;;
+  e2e)
+    shift
+    dind::run-e2e "$@"
     ;;
   *)
     echo "usage: $0 init|join kubeadm-args..." >&2
