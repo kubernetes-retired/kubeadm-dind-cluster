@@ -19,32 +19,6 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 
-tmp_containers=()
-function cleanup {
-  if [ ${#tmp_containers[@]} -gt 0 ]; then
-    for name in "${tmp_containers[@]}"; do
-      docker rm -f "${name}" 2>/dev/null
-    done
-  fi
-}
-trap cleanup EXIT
-
-APISERVER_PORT=${APISERVER_PORT:-8080}
-IMAGE_REPO=${IMAGE_REPO:-k8s.io/kubeadm-dind}
-IMAGE_TAG=${IMAGE_TAG:-latest}
-IMAGE_BASE_TAG=base
-base_image_with_tag="k8s.io/kubernetes-dind-base:v1"
-systemd_image_with_tag="k8s.io/kubernetes-dind-systemd:v1"
-# fixme: don't hardcode versions here
-# TBD: try to extract versions from cmd/kubeadm/app/images/images.go
-PREPULL_IMAGES=(gcr.io/google_containers/kube-discovery-amd64:1.0
-                debian:jessie
-                gcr.io/google_containers/kubedns-amd64:1.7
-                gcr.io/google_containers/exechealthz-amd64:1.1
-                gcr.io/google_containers/kube-dnsmasq-amd64:1.3
-                gcr.io/google_containers/pause-amd64:3.0
-                gcr.io/google_containers/etcd-amd64:2.2.5)
-
 if [ $(uname) = Darwin ]; then
   readlinkf(){ perl -MCwd -e 'print Cwd::abs_path shift' "$1";}
 else
@@ -58,6 +32,42 @@ if [ ! -f cluster/kubectl.sh ]; then
 fi
 
 source "${DIND_ROOT}/config.sh"
+
+APISERVER_PORT=${APISERVER_PORT:-8080}
+IMAGE_REPO=${IMAGE_REPO:-k8s.io/kubeadm-dind}
+IMAGE_TAG=${IMAGE_TAG:-latest}
+IMAGE_BASE_TAG=base
+base_image_with_tag="k8s.io/kubernetes-dind-base:v1"
+systemd_image_with_tag="k8s.io/kubernetes-dind-systemd:v1"
+# fixme: don't hardcode versions here
+# fixme: consistent var name case
+# TBD: try to extract versions from cmd/kubeadm/app/images/images.go
+PREPULL_IMAGES=(gcr.io/google_containers/kube-discovery-amd64:1.0
+                debian:jessie
+                gcr.io/google_containers/kubedns-amd64:1.7
+                gcr.io/google_containers/exechealthz-amd64:1.1
+                gcr.io/google_containers/kube-dnsmasq-amd64:1.3
+                gcr.io/google_containers/pause-amd64:3.0
+                gcr.io/google_containers/etcd-amd64:2.2.5)
+
+if [ -n "${KUBEADM_DIND_LOCAL:-}" ]; then
+  volume_args=(-v "$PWD:/go/src/k8s.io/kubernetes")
+else
+  volume_args=(--volumes-from "$(KUBE_ROOT=$PWD &&
+                                   . build-tools/common.sh &&
+                                   kube::build::verify_prereqs >&2 &&
+                                   echo "$KUBE_DATA_CONTAINER_NAME")")
+fi
+
+tmp_containers=()
+function cleanup {
+  if [ ${#tmp_containers[@]} -gt 0 ]; then
+    for name in "${tmp_containers[@]}"; do
+      docker rm -f "${name}" 2>/dev/null
+    done
+  fi
+}
+trap cleanup EXIT
 
 function dind::kubeadm::maybe-rebuild-base-containers {
   if [[ "${DIND_KUBEADM_FORCE_REBUILD:-}" ]] || ! docker images "${systemd_image_with_tag}" | grep -q "${systemd_image_with_tag}"; then
@@ -109,15 +119,6 @@ function dind::kubeadm::prepare {
 # with kubectl, kubeadm and kubelet binaris along with 'hypokube'
 # image with hyperkube binary inside it.
 function dind::kubeadm::push-binaries {
-  local -a volume_args
-  if [ -n "${KUBEADM_DIND_LOCAL:-}" ]; then
-    volume_args=(-v "$PWD:/go/src/k8s.io/kubernetes")
-  else
-    volume_args=(--volumes-from "$(KUBE_ROOT=$PWD &&
-                                   . build-tools/common.sh &&
-                                   kube::build::verify_prereqs >&2 &&
-                                   echo "$KUBE_DATA_CONTAINER_NAME")")
-  fi
   dind::kubeadm::start-tmp-container "${volume_args[@]}" "${IMAGE_REPO}:${IMAGE_BASE_TAG}"
   docker exec ${tmp_container} /hypokube/place_binaries.sh
   docker stop ${tmp_container}
@@ -190,5 +191,3 @@ case "${1:-}" in
     exit 1
     ;;
 esac
-
-# TBD: add APISERVER_PORT to config.sh
