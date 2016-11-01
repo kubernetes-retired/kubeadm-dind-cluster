@@ -122,7 +122,7 @@ function dind::kubeadm::push-binaries {
   dind::kubeadm::start-tmp-container "${volume_args[@]}" "${IMAGE_REPO}:${IMAGE_BASE_TAG}"
   docker exec ${tmp_container} /hypokube/place_binaries.sh
   docker stop ${tmp_container}
-  docker commit --change 'CMD ["/sbin/init"]' "${tmp_container}" "${IMAGE_REPO}:${IMAGE_TAG}"
+  docker commit --change 'ENTRYPOINT ["/sbin/init"]' "${tmp_container}" "${IMAGE_REPO}:${IMAGE_TAG}"
 }
 
 function dind::kubeadm::run {
