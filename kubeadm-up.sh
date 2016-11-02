@@ -266,7 +266,13 @@ case "${1:-}" in
     dind::run-e2e-serial "$@"
     ;;
   *)
-    echo "usage: $0 init|join kubeadm-args..." >&2
+    echo "usage:" >&2
+    echo "  $0 prepare" >&2
+    echo "  $0 init kubeadm-args..." >&2
+    echo "  $0 join kubeadm-args..." >&2
+    echo "  $0 push" >&2
+    echo "  $0 e2e [test-name-substring]" >&2
+    echo "  $0 e2e-serial [test-name-substring]" >&2
     exit 1
     ;;
 esac
