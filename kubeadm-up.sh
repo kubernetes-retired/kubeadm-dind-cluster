@@ -88,6 +88,25 @@ function dind::kubeadm::start-tmp-container {
   docker exec ${tmp_container} start_services docker
 }
 
+function dind::kubeadm::tmp-container-commit {
+  local image="$1"
+  # make sure Docker doesn't start before docker0 bridge is created
+  docker exec ${tmp_container} systemctl stop docker
+  docker exec ${tmp_container} systemctl disable docker
+  if [ "${USE_OVERLAY}" = "y" ]; then
+    # Save contents of the docker graph dir in the image.
+    # /var/lib/docker2 is a volume and it's not saved by
+    # 'docker commit'.
+    docker exec ${tmp_container} bash -c "mkdir -p /var/lib/docker_keep && mv /var/lib/docker2/* /var/lib/docker_keep/"
+  fi
+
+  # stop the container & commit the image
+  docker stop ${tmp_container}
+  # XXX should be 'ENTRYPOINT ["/sbin/dind_init"]' but looks like outdated
+  # gcr.io/kubeadm/ci-xenial-systemd:bare is being used...
+  docker commit --change 'ENTRYPOINT ["/sbin/init"]' "${tmp_container}" "${image}"
+}
+
 # dind::kubeadm::prepare prepares a DIND image with base
 # 'hypokube' image inside it & pre-pulls images used by k8s into it.
 # It doesn't place actual k8s binaries into the image though.
@@ -108,18 +127,7 @@ function dind::kubeadm::prepare {
   curl -sSL --retry 5 https://storage.googleapis.com/kubernetes-release/network-plugins/cni-${ARCH}-${CNI_RELEASE}.tar.gz |
       docker exec -i ${tmp_container} tar -C /usr/lib/kubernetes/cni/bin -xz
 
-  # make sure Docker doesn't start before docker0 bridge is created
-  docker exec ${tmp_container} systemctl stop docker
-  docker exec ${tmp_container} systemctl disable docker
-  if [ "${USE_OVERLAY}" = "y" ]; then
-    docker exec ${tmp_container} bash -c "mkdir -p /var/lib/docker_keep && mv /var/lib/docker2/* /var/lib/docker_keep/"
-  fi
-
-  # stop the container & commit the image
-  docker stop ${tmp_container}
-  # XXX should be 'ENTRYPOINT ["/sbin/dind_init"]' but looks like outdated
-  # gcr.io/kubeadm/ci-xenial-systemd:bare is being used...
-  docker commit --change 'ENTRYPOINT ["/sbin/init"]' "${tmp_container}" "${IMAGE_REPO}:${IMAGE_BASE_TAG}"
+  dind::kubeadm::tmp-container-commit "${IMAGE_REPO}:${IMAGE_BASE_TAG}"
 }
 
 # dind::kubeadm::push-binaries creates a DIND image
@@ -128,15 +136,7 @@ function dind::kubeadm::prepare {
 function dind::kubeadm::push-binaries {
   dind::kubeadm::start-tmp-container "${volume_args[@]}" "${IMAGE_REPO}:${IMAGE_BASE_TAG}"
   docker exec ${tmp_container} /hypokube/place_binaries.sh
-
-  docker exec ${tmp_container} systemctl stop docker
-  docker exec ${tmp_container} systemctl disable docker
-  if [ "${USE_OVERLAY}" = "y" ]; then
-    docker exec ${tmp_container} bash -c "mkdir -p /var/lib/docker_keep && mv /var/lib/docker2/* /var/lib/docker_keep/"
-  fi
-
-  docker stop ${tmp_container}
-  docker commit --change 'ENTRYPOINT ["/sbin/init"]' "${tmp_container}" "${IMAGE_REPO}:${IMAGE_TAG}"
+  dind::kubeadm::tmp-container-commit "${IMAGE_REPO}:${IMAGE_TAG}"
 }
 
 function dind::kubeadm::run {
