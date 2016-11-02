@@ -71,13 +71,13 @@ function cleanup {
 }
 trap cleanup EXIT
 
-function dind::kubeadm::maybe-rebuild-base-containers {
+function dind::maybe-rebuild-base-containers {
   if [[ "${DIND_KUBEADM_FORCE_REBUILD:-}" ]] || ! docker images "${systemd_image_with_tag}" | grep -q "${systemd_image_with_tag}"; then
     docker build -t "${systemd_image_with_tag}" "${DIND_ROOT}/image/systemd"
   fi
 }
 
-function dind::kubeadm::start-tmp-container {
+function dind::start-tmp-container {
   tmp_container=$(docker run \
                          -d --privileged \
                          --name kubeadm-base-$(openssl rand -hex 16) \
@@ -88,7 +88,7 @@ function dind::kubeadm::start-tmp-container {
   docker exec ${tmp_container} start_services docker
 }
 
-function dind::kubeadm::tmp-container-commit {
+function dind::tmp-container-commit {
   local image="$1"
   # make sure Docker doesn't start before docker0 bridge is created
   docker exec ${tmp_container} systemctl stop docker
@@ -107,11 +107,11 @@ function dind::kubeadm::tmp-container-commit {
   docker commit --change 'ENTRYPOINT ["/sbin/init"]' "${tmp_container}" "${image}"
 }
 
-# dind::kubeadm::prepare prepares a DIND image with base
+# dind::prepare prepares a DIND image with base
 # 'hypokube' image inside it & pre-pulls images used by k8s into it.
 # It doesn't place actual k8s binaries into the image though.
-function dind::kubeadm::prepare {
-  dind::kubeadm::start-tmp-container "${systemd_image_with_tag}"
+function dind::prepare {
+  dind::start-tmp-container "${systemd_image_with_tag}"
   docker cp "$DIND_ROOT/image/hypokube" ${tmp_container}:/
 
   # k8s.io/hypokube
@@ -127,19 +127,19 @@ function dind::kubeadm::prepare {
   curl -sSL --retry 5 https://storage.googleapis.com/kubernetes-release/network-plugins/cni-${ARCH}-${CNI_RELEASE}.tar.gz |
       docker exec -i ${tmp_container} tar -C /usr/lib/kubernetes/cni/bin -xz
 
-  dind::kubeadm::tmp-container-commit "${IMAGE_REPO}:${IMAGE_BASE_TAG}"
+  dind::tmp-container-commit "${IMAGE_REPO}:${IMAGE_BASE_TAG}"
 }
 
-# dind::kubeadm::push-binaries creates a DIND image
+# dind::push-binaries creates a DIND image
 # with kubectl, kubeadm and kubelet binaris along with 'hypokube'
 # image with hyperkube binary inside it.
-function dind::kubeadm::push-binaries {
-  dind::kubeadm::start-tmp-container "${volume_args[@]}" "${IMAGE_REPO}:${IMAGE_BASE_TAG}"
+function dind::push-binaries {
+  dind::start-tmp-container "${volume_args[@]}" "${IMAGE_REPO}:${IMAGE_BASE_TAG}"
   docker exec ${tmp_container} /hypokube/place_binaries.sh
-  dind::kubeadm::tmp-container-commit "${IMAGE_REPO}:${IMAGE_TAG}"
+  dind::tmp-container-commit "${IMAGE_REPO}:${IMAGE_TAG}"
 }
 
-function dind::kubeadm::run {
+function dind::run {
   # FIXME (create several containers)
   local container_name="$1"
   local netshift="$2"
@@ -170,19 +170,19 @@ function dind::kubeadm::run {
   docker exec "${new_container}" wrapkubeadm "$@"
 }
 
-function dind::kubeadm::init {
-  dind::kubeadm::run kube-master 1 127.0.0.1:${APISERVER_PORT}:8080 init "$@"
+function dind::init {
+  dind::run kube-master 1 127.0.0.1:${APISERVER_PORT}:8080 init "$@"
   kubectl config set-cluster dind --server="http://localhost:${APISERVER_PORT}" --insecure-skip-tls-verify=true
   kubectl config set-context dind --cluster=dind
   kubectl config use-context dind
 }
 
-function dind::kubeadm::join {
+function dind::join {
   # if there's just one node currently, it's master, thus we need to use
   # kube-node-1 hostname, if there are two nodes, we should pick
   # kube-node-2 and so on
   local next_node_index=$(docker ps --format='{{.Names}}' --filter=label=kubeadm-dind | wc -l | sed 's/^ *//g')
-  dind::kubeadm::run kube-node-${next_node_index} $((next_node_index + 1)) "" join "$@"
+  dind::run kube-node-${next_node_index} $((next_node_index + 1)) "" join "$@"
 }
 
 function dind::escape-e2e-name {
@@ -242,20 +242,20 @@ function dind::run-e2e-serial {
 
 case "${1:-}" in
   prepare)
-    dind::kubeadm::maybe-rebuild-base-containers
-    dind::kubeadm::prepare
-    dind::kubeadm::push-binaries
+    dind::maybe-rebuild-base-containers
+    dind::prepare
+    dind::push-binaries
     ;;
   push)
-    dind::kubeadm::push-binaries
+    dind::push-binaries
     ;;
   init)
     shift
-    dind::kubeadm::init "$@"
+    dind::init "$@"
     ;;
   join)
     shift
-    dind::kubeadm::join "$@"
+    dind::join "$@"
     ;;
   e2e)
     shift
