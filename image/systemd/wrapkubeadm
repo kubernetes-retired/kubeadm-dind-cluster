@@ -70,8 +70,6 @@ Environment='KUBELET_EXTRA_ARGS=--hostname-override=${hostname_override} --v=4'
 EOF
 fi
 
-systemctl daemon-reload
-
 start_services docker kubelet
 systemctl enable docker kubelet
 

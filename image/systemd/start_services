@@ -1,9 +1,26 @@
-#!/bin/bash
+#!/bin/bash -x
 
 set -o errexit
 set -o nounset
 set -o pipefail
 set -o errtrace
+
+if [ "${USE_OVERLAY:-}" = "y" ]; then
+  kubelet_override_conf=/etc/systemd/system/docker.service.d/20-overlay.conf
+  mkdir -p "$(dirname "${kubelet_override_conf}")"
+  # TBD: use overlay2 driver & newer docker
+  cat >"${kubelet_override_conf}" <<'EOF'
+[Service]
+ExecStart=
+ExecStart=/usr/bin/docker daemon -H fd:// --storage-driver=overlay -g /var/lib/docker2 $DOCKER_EXTRA_OPTS
+EOF
+  if [ -d "/var/lib/docker_keep" ]; then
+    mv /var/lib/docker_keep/* /var/lib/docker2/
+    rmdir /var/lib/docker_keep
+  fi
+fi
+
+systemctl daemon-reload
 
 # wait for systemd to start in the container
 (( timeout = 60 + SECONDS ))

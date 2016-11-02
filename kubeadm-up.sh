@@ -33,6 +33,7 @@ fi
 
 source "${DIND_ROOT}/config.sh"
 
+USE_OVERLAY=${USE_OVERLAY:-y}
 APISERVER_PORT=${APISERVER_PORT:-8080}
 IMAGE_REPO=${IMAGE_REPO:-k8s.io/kubeadm-dind}
 IMAGE_TAG=${IMAGE_TAG:-latest}
@@ -64,7 +65,7 @@ tmp_containers=()
 function cleanup {
   if [ ${#tmp_containers[@]} -gt 0 ]; then
     for name in "${tmp_containers[@]}"; do
-      docker rm -f "${name}" 2>/dev/null
+      docker rm -vf "${name}" 2>/dev/null
     done
   fi
 }
@@ -81,6 +82,7 @@ function dind::kubeadm::start-tmp-container {
                          -d --privileged \
                          --name kubeadm-base-$(openssl rand -hex 16) \
                          --hostname kubeadm-base \
+                         -e USE_OVERLAY=${USE_OVERLAY} \
                          "$@")
   tmp_containers+=("${tmp_container}")
   docker exec ${tmp_container} start_services docker
@@ -107,7 +109,11 @@ function dind::kubeadm::prepare {
       docker exec -i ${tmp_container} tar -C /usr/lib/kubernetes/cni/bin -xz
 
   # make sure Docker doesn't start before docker0 bridge is created
+  docker exec ${tmp_container} systemctl stop docker
   docker exec ${tmp_container} systemctl disable docker
+  if [ "${USE_OVERLAY}" = "y" ]; then
+    docker exec ${tmp_container} bash -c "mkdir -p /var/lib/docker_keep && mv /var/lib/docker2/* /var/lib/docker_keep/"
+  fi
 
   # stop the container & commit the image
   docker stop ${tmp_container}
@@ -122,6 +128,13 @@ function dind::kubeadm::prepare {
 function dind::kubeadm::push-binaries {
   dind::kubeadm::start-tmp-container "${volume_args[@]}" "${IMAGE_REPO}:${IMAGE_BASE_TAG}"
   docker exec ${tmp_container} /hypokube/place_binaries.sh
+
+  docker exec ${tmp_container} systemctl stop docker
+  docker exec ${tmp_container} systemctl disable docker
+  if [ "${USE_OVERLAY}" = "y" ]; then
+    docker exec ${tmp_container} bash -c "mkdir -p /var/lib/docker_keep && mv /var/lib/docker2/* /var/lib/docker_keep/"
+  fi
+
   docker stop ${tmp_container}
   docker commit --change 'ENTRYPOINT ["/sbin/init"]' "${tmp_container}" "${IMAGE_REPO}:${IMAGE_TAG}"
 }
@@ -135,7 +148,7 @@ function dind::kubeadm::run {
   shift 3
 
   # remove any previously created containers with the same name
-  docker rm -f "${container_name}" 2>/dev/null || true
+  docker rm -vf "${container_name}" 2>/dev/null || true
 
   if [[ "$portforward" ]]; then
     portforward_opts=(-p "$portforward")
@@ -146,8 +159,10 @@ function dind::kubeadm::run {
                          -d --privileged \
                          --name "${container_name}" \
                          --hostname "${container_name}" \
+                         -e USE_OVERLAY=${USE_OVERLAY} \
                          -e DOCKER_NETWORK_OFFSET=0.0.${netshift}.0 \
                          -e HYPERKUBE_IMAGE=k8s.io/hypokube:v1 \
+                         -l kubeadm-dind \
                          ${portforward_opts[@]+"${portforward_opts[@]}"} \
                          "${IMAGE_REPO}:${IMAGE_TAG}")
 
@@ -166,13 +181,12 @@ function dind::kubeadm::join {
   # if there's just one node currently, it's master, thus we need to use
   # kube-node-1 hostname, if there are two nodes, we should pick
   # kube-node-2 and so on
-  local next_node_index=$(docker exec kube-master kubectl get nodes -o name | wc -l | sed 's/^ *//g')
+  local next_node_index=$(docker ps --format='{{.Names}}' --filter=label=kubeadm-dind | wc -l | sed 's/^ *//g')
   dind::kubeadm::run kube-node-${next_node_index} $((next_node_index + 1)) "" join "$@"
 }
 
 function dind::run-e2e {
   local num_nodes
-  num_nodes="$(kubectl get nodes -o name|wc -l|sed 's/ //g')"
   docker run \
          --rm -it \
          --net=host \
@@ -181,7 +195,6 @@ function dind::run-e2e {
          -e KUBE_MASTER_IP=http://localhost:${APISERVER_PORT} \
          -e KUBE_MASTER=local \
          -e KUBERNETES_CONFORMANCE_TEST=y \
-         -e GINKGO_PARALLEL_NODES=${num_nodes} \
          -e GINKGO_PARALLEL=y \
          -w /go/src/k8s.io/kubernetes \
          "${e2e_base_image}" \
@@ -202,7 +215,7 @@ case "${1:-}" in
     ;;
   push)
     dind::kubeadm::push-binaries
-    ;;    
+    ;;
   init)
     shift
     dind::kubeadm::init "$@"
