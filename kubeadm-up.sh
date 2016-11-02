@@ -52,14 +52,16 @@ PREPULL_IMAGES=(gcr.io/google_containers/kube-discovery-amd64:1.0
                 gcr.io/google_containers/pause-amd64:3.0
                 gcr.io/google_containers/etcd-amd64:2.2.5)
 
-if [ -n "${KUBEADM_DIND_LOCAL:-}" ]; then
-  volume_args=(-v "$PWD:/go/src/k8s.io/kubernetes")
-else
-  volume_args=(--volumes-from "$(KUBE_ROOT=$PWD &&
+function dind::set-volume-args {
+  if [ -n "${KUBEADM_DIND_LOCAL:-}" ]; then
+    volume_args=(-v "$PWD:/go/src/k8s.io/kubernetes")
+  else
+    volume_args=(--volumes-from "$(KUBE_ROOT=$PWD &&
                                    . build-tools/common.sh &&
                                    kube::build::verify_prereqs >&2 &&
                                    echo "$KUBE_DATA_CONTAINER_NAME")")
-fi
+  fi
+}
 
 tmp_containers=()
 function cleanup {
@@ -73,11 +75,13 @@ trap cleanup EXIT
 
 function dind::maybe-rebuild-base-containers {
   if [[ "${DIND_KUBEADM_FORCE_REBUILD:-}" ]] || ! docker images "${systemd_image_with_tag}" | grep -q "${systemd_image_with_tag}"; then
+    dind::step "Building base image:" "${systemd_image_with_tag}"
     docker build -t "${systemd_image_with_tag}" "${DIND_ROOT}/image/systemd"
   fi
 }
 
 function dind::start-tmp-container {
+  dind::step "Starting temporary DIND container"
   tmp_container=$(docker run \
                          -d --privileged \
                          --name kubeadm-base-$(openssl rand -hex 16) \
@@ -90,6 +94,7 @@ function dind::start-tmp-container {
 
 function dind::tmp-container-commit {
   local image="$1"
+  dind::step "Committing image:" "${image}"
   # make sure Docker doesn't start before docker0 bridge is created
   docker exec ${tmp_container} systemctl stop docker
   docker exec ${tmp_container} systemctl disable docker
@@ -112,14 +117,17 @@ function dind::tmp-container-commit {
 # It doesn't place actual k8s binaries into the image though.
 function dind::prepare {
   dind::start-tmp-container "${systemd_image_with_tag}"
-  docker cp "$DIND_ROOT/image/hypokube" ${tmp_container}:/
 
-  # k8s.io/hypokube
+  dind::step "Building hypokube image"
+  docker cp "$DIND_ROOT/image/hypokube" ${tmp_container}:/
   docker exec ${tmp_container} docker build -t k8s.io/hypokube:base -f /hypokube/base.dkr /hypokube
+
   for image in "${PREPULL_IMAGES[@]}"; do
-    docker exec ${tmp_container} docker pull "$image"
+    dind::step "Pulling image:" "${image}"
+    docker exec ${tmp_container} docker pull "${image}"
   done
 
+  dind::step "Downloading CNI"
   # TBD: sha256sum
   ARCH="${ARCH:-amd64}"
   CNI_RELEASE="${CNI_RELEASE:-07a8a28637e97b22eb8dfe710eeae1344f69d16e}"
@@ -133,7 +141,9 @@ function dind::prepare {
 # with kubectl, kubeadm and kubelet binaris along with 'hypokube'
 # image with hyperkube binary inside it.
 function dind::push-binaries {
+  dind::set-volume-args
   dind::start-tmp-container "${volume_args[@]}" "${IMAGE_REPO}:${IMAGE_BASE_TAG}"
+  dind::step "Updating hypokube image"
   docker exec ${tmp_container} /hypokube/place_binaries.sh
   dind::tmp-container-commit "${IMAGE_REPO}:${IMAGE_TAG}"
 }
@@ -153,6 +163,7 @@ function dind::run {
     portforward_opts=(-p "$portforward")
   fi
 
+  dind::step "Starting DIND container:" "${container_name}"
   # Start the new container.
   new_container=$(docker run \
                          -d --privileged \
@@ -166,14 +177,16 @@ function dind::run {
                          "${IMAGE_REPO}:${IMAGE_TAG}")
 
   # See also image/systemd/wrapkubeadm
+  dind::step "Running kubeadm:" "$*"
   docker exec "${new_container}" wrapkubeadm "$@"
 }
 
 function dind::init {
   dind::run kube-master 1 127.0.0.1:${APISERVER_PORT}:8080 init "$@"
-  kubectl config set-cluster dind --server="http://localhost:${APISERVER_PORT}" --insecure-skip-tls-verify=true
-  kubectl config set-context dind --cluster=dind
-  kubectl config use-context dind
+  dind::step "Setting cluster config"
+  cluster/kubectl.sh config set-cluster dind --server="http://localhost:${APISERVER_PORT}" --insecure-skip-tls-verify=true
+  cluster/kubectl.sh config set-context dind --cluster=dind
+  cluster/kubectl.sh config use-context dind
 }
 
 function dind::join {
@@ -199,6 +212,8 @@ function dind::do-run-e2e {
   if [[ "$skip" ]]; then
     test_args="--ginkgo.skip=${skip} ${test_args}"
   fi
+  dind::step "Running e2e tests with args:" "${test_args}"
+  dind::set-volume-args
   docker run \
          --rm -it \
          --net=host \
@@ -237,6 +252,21 @@ function dind::run-e2e-serial {
   fi
   dind::do-run-e2e n "${focus}" "${skip}"
   # TBD: specify filter
+}
+
+function dind::step {
+  local OPTS=""
+  if [ "$1" = "-n" ]; then
+    shift
+    OPTS+="-n"
+  fi
+  GREEN="${1}"
+  shift
+  if [ -t 1 ] ; then
+    echo -e ${OPTS} "\x1B[97m* \x1B[92m${GREEN}\x1B[39m $*" 1>&2
+  else
+    echo ${OPTS} "* ${GREEN} $*" 1>&2
+  fi
 }
 
 case "${1:-}" in
