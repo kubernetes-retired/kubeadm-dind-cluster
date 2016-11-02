@@ -4,7 +4,7 @@ FROM gcr.io/kubeadm/ci-xenial-systemd:base-master-6f6ae74260bfa1b6d97251e6e01914
 
 RUN apt-get -qq update && \
     DEBIAN_FRONTEND=noninteractive apt-get upgrade -qqy && \
-    DEBIAN_FRONTEND=noninteractive apt-get install bridge-utils net-tools iproute2 iputils-ping tcpdump ipcalc jq -qqy && \
+    DEBIAN_FRONTEND=noninteractive apt-get install bridge-utils net-tools iproute2 iputils-ping tcpdump ipcalc jq curl -qqy && \
     apt-get -qq -y autoremove && \
     apt-get -qq clean && \
     mkdir -p /etc/systemd/system/kubelet.service.d

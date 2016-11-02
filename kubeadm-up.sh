@@ -124,8 +124,7 @@ function dind::prepare {
   ARCH="${ARCH:-amd64}"
   CNI_RELEASE="${CNI_RELEASE:-07a8a28637e97b22eb8dfe710eeae1344f69d16e}"
   docker exec ${tmp_container} mkdir -p /usr/lib/kubernetes/cni/bin
-  curl -sSL --retry 5 https://storage.googleapis.com/kubernetes-release/network-plugins/cni-${ARCH}-${CNI_RELEASE}.tar.gz |
-      docker exec -i ${tmp_container} tar -C /usr/lib/kubernetes/cni/bin -xz
+  docker exec -i ${tmp_container} bash -c "curl -sSL --retry 5 https://storage.googleapis.com/kubernetes-release/network-plugins/cni-${ARCH}-${CNI_RELEASE}.tar.gz | tar -C /usr/lib/kubernetes/cni/bin -xz"
 
   dind::tmp-container-commit "${IMAGE_REPO}:${IMAGE_BASE_TAG}"
 }
