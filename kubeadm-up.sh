@@ -185,8 +185,21 @@ function dind::kubeadm::join {
   dind::kubeadm::run kube-node-${next_node_index} $((next_node_index + 1)) "" join "$@"
 }
 
-function dind::run-e2e {
-  local num_nodes
+function dind::escape-e2e-name {
+    sed 's/[]\$*.^|()[]/\\&/g; s/\s\+/\\s+/g' <<< "$1" | tr -d '\n'
+}
+
+function dind::do-run-e2e {
+  local parallel="${1:-}"
+  local focus="${2:-}"
+  local skip="${3:-}"
+  local test_args="--host=http://localhost:${APISERVER_PORT}"
+  if [[ "$focus" ]]; then
+    test_args="--ginkgo.focus=${focus} ${test_args}"
+  fi
+  if [[ "$skip" ]]; then
+    test_args="--ginkgo.skip=${skip} ${test_args}"
+  fi
   docker run \
          --rm -it \
          --net=host \
@@ -195,16 +208,36 @@ function dind::run-e2e {
          -e KUBE_MASTER_IP=http://localhost:${APISERVER_PORT} \
          -e KUBE_MASTER=local \
          -e KUBERNETES_CONFORMANCE_TEST=y \
-         -e GINKGO_PARALLEL=y \
+         -e GINKGO_PARALLEL=${parallel} \
          -w /go/src/k8s.io/kubernetes \
          "${e2e_base_image}" \
          bash -c "cluster/kubectl.sh config set-cluster dind --server='http://localhost:${APISERVER_PORT}' --insecure-skip-tls-verify=true &&
          cluster/kubectl.sh config set-context dind --cluster=dind &&
          cluster/kubectl.sh config use-context dind &&
-         go run hack/e2e.go --v --test -check_version_skew=false \
-         --test_args='--ginkgo.focus=\[Conformance\] --ginkgo.skip=\[Serial\] --host=http://localhost:${APISERVER_PORT}'"
+         go run hack/e2e.go --v --test -check_version_skew=false --test_args='${test_args}'"
+}
+
+function dind::run-e2e {
+  local focus="${1:-}"
+  local skip="${2:-\[Serial\]}"
+  if [[ "$focus" ]]; then
+    focus="$(dind::escape-e2e-name "${focus}")"
+  else
+    focus="\[Conformance\]"
+  fi
+  dind::do-run-e2e y "${focus}" "${skip}"
+}
+
+function dind::run-e2e-serial {
+  local focus="${1:-}"
+  local skip="${2:-}"
+  if [[ "$focus" ]]; then
+    focus="$(dind::escape-e2e-name "${focus}")"
+  else
+    focus="\[Serial\].*\[Conformance\]"
+  fi
+  dind::do-run-e2e n "${focus}" "${skip}"
   # TBD: specify filter
-  # TBD: serial tests
 }
 
 case "${1:-}" in
@@ -227,6 +260,10 @@ case "${1:-}" in
   e2e)
     shift
     dind::run-e2e "$@"
+    ;;
+  e2e-serial)
+    shift
+    dind::run-e2e-serial "$@"
     ;;
   *)
     echo "usage: $0 init|join kubeadm-args..." >&2
