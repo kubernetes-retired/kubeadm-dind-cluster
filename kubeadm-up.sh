@@ -193,12 +193,44 @@ function dind::join {
   # if there's just one node currently, it's master, thus we need to use
   # kube-node-1 hostname, if there are two nodes, we should pick
   # kube-node-2 and so on
-  local next_node_index=$(docker ps --format='{{.Names}}' --filter=label=kubeadm-dind | wc -l | sed 's/^ *//g')
+  local next_node_index=${1:-$(docker ps -q --filter=label=kubeadm-dind | wc -l | sed 's/^ *//g')}
+  shift
   dind::run kube-node-${next_node_index} $((next_node_index + 1)) "" join "$@"
 }
 
 function dind::escape-e2e-name {
     sed 's/[]\$*.^|()[]/\\&/g; s/\s\+/\\s+/g' <<< "$1" | tr -d '\n'
+}
+
+function dind::up {
+  local token_option="--token=faa9d1.349ba886c1ec02e0"
+  dind::down
+  dind::init "${token_option}"
+  local master_ip="$(docker inspect --format="{{.NetworkSettings.IPAddress}}" kube-master)"
+  status=0
+  local -a pids
+  for ((n=1; n <= NUM_NODES; n++)); do
+    (
+      dind::step "Starting node:" ${n}
+      if ! out="$(dind::join ${n} "${token_option}" "${master_ip}" 2>&1)"; then
+        echo >&2 -e "Failed to start node ${n}:\n${out}"
+        exit 1
+      else
+        dind::step "Node started:" ${n}
+      fi
+    )&
+    pids[${n}]=$!
+  done
+  for pid in ${pids[*]}; do
+    wait ${pid}
+  done
+}
+
+function dind::down {
+  docker ps -q --filter=label=kubeadm-dind | while read container_id; do
+    dind::step "Removing container:" "${container_id}"
+    docker rm -fv "${container_id}"
+  done
 }
 
 function dind::do-run-e2e {
@@ -278,13 +310,19 @@ case "${1:-}" in
   push)
     dind::push-binaries
     ;;
+  up)
+    dind::up
+    ;;
+  down)
+    dind::down
+    ;;
   init)
     shift
     dind::init "$@"
     ;;
   join)
     shift
-    dind::join "$@"
+    dind::join "" "$@"
     ;;
   e2e)
     shift
@@ -297,6 +335,8 @@ case "${1:-}" in
   *)
     echo "usage:" >&2
     echo "  $0 prepare" >&2
+    echo "  $0 up" >&2
+    echo "  $0 down" >&2
     echo "  $0 init kubeadm-args..." >&2
     echo "  $0 join kubeadm-args..." >&2
     echo "  $0 push" >&2
