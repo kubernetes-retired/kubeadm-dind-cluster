@@ -15,7 +15,11 @@ ExecStart=
 ExecStart=/usr/bin/docker daemon -H fd:// --storage-driver=overlay -g /var/lib/docker2 $DOCKER_EXTRA_OPTS
 EOF
   if [ -d "/var/lib/docker_keep" ]; then
-    mv /var/lib/docker_keep/* /var/lib/docker2/
+      # 'mv /var/lib/docker_keep/* /var/lib/docker2/' was causing
+      # 'cannot create hardlink' errors when used with Mac docker
+      for filename in /var/lib/docker_keep/*; do
+          mv "$filename" /var/lib/docker2/
+      done
     rmdir /var/lib/docker_keep
   fi
 fi
