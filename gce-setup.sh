@@ -5,10 +5,10 @@ else
   readlinkf(){ readlink -f "$1"; }
 fi
 DIND_ROOT="$(cd $(dirname "$(readlinkf "${BASH_SOURCE}")"); pwd)"
-
+KUBE_DIND_GCE_PROJECT="${KUBE_DIND_GCE_PROJECT:-$(gcloud config list --format 'value(core.project)' 2>/dev/null)}"
 # Based on instructions from k8s build-tools/README.md
 if [ -z "${KUBE_DIND_GCE_PROJECT:-}" ]; then
-    echo >&2 "Please set KUBE_DIND_GCE_PROJECT"
+    echo >&2 "Please set KUBE_DIND_GCE_PROJECT or use 'gcloud config set project NAME'"
     return 1
 fi
 
