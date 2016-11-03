@@ -1,4 +1,4 @@
-# kubernetes-dind-cluster
+# kubeadm-dind-cluster
 A Kubernetes multi-node cluster for developer _of_ Kubernetes. Based
 on kubeadm and DIND (Docker in Docker).
 
