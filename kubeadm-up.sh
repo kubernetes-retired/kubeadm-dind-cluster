@@ -38,7 +38,7 @@ APISERVER_PORT=${APISERVER_PORT:-8080}
 IMAGE_REPO=${IMAGE_REPO:-k8s.io/kubeadm-dind}
 IMAGE_TAG=${IMAGE_TAG:-latest}
 IMAGE_BASE_TAG=base
-base_image_with_tag="k8s.io/kubernetes-dind-base:v1"
+force_rebuild=
 systemd_image_with_tag="k8s.io/kubernetes-dind-systemd:v1"
 e2e_base_image="golang:1.7.1"
 # fixme: don't hardcode versions here
@@ -52,29 +52,47 @@ PREPULL_IMAGES=(gcr.io/google_containers/kube-discovery-amd64:1.0
                 gcr.io/google_containers/pause-amd64:3.0
                 gcr.io/google_containers/etcd-amd64:2.2.5)
 
+volume_args=()
+
 function dind::set-volume-args {
+  if [ ${#volume_args[@]} -gt 0 ]; then
+    return 0
+  fi
+  build_container_name=
   if [ -n "${KUBEADM_DIND_LOCAL:-}" ]; then
     volume_args=(-v "$PWD:/go/src/k8s.io/kubernetes")
   else
-    volume_args=(--volumes-from "$(KUBE_ROOT=$PWD &&
-                                   . build-tools/common.sh &&
-                                   kube::build::verify_prereqs >&2 &&
-                                   echo "$KUBE_DATA_CONTAINER_NAME")")
+    build_container_name="$(KUBE_ROOT=$PWD &&
+                            . build-tools/common.sh &&
+                            kube::build::verify_prereqs >&2 &&
+                            echo "$KUBE_DATA_CONTAINER_NAME")"
+    volume_args=(--volumes-from "${build_container_name}")
   fi
 }
 
 tmp_containers=()
-function cleanup {
+
+function dind::cleanup {
   if [ ${#tmp_containers[@]} -gt 0 ]; then
     for name in "${tmp_containers[@]}"; do
       docker rm -vf "${name}" 2>/dev/null
     done
   fi
 }
-trap cleanup EXIT
+
+trap dind::cleanup EXIT
+
+function dind::check-image {
+  local name="$1"
+  if docker inspect --format 'x' "${name}" >&/dev/null; then
+    return 0
+  else
+    return 1
+  fi
+}
 
 function dind::maybe-rebuild-base-containers {
-  if [[ "${DIND_KUBEADM_FORCE_REBUILD:-}" ]] || ! docker images "${systemd_image_with_tag}" | grep -q "${systemd_image_with_tag}"; then
+  if [[ "${DIND_KUBEADM_FORCE_REBUILD:-}" ]] || ! dind::check-image "${systemd_image_with_tag}"; then
     dind::step "Building base image:" "${systemd_image_with_tag}"
     docker build -t "${systemd_image_with_tag}" "${DIND_ROOT}/image/systemd"
   fi
@@ -137,11 +155,81 @@ function dind::prepare {
   dind::tmp-container-commit "${IMAGE_REPO}:${IMAGE_BASE_TAG}"
 }
 
+function dind::make-for-linux {
+  local copy="$1"
+  shift
+  dind::step "Building binaries:" "$*"
+  if [ -n "${KUBEADM_DIND_LOCAL:-}" ]; then
+    set -x
+    make WHAT="$*"
+    { set +x; } 2>/dev/null
+  elif [ "${copy}" = "y" ]; then
+    set -x
+    build-tools/run.sh make WHAT="$*"
+    { set +x; } 2>/dev/null
+  else
+    set -x
+    KUBE_RUN_COPY_OUTPUT=n build-tools/run.sh make WHAT="$*"
+    { set +x; } 2>/dev/null
+  fi
+}
+
+function dind::check-binary {
+  local filename="$1"
+  local dockerized="_output/dockerized/bin/linux/amd64/${filename}"
+  local plain="_output/local/bin/linux/amd64/${filename}"
+  dind::set-volume-args
+  # FIXME: don't hardcode amd64 arch
+  if [ -n "${KUBEADM_DIND_LOCAL:-${force_local:-}}" ]; then
+    if [ -f "${dockerized}" -o -f "${plain}" ]; then
+      return 0
+    fi
+  elif docker run --rm "${volume_args[@]}" \
+              busybox test \
+              -f "/go/src/k8s.io/kubernetes/${dockerized}" >&/dev/null; then
+    return 0
+  fi
+  return 1
+}
+
+function dind::ensure-kubectl {
+  if [ $(uname) = Darwin ]; then
+    if [[ "${force_rebuild}" ]] || [ ! -f _output/local/bin/darwin/amd64/kubectl ]; then
+      dind::step "Building kubectl"
+      set -x
+      make WHAT=cmd/kubectl
+      { set +x; } 2>/dev/null
+    fi
+  elif [[ "${force_rebuild}" ]] || ! force_local=y dind::check-binary cmd/kubectl; then
+    dind::make-for-linux y cmd/kubectl
+  fi
+}
+
+function dind::ensure-binaries {
+  local -a to_build=()
+  for name in "$@"; do
+    if [[ "${force_rebuild}" ]] || ! dind::check-binary "$(basename "${name}")"; then
+      to_build+=("${name}")
+    fi
+  done
+  if [ "${#to_build[@]}" -gt 0 ]; then
+    dind::make-for-linux n "${to_build[@]}"
+  fi
+  return 0
+}
+
 # dind::push-binaries creates a DIND image
 # with kubectl, kubeadm and kubelet binaris along with 'hypokube'
 # image with hyperkube binary inside it.
 function dind::push-binaries {
+  if ! dind::check-image "${IMAGE_REPO}:${IMAGE_BASE_TAG}"; then
+    dind::maybe-rebuild-base-containers
+    dind::prepare
+  fi
+
   dind::set-volume-args
+  dind::ensure-kubectl
+  dind::ensure-binaries cmd/hyperkube cmd/kubelet cmd/kubectl cmd/kubeadm
   dind::start-tmp-container "${volume_args[@]}" "${IMAGE_REPO}:${IMAGE_BASE_TAG}"
   dind::step "Updating hypokube image"
   docker exec ${tmp_container} /hypokube/place_binaries.sh
@@ -155,6 +243,8 @@ function dind::run {
   local portforward="$3"
   local -a portforward_opts=()
   shift 3
+
+  dind::ensure-kubectl
 
   # remove any previously created containers with the same name
   docker rm -vf "${container_name}" 2>/dev/null || true
@@ -182,6 +272,9 @@ function dind::run {
 }
 
 function dind::init {
+  if ! dind::check-image "${IMAGE_REPO}:${IMAGE_TAG}"; then
+    dind::push-binaries
+  fi
   dind::run kube-master 1 127.0.0.1:${APISERVER_PORT}:8080 init "$@"
   dind::step "Setting cluster config"
   cluster/kubectl.sh config set-cluster dind --server="http://localhost:${APISERVER_PORT}" --insecure-skip-tls-verify=true
@@ -244,6 +337,8 @@ function dind::do-run-e2e {
   if [[ "$skip" ]]; then
     test_args="--ginkgo.skip=${skip} ${test_args}"
   fi
+  dind::ensure-kubectl
+  dind::ensure-binaries test/e2e/e2e.test vendor/github.com/onsi/ginkgo/ginkgo
   dind::step "Running e2e tests with args:" "${test_args}"
   dind::set-volume-args
   docker run \
@@ -292,7 +387,7 @@ function dind::step {
     shift
     OPTS+="-n"
   fi
-  GREEN="${1}"
+  GREEN="$1"
   shift
   if [ -t 1 ] ; then
     echo -e ${OPTS} "\x1B[97m* \x1B[92m${GREEN}\x1B[39m $*" 1>&2
@@ -302,12 +397,8 @@ function dind::step {
 }
 
 case "${1:-}" in
-  prepare)
-    dind::maybe-rebuild-base-containers
-    dind::prepare
-    dind::push-binaries
-    ;;
-  push)
+  update)
+    force_rebuild=y
     dind::push-binaries
     ;;
   up)
@@ -334,12 +425,11 @@ case "${1:-}" in
     ;;
   *)
     echo "usage:" >&2
-    echo "  $0 prepare" >&2
+    echo "  $0 update" >&2
     echo "  $0 up" >&2
     echo "  $0 down" >&2
     echo "  $0 init kubeadm-args..." >&2
     echo "  $0 join kubeadm-args..." >&2
-    echo "  $0 push" >&2
     echo "  $0 e2e [test-name-substring]" >&2
     echo "  $0 e2e-serial [test-name-substring]" >&2
     exit 1

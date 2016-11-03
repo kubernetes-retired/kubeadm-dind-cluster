@@ -22,6 +22,7 @@ function find-binary {
 }
 
 # copy binaries needed for kubeadm
+# FIXME: don't hardcode amd64 arch
 cp "$(find-binary kubectl linux/amd64)" /usr/bin/
 cp "$(find-binary kubeadm linux/amd64)" /usr/sbin/
 cp "$(find-binary kubelet linux/amd64)" /usr/sbin/

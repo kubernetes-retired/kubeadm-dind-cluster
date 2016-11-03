@@ -30,9 +30,5 @@ docker-machine ssh ${KUBE_DIND_VM} \
                -L ${KUBE_RSYNC_PORT}:localhost:${KUBE_RSYNC_PORT} \
                -L ${APISERVER_PORT}:localhost:${APISERVER_PORT} \
                -N&
-time KUBE_RUN_COPY_OUTPUT=n \
-     build-tools/run.sh \
-     make WHAT='cmd/hyperkube cmd/kubelet cmd/kubectl cmd/kubeadm test/e2e/e2e.test vendor/github.com/onsi/ginkgo/ginkgo'
-time "${DIND_ROOT}"/kubeadm-up.sh prepare
 time "${DIND_ROOT}"/kubeadm-up.sh up
 set +x
