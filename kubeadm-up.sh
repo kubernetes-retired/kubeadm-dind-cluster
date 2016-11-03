@@ -37,9 +37,9 @@ USE_OVERLAY=${USE_OVERLAY:-y}
 APISERVER_PORT=${APISERVER_PORT:-8080}
 IMAGE_REPO=${IMAGE_REPO:-k8s.io/kubeadm-dind}
 IMAGE_TAG=${IMAGE_TAG:-latest}
-IMAGE_BASE_TAG=base
+IMAGE_BASE_TAG=base-v2
 force_rebuild=
-systemd_image_with_tag="k8s.io/kubernetes-dind-systemd:v1"
+systemd_image_with_tag="k8s.io/kubernetes-dind-systemd:v2"
 e2e_base_image="golang:1.7.1"
 # fixme: don't hardcode versions here
 # fixme: consistent var name case
@@ -125,9 +125,8 @@ function dind::tmp-container-commit {
 
   # stop the container & commit the image
   docker stop ${tmp_container}
-  # XXX should be 'ENTRYPOINT ["/sbin/dind_init"]' but looks like outdated
-  # gcr.io/kubeadm/ci-xenial-systemd:bare is being used...
-  docker commit --change 'ENTRYPOINT ["/sbin/init"]' "${tmp_container}" "${image}"
+  # TBD: update gcr.io/kubeadm/ci-xenial-systemd:base / bare
+  docker commit --change 'ENTRYPOINT ["/sbin/dind_init"]' "${tmp_container}" "${image}"
 }
 
 # dind::prepare prepares a DIND image with base

@@ -16,3 +16,7 @@ COPY start_services /usr/local/bin
 VOLUME ["/var/lib/docker2"]
 
 EXPOSE 8080
+
+# TBD: update gcr.io/kubeadm/ci-xenial-systemd:base / bare
+RUN ln -fs /sbin/init /sbin/dind_init
+ENTRYPOINT ["/sbin/dind_init"]
