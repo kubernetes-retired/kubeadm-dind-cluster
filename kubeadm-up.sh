@@ -54,6 +54,21 @@ PREPULL_IMAGES=(gcr.io/google_containers/kube-discovery-amd64:1.0
 
 volume_args=()
 
+overlay_tested=
+function dind::verify-overlay {
+  if [ "${USE_OVERLAY}" != "y" -o -n "${overlay_tested}" ]; then
+    return 0
+  fi
+  dind::step "Testing overlay filesystem in docker"
+  if ! docker run --rm -it busybox cat /proc/filesystems|grep -q '[[:blank:]]overlay[[:blank:]]*'; then
+    echo >&2 "WARNING: overlay filesystem doesn't appear to work, using vfs"
+    USE_OVERLAY=
+  else
+    dind::step "Overlay filesystem works"
+  fi
+  overlay_tested=y
+}
+
 function dind::set-volume-args {
   if [ ${#volume_args[@]} -gt 0 ]; then
     return 0
@@ -99,6 +114,7 @@ function dind::maybe-rebuild-base-containers {
 }
 
 function dind::start-tmp-container {
+  dind::verify-overlay
   dind::step "Starting temporary DIND container"
   tmp_container=$(docker run \
                          -d --privileged \
@@ -252,6 +268,7 @@ function dind::run {
     portforward_opts=(-p "$portforward")
   fi
 
+  dind::verify-overlay
   dind::step "Starting DIND container:" "${container_name}"
   # Start the new container.
   new_container=$(docker run \
