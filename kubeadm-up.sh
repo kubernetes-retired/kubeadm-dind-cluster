@@ -193,13 +193,13 @@ function dind::check-binary {
 
 function dind::ensure-kubectl {
   if [ $(uname) = Darwin ]; then
-    if [[ "${force_rebuild}" ]] || [ ! -f _output/local/bin/darwin/amd64/kubectl ]; then
+    if [ ! -f _output/local/bin/darwin/amd64/kubectl ]; then
       dind::step "Building kubectl"
       set -x
       make WHAT=cmd/kubectl
       { set +x; } 2>/dev/null
     fi
-  elif [[ "${force_rebuild}" ]] || ! force_local=y dind::check-binary cmd/kubectl; then
+  elif ! force_local=y dind::check-binary cmd/kubectl; then
     dind::make-for-linux y cmd/kubectl
   fi
 }
