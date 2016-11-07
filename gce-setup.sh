@@ -14,7 +14,7 @@ fi
 
 set -x
 KUBE_DIND_VM=k8s-dind
-export KUBE_RSYNC_PORT=8370
+export KUBE_RSYNC_PORT=8730
 export APISERVER_PORT=8899
 docker-machine create \
                --driver=google \
