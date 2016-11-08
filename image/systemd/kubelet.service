@@ -3,7 +3,7 @@ Description=kubelet: The Kubernetes Node Agent
 Documentation=http://kubernetes.io/docs/
 
 [Service]
-Environment="KUBELET_KUBECONFIG_ARGS=--kubeconfig=/etc/kubernetes/kubelet.conf --require-kubeconfig=true"
+Environment="KUBELET_KUBECONFIG_ARGS=--kubeconfig=/etc/kubernetes/kubelet.conf --require-kubeconfig=true --kube-api-content-type=application/json"
 Environment="KUBELET_SYSTEM_PODS_ARGS=--pod-manifest-path=/etc/kubernetes/manifests --allow-privileged=true"
 # Don't use CNI for now
 # Environment="KUBELET_NETWORK_ARGS=--network-plugin=cni --cni-conf-dir=/etc/kubernetes/cni/net.d --cni-bin-dir=/usr/lib/kubernetes/cni/bin"
