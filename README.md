@@ -12,7 +12,7 @@ $ cd kubernetes
 $ git clone git@github.com:Mirantis/kubeadm-dind-cluster.git dind
 
 $ # build binaries+images and start the cluster
-$ dind/kubeadm-up.sh up
+$ dind/dind-cluster.sh up
 
 $ kubectl get nodes
 NAME         STATUS    AGE
@@ -21,22 +21,22 @@ NAME         STATUS    AGE
 172.17.0.4   Ready     2m
 
 $ # run conformance tests
-$ dind/kubeadm-up.sh e2e
+$ dind/dind-cluster.sh e2e
 
 $ # rebuild binaries & update images
-$ dind/kubeadm-up.sh update
+$ dind/dind-cluster.sh update
 
 $ # restart the cluster
-$ dind/kubeadm-up.sh up
+$ dind/dind-cluster.sh up
 
 $ # run particular e2e test based on substring
-$ dind/kubeadm-up.sh e2e "existing RC"
+$ dind/dind-cluster.sh e2e "existing RC"
 
 $ # shut down the cluster
-$ dind/kubeadm-up.sh down
+$ dind/dind-cluster.sh down
 ```
 
-The first `dind/kubeadm-up.sh up` invocation can be slow because it
+The first `dind/dind-cluster.sh up` invocation can be slow because it
 needs to build the base image and Kubernetes binaries. Subsequent
 invocations are much faster.
 
@@ -109,7 +109,7 @@ At the moment, all non-serial `[Conformance]` e2e tests pass for
 clusters created by kubeadm-dind-cluster. `[Serial]...[Conformance]` tests
 currently have some issues. You may still try running them though:
 ```
-$ dind/kubeadm-up.sh e2e-serial
+$ dind/dind-cluster.sh e2e-serial
 ```
 CNI isn't used currently. The option to use it will be added in near
 future. For now, DIND containers' network interfaces are bridged together,
