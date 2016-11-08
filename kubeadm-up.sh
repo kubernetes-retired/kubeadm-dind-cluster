@@ -37,9 +37,9 @@ USE_OVERLAY=${USE_OVERLAY:-y}
 APISERVER_PORT=${APISERVER_PORT:-8080}
 IMAGE_REPO=${IMAGE_REPO:-k8s.io/kubeadm-dind}
 IMAGE_TAG=${IMAGE_TAG:-latest}
-IMAGE_BASE_TAG=base-v2
+IMAGE_BASE_TAG=base-v3
 force_rebuild=
-systemd_image_with_tag="k8s.io/kubernetes-dind-systemd:v2"
+systemd_image_with_tag="k8s.io/kubeadm-dind-systemd:v3"
 e2e_base_image="golang:1.7.1"
 # fixme: don't hardcode versions here
 # fixme: consistent var name case
