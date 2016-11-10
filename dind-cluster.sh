@@ -251,13 +251,23 @@ function dind::push-binaries {
   dind::tmp-container-commit "${IMAGE_REPO}:${IMAGE_TAG}"
 }
 
+run_opts=()
 function dind::run {
   # FIXME (create several containers)
-  local container_name="$1"
-  local netshift="$2"
-  local portforward="$3"
-  local -a portforward_opts=()
-  shift 3
+  local container_name="${1:-}"
+  local netshift="${2:-}"
+  local portforward="${3:-}"
+  local -a opts=(${run_opts[@]+"${run_opts[@]}"})
+  if [[ $# -gt 3 ]]; then
+    shift 3
+  else
+    shift $#
+  fi
+
+  if [[ ! "${container_name}" ]]; then
+    echo >&2 "Must specify container name"
+    exit 1
+  fi
 
   dind::ensure-kubectl
 
@@ -265,7 +275,11 @@ function dind::run {
   docker rm -vf "${container_name}" 2>/dev/null || true
 
   if [[ "$portforward" ]]; then
-    portforward_opts=(-p "$portforward")
+    opts+=(-p "$portforward")
+  fi
+
+  if [[ "$netshift" ]]; then
+    opts+=(-e DOCKER_NETWORK_OFFSET=0.0.${netshift}.0)
   fi
 
   dind::verify-overlay
@@ -275,22 +289,38 @@ function dind::run {
                          -d --privileged \
                          --name "${container_name}" \
                          --hostname "${container_name}" \
-                         -e USE_OVERLAY=${USE_OVERLAY} \
-                         -e DOCKER_NETWORK_OFFSET=0.0.${netshift}.0 \
-                         -e HYPERKUBE_IMAGE=k8s.io/hypokube:v1 \
                          -l kubeadm-dind \
-                         ${portforward_opts[@]+"${portforward_opts[@]}"} \
+                         -e USE_OVERLAY=${USE_OVERLAY} \
+                         -e HYPERKUBE_IMAGE=k8s.io/hypokube:v1 \
+                         ${opts[@]+"${opts[@]}"} \
                          "${IMAGE_REPO}:${IMAGE_TAG}")
-
-  # See also image/systemd/wrapkubeadm
-  dind::step "Running kubeadm:" "$*"
-  docker exec "${new_container}" wrapkubeadm "$@"
+  if [[ "$#" -gt 0 ]]; then
+    dind::step "Running kubeadm:" "$*"
+    # See image/systemd/wrapkubeadm
+    docker exec "${new_container}" wrapkubeadm "$@"
+  fi
 }
 
-function dind::init {
+function dind::ensure-final-image {
   if ! dind::check-image "${IMAGE_REPO}:${IMAGE_TAG}"; then
     dind::push-binaries
   fi
+}
+
+function dind::bare {
+  local container_name="${1:-}"
+  if [[ ! "${container_name}" ]]; then
+    echo >&2 "Must specify container name"
+    exit 1
+  fi
+  shift
+  run_opts=(${@+"$@"})
+  dind::ensure-final-image
+  dind::run "${container_name}"
+}
+
+function dind::init {
+  dind::ensure-final-image
   dind::run kube-master 1 127.0.0.1:${APISERVER_PORT}:8080 init "$@"
   dind::step "Setting cluster config"
   cluster/kubectl.sh config set-cluster dind --server="http://localhost:${APISERVER_PORT}" --insecure-skip-tls-verify=true
@@ -431,6 +461,10 @@ case "${1:-}" in
     shift
     dind::join "" "$@"
     ;;
+  bare)
+    shift
+    dind::bare "$@"
+    ;;
   e2e)
     shift
     dind::run-e2e "$@"
@@ -446,6 +480,7 @@ case "${1:-}" in
     echo "  $0 down" >&2
     echo "  $0 init kubeadm-args..." >&2
     echo "  $0 join kubeadm-args..." >&2
+    echo "  $0 bare container_name [docker_options...]"
     echo "  $0 e2e [test-name-substring]" >&2
     echo "  $0 e2e-serial [test-name-substring]" >&2
     exit 1

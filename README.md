@@ -32,6 +32,10 @@ $ dind/dind-cluster.sh up
 $ # run particular e2e test based on substring
 $ dind/dind-cluster.sh e2e "existing RC"
 
+$ # create 'bare' DIND container for experimentation
+$ dind/dind-cluster.sh bare foobar -v /somedir:/somedir
+$ docker exec foobar ls -l /
+
 $ # shut down the cluster
 $ dind/dind-cluster.sh down
 ```
