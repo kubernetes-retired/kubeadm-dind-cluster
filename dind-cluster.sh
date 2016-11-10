@@ -383,8 +383,7 @@ function dind::do-run-e2e {
   if [[ "$skip" ]]; then
     test_args="--ginkgo.skip=${skip} ${test_args}"
   fi
-  dind::ensure-kubectl
-  dind::ensure-binaries test/e2e/e2e.test vendor/github.com/onsi/ginkgo/ginkgo
+  dind::ensure-binaries cmd/kubectl test/e2e/e2e.test vendor/github.com/onsi/ginkgo/ginkgo
   dind::step "Running e2e tests with args:" "${test_args}"
   dind::set-volume-args
   docker run \
