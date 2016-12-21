@@ -33,6 +33,11 @@ fi
 
 source "${DIND_ROOT}/config.sh"
 
+build_tools_dir="build"
+if [[ ! -f ${build_tools_dir}/common.sh ]]; then
+    build_tools_dir="build-tools"
+fi
+
 USE_OVERLAY=${USE_OVERLAY:-y}
 APISERVER_PORT=${APISERVER_PORT:-8080}
 IMAGE_REPO=${IMAGE_REPO:-k8s.io/kubeadm-dind}
@@ -78,7 +83,7 @@ function dind::set-volume-args {
     volume_args=(-v "$PWD:/go/src/k8s.io/kubernetes")
   else
     build_container_name="$(KUBE_ROOT=$PWD &&
-                            . build-tools/common.sh &&
+                            . ${build_tools_dir}/common.sh &&
                             kube::build::verify_prereqs >&2 &&
                             echo "$KUBE_DATA_CONTAINER_NAME")"
     volume_args=(--volumes-from "${build_container_name}")
@@ -180,11 +185,11 @@ function dind::make-for-linux {
     { set +x; } 2>/dev/null
   elif [ "${copy}" = "y" ]; then
     set -x
-    build-tools/run.sh make WHAT="$*"
+    "${build_tools_dir}/run.sh" make WHAT="$*"
     { set +x; } 2>/dev/null
   else
     set -x
-    KUBE_RUN_COPY_OUTPUT=n build-tools/run.sh make WHAT="$*"
+    KUBE_RUN_COPY_OUTPUT=n "${build_tools_dir}/run.sh" make WHAT="$*"
     { set +x; } 2>/dev/null
   fi
 }
