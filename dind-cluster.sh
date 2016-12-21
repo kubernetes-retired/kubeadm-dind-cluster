@@ -31,6 +31,12 @@ if [ ! -f cluster/kubectl.sh ]; then
   exit 1
 fi
 
+pass_discovery_flags=
+# https://github.com/kubernetes/kubernetes/commit/7945c437e59e3211c94a432e803d173282a677cd
+if git merge-base --is-ancestor 7945c437e59e3211c94a432e803d173282a677cd HEAD; then
+    pass_discovery_flags=y
+fi
+
 source "${DIND_ROOT}/config.sh"
 
 build_tools_dir="build"
@@ -65,7 +71,7 @@ function dind::verify-overlay {
     return 0
   fi
   dind::step "Testing overlay filesystem in docker"
-  if ! docker run --rm -it busybox cat /proc/filesystems|grep -q '[[:blank:]]overlay[[:blank:]]*'; then
+  if ! docker run --rm busybox cat /proc/filesystems|grep -q '[[:blank:]]overlay[[:blank:]]*'; then
     echo >&2 "WARNING: overlay filesystem doesn't appear to work, using vfs"
     USE_OVERLAY=
   else
@@ -301,8 +307,10 @@ function dind::run {
                          "${IMAGE_REPO}:${IMAGE_TAG}")
   if [[ "$#" -gt 0 ]]; then
     dind::step "Running kubeadm:" "$*"
-    # See image/systemd/wrapkubeadm
-    docker exec "${new_container}" wrapkubeadm "$@"
+    # See image/systemd/wrapkubeadm.
+    # Capturing output is necessary to grab flags for 'kubeadm join'
+    kubeadm_output="$(docker exec "${new_container}" wrapkubeadm "$@" 2>&1)"
+    echo >&2 "${kubeadm_output}"
   fi
 }
 
@@ -327,6 +335,10 @@ function dind::bare {
 function dind::init {
   dind::ensure-final-image
   dind::run kube-master 1 127.0.0.1:${APISERVER_PORT}:8080 init "$@"
+  # FIXME: I tried using custom tokens with 'kubeadm ex token create' but join failed with:
+  # 'failed to parse response as JWS object [square/go-jose: compact JWS format must have three parts]'
+  # So we just pick the line from 'kubeadm init' output
+  kubeadm_join_flags="$(grep '^kubeadm join' <<<"${kubeadm_output}"|sed 's/^kubeadm join //')"
   dind::step "Setting cluster config"
   cluster/kubectl.sh config set-cluster dind --server="http://localhost:${APISERVER_PORT}" --insecure-skip-tls-verify=true
   cluster/kubectl.sh config set-context dind --cluster=dind
@@ -347,16 +359,20 @@ function dind::escape-e2e-name {
 }
 
 function dind::up {
-  local token_option="--token=faa9d1.349ba886c1ec02e0"
   dind::down
-  dind::init "${token_option}"
+  if [[ ${pass_discovery_flags} ]]; then
+    # newer kubeadm
+    dind::init --discovery token://
+  else
+    dind::init
+  fi
   local master_ip="$(docker inspect --format="{{.NetworkSettings.IPAddress}}" kube-master)"
   status=0
   local -a pids
   for ((n=1; n <= NUM_NODES; n++)); do
     (
       dind::step "Starting node:" ${n}
-      if ! out="$(dind::join ${n} "${token_option}" "${master_ip}" 2>&1)"; then
+      if ! out="$(dind::join ${n} ${kubeadm_join_flags} 2>&1)"; then
         echo >&2 -e "Failed to start node ${n}:\n${out}"
         exit 1
       else
