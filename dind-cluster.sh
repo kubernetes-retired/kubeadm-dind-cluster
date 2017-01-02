@@ -295,6 +295,12 @@ function dind::run {
 
   dind::verify-overlay
   dind::step "Starting DIND container:" "${container_name}"
+  # We mount /boot and /lib/modules into the container
+  # below to make kubeadm preflight checks happy -- they
+  # need to locate kernel config and among other things
+  # they look at /proc/configs.gz (possibly loading configs
+  # module for this) and also for /boot/config-*
+  modrobe configs >& /dev/null || true
   # Start the new container.
   new_container=$(docker run \
                          -d --privileged \
@@ -303,6 +309,8 @@ function dind::run {
                          -l kubeadm-dind \
                          -e USE_OVERLAY=${USE_OVERLAY} \
                          -e HYPERKUBE_IMAGE=k8s.io/hypokube:v1 \
+                         -v /boot:/boot \
+                         -v /lib/modules:/lib/modules \
                          ${opts[@]+"${opts[@]}"} \
                          "${IMAGE_REPO}:${IMAGE_TAG}")
   if [[ "$#" -gt 0 ]]; then
