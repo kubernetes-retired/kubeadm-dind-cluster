@@ -93,7 +93,8 @@ if [ "${1:-}" = "init" ]; then
   apiserver_conf="/etc/kubernetes/manifests/kube-apiserver.json"
   if [ -f "$apiserver_conf" ]; then
     # Make apiserver listen on 0.0.0.0 in the outer container.
-    content="$(jq '.spec.containers[0].command|=map(select(startswith("--insecure-bind-address=")|not))+["--insecure-bind-address=0.0.0.0"]' "${apiserver_conf}")"
+    # Also, enable StreamingProxyRedirects feature gate for CRI testing.
+    content="$(jq '.spec.containers[0].command|=map(select(startswith("--insecure-bind-address=")|not))+["--insecure-bind-address=0.0.0.0","--feature-gates=StreamingProxyRedirects=true"]' "${apiserver_conf}")"
     echo "$content" >"${apiserver_conf}"
   fi
 fi
