@@ -248,7 +248,7 @@ function dind::ensure-binaries {
 # with kubectl, kubeadm and kubelet binaris along with 'hypokube'
 # image with hyperkube binary inside it.
 function dind::push-binaries {
-  if ! dind::check-image "${IMAGE_REPO}:${IMAGE_BASE_TAG}"; then
+  if [[ "${DIND_KUBEADM_FORCE_REBUILD:-}" ]] || ! dind::check-image "${IMAGE_REPO}:${IMAGE_BASE_TAG}"; then
     dind::maybe-rebuild-base-containers
     dind::prepare
   fi
