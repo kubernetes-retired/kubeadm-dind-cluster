@@ -7,7 +7,7 @@ RUN apt-get -qq update && \
     DEBIAN_FRONTEND=noninteractive apt-get install bridge-utils net-tools iproute2 iputils-ping tcpdump ipcalc jq curl -qqy && \
     apt-get -qq -y autoremove && \
     apt-get -qq clean && \
-    mkdir -p /etc/systemd/system/kubelet.service.d
+    mkdir -p /etc/systemd/system/kubelet.service.d /etc/kubernetes/cni/net.d
 
 COPY kubelet.service /lib/systemd/system/
 COPY wrapkubeadm /usr/local/bin
