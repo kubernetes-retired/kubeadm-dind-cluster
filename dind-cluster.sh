@@ -315,10 +315,12 @@ function dind::run {
                          "${IMAGE_REPO}:${IMAGE_TAG}")
   if [[ "$#" -gt 0 ]]; then
     dind::step "Running kubeadm:" "$*"
+    status=0
     # See image/systemd/wrapkubeadm.
     # Capturing output is necessary to grab flags for 'kubeadm join'
-    kubeadm_output="$(docker exec "${new_container}" wrapkubeadm "$@" 2>&1)"
+    kubeadm_output="$(docker exec "${new_container}" wrapkubeadm "$@" 2>&1)" || status=$?
     echo >&2 "${kubeadm_output}"
+    return ${status}
   fi
 }
 
