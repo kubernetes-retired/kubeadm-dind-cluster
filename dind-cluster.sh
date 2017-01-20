@@ -344,7 +344,7 @@ function dind::bare {
 
 function dind::init {
   dind::ensure-final-image
-  dind::run kube-master 1 127.0.0.1:${APISERVER_PORT}:8080 init "$@"
+  dind::run kube-master 1 127.0.0.1:${APISERVER_PORT}:8080 init --skip-preflight-checks "$@"
   # FIXME: I tried using custom tokens with 'kubeadm ex token create' but join failed with:
   # 'failed to parse response as JWS object [square/go-jose: compact JWS format must have three parts]'
   # So we just pick the line from 'kubeadm init' output
@@ -361,7 +361,7 @@ function dind::join {
   # kube-node-2 and so on
   local next_node_index=${1:-$(docker ps -q --filter=label=kubeadm-dind | wc -l | sed 's/^ *//g')}
   shift
-  dind::run kube-node-${next_node_index} $((next_node_index + 1)) "" join "$@"
+  dind::run kube-node-${next_node_index} $((next_node_index + 1)) "" join --skip-preflight-checks "$@"
 }
 
 function dind::escape-e2e-name {
