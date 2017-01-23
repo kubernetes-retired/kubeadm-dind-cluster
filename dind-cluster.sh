@@ -226,7 +226,7 @@ function dind::ensure-kubectl {
       make WHAT=cmd/kubectl
       { set +x; } 2>/dev/null
     fi
-  elif ! force_local=y dind::check-binary cmd/kubectl; then
+  elif ! force_local=y dind::check-binary kubectl; then
     dind::make-for-linux y cmd/kubectl
   fi
 }
