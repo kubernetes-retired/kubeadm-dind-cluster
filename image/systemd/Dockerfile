@@ -7,7 +7,10 @@ RUN apt-get -qq update && \
     DEBIAN_FRONTEND=noninteractive apt-get install bridge-utils net-tools iproute2 iputils-ping tcpdump ipcalc jq curl -qqy && \
     apt-get -qq -y autoremove && \
     apt-get -qq clean && \
-    mkdir -p /etc/systemd/system/kubelet.service.d /etc/kubernetes/cni/net.d
+    mkdir -p /etc/systemd/system/kubelet.service.d /etc/kubernetes/cni/net.d && \
+    rm -f /lib/systemd/system/multi-user.target.wants/getty.target
+
+# TODO: move getty target removal to the base image
 
 COPY kubelet.service /lib/systemd/system/
 COPY wrapkubeadm /usr/local/bin
