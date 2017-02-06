@@ -309,8 +309,6 @@ function dind::run {
                          -l kubeadm-dind \
                          -e USE_OVERLAY=${USE_OVERLAY} \
                          -e HYPERKUBE_IMAGE=k8s.io/hypokube:v1 \
-                         -v /boot:/boot \
-                         -v /lib/modules:/lib/modules \
                          ${opts[@]+"${opts[@]}"} \
                          "${IMAGE_REPO}:${IMAGE_TAG}")
   if [[ "$#" -gt 0 ]]; then
