@@ -31,6 +31,13 @@ if [ ! -f cluster/kubectl.sh ]; then
   exit 1
 fi
 
+# In case of moby linux, -v will not work so we can't
+# mount /lib/modules and /boot
+is_moby_linux=
+if docker info|grep -q '^Kernel Version: .*-moby$'; then
+    is_moby_linux=1
+fi
+
 pass_discovery_flags=
 # https://github.com/kubernetes/kubernetes/commit/7945c437e59e3211c94a432e803d173282a677cd
 if git merge-base --is-ancestor 7945c437e59e3211c94a432e803d173282a677cd HEAD; then
@@ -296,11 +303,13 @@ function dind::run {
   dind::verify-overlay
   dind::step "Starting DIND container:" "${container_name}"
   # We mount /boot and /lib/modules into the container
-  # below to make kubeadm preflight checks happy -- they
-  # need to locate kernel config and among other things
-  # they look at /proc/configs.gz (possibly loading configs
-  # module for this) and also for /boot/config-*
-  modrobe configs >& /dev/null || true
+  # below to in case some of the workloads need them.
+  # This includes virtlet, for instance. Unfortunately
+  # we can't do this when using Mac Docker
+  # (unless a remote docker daemon on Linux is used)
+  if [[ ! ${is_moby_linux} ]]; then
+      opts+=(-v /boot:/boot -v /lib/modules:/lib/modules)
+  fi
   # Start the new container.
   new_container=$(docker run \
                          -d --privileged \
