@@ -26,11 +26,6 @@ else
 fi
 DIND_ROOT="$(cd $(dirname "$(readlinkf "${BASH_SOURCE}")"); pwd)"
 
-if [ ! -f cluster/kubectl.sh ]; then
-  echo "$0 must be called from the Kubernetes repository root directory" 1>&2
-  exit 1
-fi
-
 # In case of moby linux, -v will not work so we can't
 # mount /lib/modules and /boot
 is_moby_linux=
@@ -38,24 +33,40 @@ if docker info|grep -q '^Kernel Version: .*-moby$'; then
     is_moby_linux=1
 fi
 
-pass_discovery_flags=
-# https://github.com/kubernetes/kubernetes/commit/7945c437e59e3211c94a432e803d173282a677cd
-if git merge-base --is-ancestor 7945c437e59e3211c94a432e803d173282a677cd HEAD; then
-    pass_discovery_flags=y
-fi
-
 source "${DIND_ROOT}/config.sh"
 
+PREBUILT_DIND_IMAGE=${PREBUILT_DIND_IMAGE:-}
+
+pass_discovery_flags=
+kubectl=cluster/kubectl.sh
 build_tools_dir="build"
-if [[ ! -f ${build_tools_dir}/common.sh ]]; then
+if [[ ${PREBUILT_DIND_IMAGE} ]]; then
+  if ! hash kubectl 2>/dev/null; then
+    echo "You need kubectl binary in your PATH to use prebuilt DIND image" 1>&2
+    exit 1
+  fi
+  kubectl=kubectl
+else
+  if [[ ! -f ${build_tools_dir}/common.sh ]]; then
     build_tools_dir="build-tools"
+  fi
+  if [[ ! -f cluster/kubectl.sh ]]; then
+    echo "$0 must be called from the Kubernetes repository root directory" 1>&2
+    exit 1
+  fi
+  # https://github.com/kubernetes/kubernetes/commit/7945c437e59e3211c94a432e803d173282a677cd
+  if git merge-base --is-ancestor 7945c437e59e3211c94a432e803d173282a677cd HEAD; then
+    pass_discovery_flags=y
+  fi
 fi
+
 
 USE_OVERLAY=${USE_OVERLAY:-y}
 APISERVER_PORT=${APISERVER_PORT:-8080}
 IMAGE_REPO=${IMAGE_REPO:-k8s.io/kubeadm-dind}
 IMAGE_TAG=${IMAGE_TAG:-latest}
 IMAGE_BASE_TAG=base-v3
+IMAGE_TO_RUN=${PREBUILT_DIND_IMAGE:-"${IMAGE_REPO}:${IMAGE_TAG}"}
 force_rebuild=
 systemd_image_with_tag="k8s.io/kubeadm-dind-systemd:v3"
 e2e_base_image="golang:1.7.1"
@@ -71,6 +82,12 @@ PREPULL_IMAGES=(gcr.io/google_containers/kube-discovery-amd64:1.0
                 gcr.io/google_containers/etcd-amd64:2.2.5)
 
 volume_args=()
+
+function dind::no-prebuilt {
+  if [[ ${PREBUILT_DIND_IMAGE} ]]; then
+    echo >&2 "This command cannot be used with prebuilt images"
+  fi
+}
 
 overlay_tested=
 function dind::verify-overlay {
@@ -226,6 +243,10 @@ function dind::check-binary {
 }
 
 function dind::ensure-kubectl {
+  if [[ ${PREBUILT_DIND_IMAGE} ]]; then
+    # already checked on startup
+    return 0
+  fi
   if [ $(uname) = Darwin ]; then
     if [ ! -f _output/local/bin/darwin/amd64/kubectl ]; then
       dind::step "Building kubectl"
@@ -319,7 +340,7 @@ function dind::run {
                          -e USE_OVERLAY=${USE_OVERLAY} \
                          -e HYPERKUBE_IMAGE=k8s.io/hypokube:v1 \
                          ${opts[@]+"${opts[@]}"} \
-                         "${IMAGE_REPO}:${IMAGE_TAG}")
+                         "${IMAGE_TO_RUN}")
   if [[ "$#" -gt 0 ]]; then
     dind::step "Running kubeadm:" "$*"
     status=0
@@ -332,7 +353,7 @@ function dind::run {
 }
 
 function dind::ensure-final-image {
-  if ! dind::check-image "${IMAGE_REPO}:${IMAGE_TAG}"; then
+  if [[ ! ${PREBUILT_DIND_IMAGE} ]] && ! dind::check-image "${IMAGE_REPO}:${IMAGE_TAG}"; then
     dind::push-binaries
   fi
 }
@@ -357,9 +378,9 @@ function dind::init {
   # So we just pick the line from 'kubeadm init' output
   kubeadm_join_flags="$(grep '^kubeadm join' <<<"${kubeadm_output}"|sed 's/^kubeadm join //')"
   dind::step "Setting cluster config"
-  cluster/kubectl.sh config set-cluster dind --server="http://localhost:${APISERVER_PORT}" --insecure-skip-tls-verify=true
-  cluster/kubectl.sh config set-context dind --cluster=dind
-  cluster/kubectl.sh config use-context dind
+  "${kubectl}" config set-cluster dind --server="http://localhost:${APISERVER_PORT}" --insecure-skip-tls-verify=true
+  "${kubectl}" config set-context dind --cluster=dind
+  "${kubectl}" config use-context dind
 }
 
 function dind::join {
@@ -481,6 +502,7 @@ function dind::step {
 
 case "${1:-}" in
   update)
+    dind::no-prebuilt
     force_rebuild=y
     dind::push-binaries
     ;;
@@ -504,10 +526,12 @@ case "${1:-}" in
     ;;
   e2e)
     shift
+    dind::no-prebuilt
     dind::run-e2e "$@"
     ;;
   e2e-serial)
     shift
+    dind::no-prebuilt
     dind::run-e2e-serial "$@"
     ;;
   *)
