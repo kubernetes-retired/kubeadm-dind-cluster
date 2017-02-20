@@ -98,7 +98,7 @@ function dind::set-volume-args {
     build_container_name="$(KUBE_ROOT=$PWD &&
                             . ${build_tools_dir}/common.sh &&
                             kube::build::verify_prereqs >&2 &&
-                            echo "$KUBE_DATA_CONTAINER_NAME")"
+                            echo "${KUBE_DATA_CONTAINER_NAME:-${KUBE_BUILD_DATA_CONTAINER_NAME}}")"
     volume_args=(--volumes-from "${build_container_name}")
   fi
 }
