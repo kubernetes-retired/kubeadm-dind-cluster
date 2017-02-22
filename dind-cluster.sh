@@ -36,17 +36,40 @@ fi
 source "${DIND_ROOT}/config.sh"
 
 PREBUILT_DIND_IMAGE=${PREBUILT_DIND_IMAGE:-}
+PREBUILT_KUBEADM_AND_KUBECTL=${PREBUILT_KUBEADM_AND_KUBECTL:-}
+PREBUILT_HYPERKUBE_IMAGE=${PREBUILT_HYPERKUBE_IMAGE:-}
+
+use_k8s_source=y
+if [[ ${PREBUILT_DIND_IMAGE} || ( ${PREBUILT_KUBEADM_AND_KUBECTL} && ${PREBUILT_HYPERKUBE_IMAGE} ) ]]; then
+  use_k8s_source=
+fi
+
+image_version_suffix=v4
+if [[ ${PREBUILT_KUBEADM_AND_KUBECTL} ]]; then
+  image_version_suffix="${image_version_suffix}-extkubeadm"
+fi
+if [[ ${PREBUILT_HYPERKUBE_IMAGE} ]]; then
+  prebuilt_hash="$(echo -n "PREBUILT_HYPERKUBE_IMAGE"|md5sum|head -c 8)"
+  image_version_suffix="${image_version_suffix}-extk8s-${prebuilt_hash}"
+fi
+
+USE_OVERLAY=${USE_OVERLAY:-y}
+APISERVER_PORT=${APISERVER_PORT:-8080}
+IMAGE_REPO=${IMAGE_REPO:-k8s.io/kubeadm-dind}
+IMAGE_TAG=${IMAGE_TAG:-${image_version_suffix}}
+IMAGE_BASE_TAG=base-${image_version_suffix}
+if [[ ! ${use_k8s_source} ]]; then
+  # in case if the source isn't used, base image is the same as the
+  # one used to run actual DIND containers
+  IMAGE_BASE_TAG="${IMAGE_TAG}"
+fi
+IMAGE_TO_RUN=${PREBUILT_DIND_IMAGE:-"${IMAGE_REPO}:${IMAGE_TAG}"}
+hypokube_image_name="k8s.io/hypokube:v1"
 
 pass_discovery_flags=
 kubectl=cluster/kubectl.sh
 build_tools_dir="build"
-if [[ ${PREBUILT_DIND_IMAGE} ]]; then
-  if ! hash kubectl 2>/dev/null; then
-    echo "You need kubectl binary in your PATH to use prebuilt DIND image" 1>&2
-    exit 1
-  fi
-  kubectl=kubectl
-else
+if [[ ${use_k8s_source} ]]; then
   if [[ ! -f ${build_tools_dir}/common.sh ]]; then
     build_tools_dir="build-tools"
   fi
@@ -58,17 +81,16 @@ else
   if git merge-base --is-ancestor 7945c437e59e3211c94a432e803d173282a677cd HEAD; then
     pass_discovery_flags=y
   fi
+else
+  if ! hash kubectl 2>/dev/null; then
+    echo "You need kubectl binary in your PATH to use prebuilt DIND image" 1>&2
+    exit 1
+  fi
+  kubectl=kubectl
 fi
 
-
-USE_OVERLAY=${USE_OVERLAY:-y}
-APISERVER_PORT=${APISERVER_PORT:-8080}
-IMAGE_REPO=${IMAGE_REPO:-k8s.io/kubeadm-dind}
-IMAGE_TAG=${IMAGE_TAG:-latest}
-IMAGE_BASE_TAG=base-v3
-IMAGE_TO_RUN=${PREBUILT_DIND_IMAGE:-"${IMAGE_REPO}:${IMAGE_TAG}"}
 force_rebuild=
-systemd_image_with_tag="k8s.io/kubeadm-dind-systemd:v3"
+systemd_image_with_tag="${IMAGE_REPO}:bare-${image_version_suffix}"
 e2e_base_image="golang:1.7.1"
 # fixme: don't hardcode versions here
 # fixme: consistent var name case
@@ -80,7 +102,9 @@ PREPULL_IMAGES=(gcr.io/google_containers/kube-discovery-amd64:1.0
                 gcr.io/google_containers/kube-dnsmasq-amd64:1.3
                 gcr.io/google_containers/pause-amd64:3.0
                 gcr.io/google_containers/etcd-amd64:2.2.5)
-
+if [[ ${PREBUILT_HYPERKUBE_IMAGE} ]]; then
+  PREPULL_IMAGES+=("${PREBUILT_HYPERKUBE_IMAGE}")
+fi
 volume_args=()
 
 function dind::no-prebuilt {
@@ -144,7 +168,10 @@ function dind::check-image {
 function dind::maybe-rebuild-base-containers {
   if [[ "${DIND_KUBEADM_FORCE_REBUILD:-}" ]] || ! dind::check-image "${systemd_image_with_tag}"; then
     dind::step "Building base image:" "${systemd_image_with_tag}"
-    docker build -t "${systemd_image_with_tag}" "${DIND_ROOT}/image/systemd"
+    docker build \
+           --build-arg PREBUILT_KUBEADM_AND_KUBECTL="${PREBUILT_KUBEADM_AND_KUBECTL}" \
+           -t "${systemd_image_with_tag}" \
+           "${DIND_ROOT}/image/systemd"
   fi
 }
 
@@ -186,9 +213,11 @@ function dind::tmp-container-commit {
 function dind::prepare {
   dind::start-tmp-container "${systemd_image_with_tag}"
 
-  dind::step "Building hypokube image"
-  docker cp "$DIND_ROOT/image/hypokube" ${tmp_container}:/
-  docker exec ${tmp_container} docker build -t k8s.io/hypokube:base -f /hypokube/base.dkr /hypokube
+  if [[ ! ${PREBUILT_HYPERKUBE_IMAGE} ]]; then
+    dind::step "Building hypokube image"
+    docker cp "$DIND_ROOT/image/hypokube" ${tmp_container}:/
+    docker exec ${tmp_container} docker build -t k8s.io/hypokube:base -f /hypokube/base.dkr /hypokube
+  fi
 
   for image in "${PREPULL_IMAGES[@]}"; do
     dind::step "Pulling image:" "${image}"
@@ -202,6 +231,7 @@ function dind::prepare {
   docker exec ${tmp_container} mkdir -p /usr/lib/kubernetes/cni/bin
   docker exec -i ${tmp_container} bash -c "curl -sSL --retry 5 https://storage.googleapis.com/kubernetes-release/network-plugins/cni-${ARCH}-${CNI_RELEASE}.tar.gz | tar -C /usr/lib/kubernetes/cni -xz"
 
+  docker exec ${tmp_container} bash -c "echo -n '${PREBUILT_HYPERKUBE_IMAGE:-${hypokube_image_name}}' >/hyperkube_image_name"
   dind::tmp-container-commit "${IMAGE_REPO}:${IMAGE_BASE_TAG}"
 }
 
@@ -210,17 +240,14 @@ function dind::make-for-linux {
   shift
   dind::step "Building binaries:" "$*"
   if [ -n "${KUBEADM_DIND_LOCAL:-}" ]; then
-    set -x
     make WHAT="$*"
-    { set +x; } 2>/dev/null
+    dind::step "+ make WHAT=\"$*\""
   elif [ "${copy}" = "y" ]; then
-    set -x
     "${build_tools_dir}/run.sh" make WHAT="$*"
-    { set +x; } 2>/dev/null
+    dind::step "+ ${build_tools_dir}/run.sh make WHAT=\"$*\""
   else
-    set -x
     KUBE_RUN_COPY_OUTPUT=n "${build_tools_dir}/run.sh" make WHAT="$*"
-    { set +x; } 2>/dev/null
+    dind::step "+ KUBE_RUN_COPY_OUTPUT=n ${build_tools_dir}/run.sh make WHAT=\"$*\""
   fi
 }
 
@@ -243,16 +270,15 @@ function dind::check-binary {
 }
 
 function dind::ensure-kubectl {
-  if [[ ${PREBUILT_DIND_IMAGE} ]]; then
+  if [[ ! ${use_k8s_source} ]]; then
     # already checked on startup
     return 0
   fi
   if [ $(uname) = Darwin ]; then
     if [ ! -f _output/local/bin/darwin/amd64/kubectl ]; then
       dind::step "Building kubectl"
-      set -x
+      dind::step "+ make WHAT=cmd/kubectl"
       make WHAT=cmd/kubectl
-      { set +x; } 2>/dev/null
     fi
   elif ! force_local=y dind::check-binary kubectl; then
     dind::make-for-linux y cmd/kubectl
@@ -273,7 +299,7 @@ function dind::ensure-binaries {
 }
 
 # dind::push-binaries creates a DIND image
-# with kubectl, kubeadm and kubelet binaris along with 'hypokube'
+# with kubectl and kubeadm binaries along with 'hypokube'
 # image with hyperkube binary inside it.
 function dind::push-binaries {
   if [[ "${DIND_KUBEADM_FORCE_REBUILD:-}" ]] || ! dind::check-image "${IMAGE_REPO}:${IMAGE_BASE_TAG}"; then
@@ -281,9 +307,18 @@ function dind::push-binaries {
     dind::prepare
   fi
 
+  if [[ ! ${use_k8s_source} ]]; then
+    return 0
+  fi
+
   dind::set-volume-args
   dind::ensure-kubectl
-  dind::ensure-binaries cmd/hyperkube cmd/kubelet cmd/kubectl cmd/kubeadm
+  if [[ ! ${PREBUILT_KUBEADM_AND_KUBECTL} ]]; then
+    dind::ensure-binaries cmd/kubectl cmd/kubeadm
+  fi
+  if [[ ! ${PREBUILT_HYPERKUBE_IMAGE} ]]; then
+    dind::ensure-binaries cmd/hyperkube
+  fi
   dind::start-tmp-container "${volume_args[@]}" "${IMAGE_REPO}:${IMAGE_BASE_TAG}"
   dind::step "Updating hypokube image"
   docker exec ${tmp_container} /hypokube/place_binaries.sh
@@ -329,8 +364,12 @@ function dind::run {
   # we can't do this when using Mac Docker
   # (unless a remote docker daemon on Linux is used)
   if [[ ! ${is_moby_linux} ]]; then
-      opts+=(-v /boot:/boot -v /lib/modules:/lib/modules)
+    opts+=(-v /boot:/boot -v /lib/modules:/lib/modules)
   fi
+  if [[ ${ENABLE_STREAMING_PROXY_REDIRECTS} ]]; then
+    opts+=(-e ENABLE_STREAMING_PROXY_REDIRECTS=y)
+  fi
+
   # Start the new container.
   new_container=$(docker run \
                          -d --privileged \
@@ -338,7 +377,7 @@ function dind::run {
                          --hostname "${container_name}" \
                          -l kubeadm-dind \
                          -e USE_OVERLAY=${USE_OVERLAY} \
-                         -e HYPERKUBE_IMAGE=k8s.io/hypokube:v1 \
+                         -e HYPERKUBE_IMAGE="${PREBUILT_HYPERKUBE_IMAGE:-${hypokube_image_name}}" \
                          ${opts[@]+"${opts[@]}"} \
                          "${IMAGE_TO_RUN}")
   if [[ "$#" -gt 0 ]]; then

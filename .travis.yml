@@ -1,5 +1,11 @@
 sudo: required
 services: docker
+language: generic
+
+install:
+  - sudo wget -O /usr/bin/kubectl https://storage.googleapis.com/kubernetes-release/release/v1.5.3/bin/linux/amd64/kubectl
+  - echo "295ced9fdbd4e1efd27d44f6322b4ef19ae10a12 /usr/bin/kubectl" | sha1sum -c
+  - sudo chmod +x /usr/bin/kubectl
 
 script:
   - ./test.sh

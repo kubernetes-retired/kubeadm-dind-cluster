@@ -1,0 +1,21 @@
+#!/bin/bash
+
+set -o errexit
+set -o nounset
+set -o pipefail
+set -o errtrace
+
+# Based on https://github.com/kubernetes-incubator/kargo/blob/a56d9de502c7bf75d575255de34b995f47639e95/roles/kubernetes/node/templates/kubelet-container.j2
+docker run \
+  --net=host \
+  --pid=host \
+  --uts=host \
+  --ipc=host \
+  --userns=host \
+  --privileged \
+  --name=kubelet \
+  --restart=on-failure \
+  "$(cat /hyperkube_image_name)" \
+  nsenter --target=1 --mount --wd=. -- \
+  ./hyperkube kubelet \
+  "$@"
