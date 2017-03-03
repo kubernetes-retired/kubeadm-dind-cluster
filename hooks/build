@@ -1,0 +1,16 @@
+#!/bin/bash
+set -u -e -x
+
+export PREBUILT_KUBEADM_AND_KUBECTL=v1.5.3
+
+export PREBUILT_HYPERKUBE_IMAGE=gcr.io/google_containers/hyperkube:v1.4.9
+./dind-cluster.sh update
+
+export PREBUILT_HYPERKUBE_IMAGE=gcr.io/google_containers/hyperkube:v1.5.3
+./dind-cluster.sh update
+
+export PREBUILT_KUBEADM_AND_KUBECTL=
+git clone https://github.com/kubernetes/kubernetes.git
+cd kubernetes
+git checkout v1.5.3
+./dind-cluster.sh update

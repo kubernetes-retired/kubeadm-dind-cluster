@@ -1,0 +1,42 @@
+#!/bin/bash
+
+set -o errexit
+set -o nounset
+set -o pipefail
+set -o errtrace
+
+
+function snapshot::save {
+  systemctl stop kubelet docker
+  
+  # the scripts expects output the output of 'docker diff' as input
+  grep -v '^D ' |
+    sed 's@^. /@@' |
+    egrep -v '^(tmp|var/lib/kubelet|var/log|etc/mtab)' |
+    while read path; do
+      if [[ ! -d ${path} || ${path} =~ ^var/lib/etcd/.*/snap$ ]]; then
+        echo "${path}"
+      fi
+    done |
+    tar -C / -cf /dind/snapshot.tar -T -
+}
+
+function snapshot::restore {
+  tar -C / -xf /dind/snapshot.tar
+  start_services docker kubelet
+}
+
+case "${1:-}" in
+  save)
+    snapshot::save
+    ;;
+  restore)
+    snapshot::restore
+    ;;
+  *)
+    echo "usage:" >&2
+    echo "  $0 save" >&2
+    echo "  $0 restore" >&2
+    exit 1
+    ;;
+esac

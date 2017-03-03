@@ -1,0 +1,30 @@
+#!/bin/bash
+
+set -o errexit
+set -o nounset
+set -o pipefail
+set -o errtrace
+
+# wait for systemd to start in the container
+(( timeout = 60 + SECONDS ))
+until systemctl status >/dev/null 2>&1; do
+  if (( SECONDS >= timeout )); then
+    echo 'Timed out waiting for systemd.' >&2
+    exit 1
+  fi
+  sleep 1
+done
+
+systemctl daemon-reload
+
+if [ "${1:-}" = "docker" ]; then
+    systemctl stop docker
+fi
+
+for service in "$@"; do
+  if ! systemctl start "${service}"; then
+    echo >&2 "${service} failed to start. Diagnostics below:"
+    systemctl status "${service}"
+    exit 1
+  fi
+done

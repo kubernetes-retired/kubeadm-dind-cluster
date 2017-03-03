@@ -34,5 +34,5 @@ if bin="$(find-binary kubeadm linux/amd64)"; then
 fi
 if bin="$(find-binary hyperkube linux/amd64)"; then
   cp "${bin}" /hypokube
-  docker build -t k8s.io/hypokube:v1 -f /hypokube/hypokube.dkr /hypokube
+  docker build -t mirantis/hypokube:v1 -f /hypokube.dkr /hypokube
 fi

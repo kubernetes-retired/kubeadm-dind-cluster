@@ -1,3 +1,0 @@
-FROM k8s.io/hypokube:base
-
-COPY hyperkube /hyperkube

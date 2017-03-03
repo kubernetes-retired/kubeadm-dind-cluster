@@ -35,9 +35,11 @@ fi
 
 source "${DIND_ROOT}/config.sh"
 
-PREBUILT_DIND_IMAGE=${PREBUILT_DIND_IMAGE:-}
-PREBUILT_KUBEADM_AND_KUBECTL=${PREBUILT_KUBEADM_AND_KUBECTL:-}
-PREBUILT_HYPERKUBE_IMAGE=${PREBUILT_HYPERKUBE_IMAGE:-}
+DIND_SUBNET="${DIND_SUBNET:-10.192.0.0}"
+dind_ip_base="$(echo "${DIND_SUBNET}" | sed 's/\.0$//')"
+PREBUILT_DIND_IMAGE="${PREBUILT_DIND_IMAGE:-}"
+PREBUILT_KUBEADM_AND_KUBECTL="${PREBUILT_KUBEADM_AND_KUBECTL:-}"
+PREBUILT_HYPERKUBE_IMAGE="${PREBUILT_HYPERKUBE_IMAGE:-}"
 
 use_k8s_source=y
 if [[ ${PREBUILT_DIND_IMAGE} || ( ${PREBUILT_KUBEADM_AND_KUBECTL} && ${PREBUILT_HYPERKUBE_IMAGE} ) ]]; then
@@ -49,13 +51,12 @@ if [[ ${PREBUILT_KUBEADM_AND_KUBECTL} ]]; then
   image_version_suffix="${image_version_suffix}-extkubeadm"
 fi
 if [[ ${PREBUILT_HYPERKUBE_IMAGE} ]]; then
-  prebuilt_hash="$(echo -n "PREBUILT_HYPERKUBE_IMAGE"|md5sum|head -c 8)"
+  prebuilt_hash="$(echo -n "${PREBUILT_HYPERKUBE_IMAGE}"|md5sum|head -c 8)"
   image_version_suffix="${image_version_suffix}-extk8s-${prebuilt_hash}"
 fi
 
-USE_OVERLAY=${USE_OVERLAY:-y}
 APISERVER_PORT=${APISERVER_PORT:-8080}
-IMAGE_REPO=${IMAGE_REPO:-k8s.io/kubeadm-dind}
+IMAGE_REPO=${IMAGE_REPO:-mirantis/kubeadm-dind-cluster}
 IMAGE_TAG=${IMAGE_TAG:-${image_version_suffix}}
 IMAGE_BASE_TAG=base-${image_version_suffix}
 if [[ ! ${use_k8s_source} ]]; then
@@ -64,7 +65,7 @@ if [[ ! ${use_k8s_source} ]]; then
   IMAGE_BASE_TAG="${IMAGE_TAG}"
 fi
 IMAGE_TO_RUN=${PREBUILT_DIND_IMAGE:-"${IMAGE_REPO}:${IMAGE_TAG}"}
-hypokube_image_name="k8s.io/hypokube:v1"
+hypokube_image_name="mirantis/hypokube:v1"
 
 pass_discovery_flags=
 kubectl=cluster/kubectl.sh
@@ -90,7 +91,7 @@ else
 fi
 
 force_rebuild=
-systemd_image_with_tag="${IMAGE_REPO}:bare-${image_version_suffix}"
+bare_image_with_tag="${IMAGE_REPO}:bare-${image_version_suffix}"
 e2e_base_image="golang:1.7.1"
 # fixme: don't hardcode versions here
 # fixme: consistent var name case
@@ -111,21 +112,6 @@ function dind::no-prebuilt {
   if [[ ${PREBUILT_DIND_IMAGE} ]]; then
     echo >&2 "This command cannot be used with prebuilt images"
   fi
-}
-
-overlay_tested=
-function dind::verify-overlay {
-  if [ "${USE_OVERLAY}" != "y" -o -n "${overlay_tested}" ]; then
-    return 0
-  fi
-  dind::step "Testing overlay filesystem in docker"
-  if ! docker run --rm busybox cat /proc/filesystems|grep -q '[[:blank:]]overlay[[:blank:]]*'; then
-    echo >&2 "WARNING: overlay filesystem doesn't appear to work, using vfs"
-    USE_OVERLAY=
-  else
-    dind::step "Overlay filesystem works"
-  fi
-  overlay_tested=y
 }
 
 function dind::set-volume-args {
@@ -165,24 +151,22 @@ function dind::check-image {
   fi
 }
 
-function dind::maybe-rebuild-base-containers {
-  if [[ "${DIND_KUBEADM_FORCE_REBUILD:-}" ]] || ! dind::check-image "${systemd_image_with_tag}"; then
-    dind::step "Building base image:" "${systemd_image_with_tag}"
+function dind::maybe-rebuild-bare-image {
+  if [[ "${DIND_KUBEADM_FORCE_REBUILD:-}" ]] || ! dind::check-image "${bare_image_with_tag}"; then
+    dind::step "Building bare image:" "${bare_image_with_tag}"
     docker build \
            --build-arg PREBUILT_KUBEADM_AND_KUBECTL="${PREBUILT_KUBEADM_AND_KUBECTL}" \
-           -t "${systemd_image_with_tag}" \
-           "${DIND_ROOT}/image/systemd"
+           -t "${bare_image_with_tag}" \
+           "${DIND_ROOT}/image/bare"
   fi
 }
 
 function dind::start-tmp-container {
-  dind::verify-overlay
   dind::step "Starting temporary DIND container"
   tmp_container=$(docker run \
                          -d --privileged \
                          --name kubeadm-base-$(openssl rand -hex 16) \
                          --hostname kubeadm-base \
-                         -e USE_OVERLAY=${USE_OVERLAY} \
                          "$@")
   tmp_containers+=("${tmp_container}")
   docker exec ${tmp_container} start_services docker
@@ -190,33 +174,30 @@ function dind::start-tmp-container {
 
 function dind::tmp-container-commit {
   local image="$1"
+  local role="$2"
   dind::step "Committing image:" "${image}"
   # make sure Docker doesn't start before docker0 bridge is created
   docker exec ${tmp_container} systemctl stop docker
   docker exec ${tmp_container} systemctl disable docker
-  if [ "${USE_OVERLAY}" = "y" ]; then
-    # Save contents of the docker graph dir in the image.
-    # /var/lib/docker2 is a volume and it's not saved by
-    # 'docker commit'.
-    docker exec ${tmp_container} bash -c "mkdir -p /var/lib/docker_keep && mv /var/lib/docker2/* /var/lib/docker_keep/"
-  fi
 
   # stop the container & commit the image
   docker stop ${tmp_container}
   # TBD: update gcr.io/kubeadm/ci-xenial-systemd:base / bare
-  docker commit --change 'ENTRYPOINT ["/sbin/dind_init"]' "${tmp_container}" "${image}"
+  docker commit \
+         --change "LABEL mirantis.kubeadm_dind_cluster_${role}=1" \
+         --change 'ENTRYPOINT ["/sbin/dind_init"]' "${tmp_container}" "${image}"
 }
 
 # dind::prepare prepares a DIND image with base
 # 'hypokube' image inside it & pre-pulls images used by k8s into it.
 # It doesn't place actual k8s binaries into the image though.
 function dind::prepare {
-  dind::start-tmp-container "${systemd_image_with_tag}"
+  dind::start-tmp-container "${bare_image_with_tag}"
 
   if [[ ! ${PREBUILT_HYPERKUBE_IMAGE} ]]; then
     dind::step "Building hypokube image"
     docker cp "$DIND_ROOT/image/hypokube" ${tmp_container}:/
-    docker exec ${tmp_container} docker build -t k8s.io/hypokube:base -f /hypokube/base.dkr /hypokube
+    docker exec ${tmp_container} docker build -t mirantis/hypokube:base -f /hypokube/base.dkr /hypokube
   fi
 
   for image in "${PREPULL_IMAGES[@]}"; do
@@ -224,15 +205,8 @@ function dind::prepare {
     docker exec ${tmp_container} docker pull "${image}"
   done
 
-  dind::step "Downloading CNI"
-  # TBD: sha256sum
-  ARCH="${ARCH:-amd64}"
-  CNI_RELEASE="${CNI_RELEASE:-07a8a28637e97b22eb8dfe710eeae1344f69d16e}"
-  docker exec ${tmp_container} mkdir -p /usr/lib/kubernetes/cni/bin
-  docker exec -i ${tmp_container} bash -c "curl -sSL --retry 5 https://storage.googleapis.com/kubernetes-release/network-plugins/cni-${ARCH}-${CNI_RELEASE}.tar.gz | tar -C /usr/lib/kubernetes/cni -xz"
-
   docker exec ${tmp_container} bash -c "echo -n '${PREBUILT_HYPERKUBE_IMAGE:-${hypokube_image_name}}' >/hyperkube_image_name"
-  dind::tmp-container-commit "${IMAGE_REPO}:${IMAGE_BASE_TAG}"
+  dind::tmp-container-commit "${IMAGE_REPO}:${IMAGE_BASE_TAG}" base
 }
 
 function dind::make-for-linux {
@@ -303,7 +277,7 @@ function dind::ensure-binaries {
 # image with hyperkube binary inside it.
 function dind::push-binaries {
   if [[ "${DIND_KUBEADM_FORCE_REBUILD:-}" ]] || ! dind::check-image "${IMAGE_REPO}:${IMAGE_BASE_TAG}"; then
-    dind::maybe-rebuild-base-containers
+    dind::maybe-rebuild-bare-image
     dind::prepare
   fi
 
@@ -321,17 +295,56 @@ function dind::push-binaries {
   fi
   dind::start-tmp-container "${volume_args[@]}" "${IMAGE_REPO}:${IMAGE_BASE_TAG}"
   dind::step "Updating hypokube image"
-  docker exec ${tmp_container} /hypokube/place_binaries.sh
-  dind::tmp-container-commit "${IMAGE_REPO}:${IMAGE_TAG}"
+  docker exec ${tmp_container} /usr/local/bin/place_binaries.sh
+  dind::tmp-container-commit "${IMAGE_REPO}:${IMAGE_TAG}" final
+}
+
+function dind::volume-exists {
+  local name="$1"
+  if docker volume inspect "${name}" >& /dev/null; then
+    return 0
+  fi
+  return 1
+}
+
+function dind::ensure-network {
+  if ! docker network inspect kubeadm-dind-net >&/dev/null; then
+    docker network create --subnet=10.192.0.0/16 kubeadm-dind-net >/dev/null
+  fi
+}
+
+function dind::ensure-volume {
+  local reuse_volume=
+  if [[ $1 = -r ]]; then
+    reuse_volume=1
+    shift
+  fi
+  local name="$1"
+  if dind::volume-exists "${name}"; then
+    if [[ ! ${reuse_volume} ]]; then
+      docker volume rm "${name}" >/dev/null
+    fi
+  elif [[ ! ${reuse_volume} ]]; then
+    echo "*** Failed to locate volume: ${name}" 1>&2
+    return 1
+  fi
+  docker volume create --label mirantis.kubeadm_dind_cluster --name "${name}" >/dev/null
 }
 
 run_opts=()
+
 function dind::run {
-  # FIXME (create several containers)
+  local reuse_volume=
+  if [[ $1 = -r ]]; then
+    reuse_volume="-r"
+    shift
+  fi
   local container_name="${1:-}"
-  local netshift="${2:-}"
-  local portforward="${3:-}"
-  local -a opts=(${run_opts[@]+"${run_opts[@]}"})
+  local ip="${2:-}"
+  local netshift="${3:-}"
+  local portforward="${4:-}"
+  local -a opts=(--ip "${ip}" ${run_opts[@]+"${run_opts[@]}"})
+  local -a args
   if [[ $# -gt 3 ]]; then
     shift 3
   else
@@ -353,10 +366,9 @@ function dind::run {
   fi
 
   if [[ "$netshift" ]]; then
-    opts+=(-e DOCKER_NETWORK_OFFSET=0.0.${netshift}.0)
+    args+=("systemd.setenv=DOCKER_NETWORK_OFFSET=0.0.${netshift}.0")
   fi
 
-  dind::verify-overlay
   dind::step "Starting DIND container:" "${container_name}"
   # We mount /boot and /lib/modules into the container
   # below to in case some of the workloads need them.
@@ -367,28 +379,37 @@ function dind::run {
     opts+=(-v /boot:/boot -v /lib/modules:/lib/modules)
   fi
   if [[ ${ENABLE_STREAMING_PROXY_REDIRECTS} ]]; then
-    opts+=(-e ENABLE_STREAMING_PROXY_REDIRECTS=y)
+    args+=("systemd.setenv=ENABLE_STREAMING_PROXY_REDIRECTS=y")
   fi
 
+  volume_name="kubeadm-dind-${container_name}"
+  dind::ensure-network
+  dind::ensure-volume ${reuse_volume} "${volume_name}"
   # Start the new container.
-  new_container=$(docker run \
-                         -d --privileged \
-                         --name "${container_name}" \
-                         --hostname "${container_name}" \
-                         -l kubeadm-dind \
-                         -e USE_OVERLAY=${USE_OVERLAY} \
-                         -e HYPERKUBE_IMAGE="${PREBUILT_HYPERKUBE_IMAGE:-${hypokube_image_name}}" \
-                         ${opts[@]+"${opts[@]}"} \
-                         "${IMAGE_TO_RUN}")
-  if [[ "$#" -gt 0 ]]; then
-    dind::step "Running kubeadm:" "$*"
-    status=0
-    # See image/systemd/wrapkubeadm.
-    # Capturing output is necessary to grab flags for 'kubeadm join'
-    kubeadm_output="$(docker exec "${new_container}" wrapkubeadm "$@" 2>&1)" || status=$?
-    echo >&2 "${kubeadm_output}"
-    return ${status}
+  docker run \
+         -d --privileged \
+         --net kubeadm-dind-net \
+         --name "${container_name}" \
+         --hostname "${container_name}" \
+         -l mirantis.kubeadm_dind_cluster \
+         -v ${volume_name}:/dind \
+         ${opts[@]+"${opts[@]}"} \
+         "${IMAGE_TO_RUN}" \
+         ${args[@]+"${args[@]}"}
+}
+
+function dind::kubeadm {
+  local container_id="$1"
+  shift
+  dind::step "Running kubeadm:" "$*"
+  status=0
+  # See image/bare/wrapkubeadm.
+  # Capturing output is necessary to grab flags for 'kubeadm join'
+  if ! docker exec "${container_id}" /bin/bash -x wrapkubeadm "$@" 2>&1 | tee /dev/fd/2; then
+    echo "*** kubeadm failed with status $?"
+    return 1
   fi
+  return ${status}
 }
 
 function dind::ensure-final-image {
@@ -397,42 +418,71 @@ function dind::ensure-final-image {
   fi
 }
 
-function dind::bare {
-  local container_name="${1:-}"
-  if [[ ! "${container_name}" ]]; then
-    echo >&2 "Must specify container name"
-    exit 1
-  fi
-  shift
-  run_opts=(${@+"$@"})
-  dind::ensure-final-image
-  dind::run "${container_name}"
-}
+# function dind::bare {
+#   local container_name="${1:-}"
+#   if [[ ! "${container_name}" ]]; then
+#     echo >&2 "Must specify container name"
+#     exit 1
+#   fi
+#   shift
+#   run_opts=(${@+"$@"})
+#   dind::ensure-final-image
+#   dind::run "${container_name}"
+# }
 
 function dind::init {
   dind::ensure-final-image
-  dind::run kube-master 1 127.0.0.1:${APISERVER_PORT}:8080 init --skip-preflight-checks "$@"
+  local master_ip="${dind_ip_base}.2"
+  local container_id=$(dind::run kube-master "${master_ip}" 1 127.0.0.1:${APISERVER_PORT}:8080)
   # FIXME: I tried using custom tokens with 'kubeadm ex token create' but join failed with:
   # 'failed to parse response as JWS object [square/go-jose: compact JWS format must have three parts]'
   # So we just pick the line from 'kubeadm init' output
-  kubeadm_join_flags="$(grep '^kubeadm join' <<<"${kubeadm_output}"|sed 's/^kubeadm join //')"
+  kubeadm_join_flags="$(dind::kubeadm "${container_id}" init --skip-preflight-checks "$@" | grep '^kubeadm join' | sed 's/^kubeadm join //')"
   dind::step "Setting cluster config"
   "${kubectl}" config set-cluster dind --server="http://localhost:${APISERVER_PORT}" --insecure-skip-tls-verify=true
   "${kubectl}" config set-context dind --cluster=dind
   "${kubectl}" config use-context dind
 }
 
-function dind::join {
+function dind::create-node-container {
+  local reuse_volume=
+  if [[ $1 = -r ]]; then
+    reuse_volume="-r"
+    shift
+  fi
   # if there's just one node currently, it's master, thus we need to use
   # kube-node-1 hostname, if there are two nodes, we should pick
   # kube-node-2 and so on
-  local next_node_index=${1:-$(docker ps -q --filter=label=kubeadm-dind | wc -l | sed 's/^ *//g')}
+  local next_node_index=${1:-$(docker ps -q --filter=label=mirantis.kubeadm_dind_cluster | wc -l | sed 's/^ *//g')}
+  local node_ip="${dind_ip_base}.$((next_node_index + 2))"
+  dind::run ${reuse_volume} kube-node-${next_node_index} ${node_ip} $((next_node_index + 1))
+}
+
+function dind::join {
+  local container_id="$1"
   shift
-  dind::run kube-node-${next_node_index} $((next_node_index + 1)) "" join --skip-preflight-checks "$@"
+  dind::kubeadm "${container_id}" join --skip-preflight-checks "$@" >/dev/null
 }
 
 function dind::escape-e2e-name {
     sed 's/[]\$*.^|()[]/\\&/g; s/\s\+/\\s+/g' <<< "$1" | tr -d '\n'
+}
+
+function dind::accelerate-kube-dns {
+  dind::step "Patching kube-dns deployment to make it start faster"
+  # could do this on the host, too, but we don't want to require jq here
+  docker exec kube-master /bin/bash -c \
+         "kubectl get deployment kube-dns -n kube-system -o json | jq '.spec.template.spec.containers[0].readinessProbe.initialDelaySeconds = 3' | kubectl apply -f -"
+}
+
+function dind::wait-for-dns {
+  dind::step "Waiting for DNS"
+  while [[ $(kubectl get pods -l component=kube-dns -n kube-system \
+                     -o jsonpath='{.items[0].status.conditions[?(@.type == "Ready")].status}' 2>/dev/null) != "True" ]]; do
+    echo -n "." >&2
+    sleep 1
+  done
+  echo "[done]" >&2
 }
 
 function dind::up {
@@ -444,16 +494,29 @@ function dind::up {
     dind::init
   fi
   local master_ip="$(docker inspect --format="{{.NetworkSettings.IPAddress}}" kube-master)"
+  # pre-create node containers sequentially so they get predictable IPs
+  local -a node_containers
+  for ((n=1; n <= NUM_NODES; n++)); do
+    dind::step "Starting node container:" ${n}
+    if ! container_id="$(dind::create-node-container ${n})"; then
+      echo >&2 "*** Failed to start node container ${n}"
+      exit 1
+    else
+      node_containers+=(${container_id})
+      dind::step "Node container started:" ${n}
+    fi
+  done
   status=0
   local -a pids
   for ((n=1; n <= NUM_NODES; n++)); do
     (
-      dind::step "Starting node:" ${n}
-      if ! out="$(dind::join ${n} ${kubeadm_join_flags} 2>&1)"; then
-        echo >&2 -e "Failed to start node ${n}:\n${out}"
+      dind::step "Joining node:" ${n}
+      container_id="${node_containers[n-1]}"
+      if ! dind::join ${container_id} ${kubeadm_join_flags}; then
+        echo >&2 "*** Failed to start node container ${n}"
         exit 1
       else
-        dind::step "Node started:" ${n}
+        dind::step "Node joined:" ${n}
       fi
     )&
     pids[${n}]=$!
@@ -461,12 +524,91 @@ function dind::up {
   for pid in ${pids[*]}; do
     wait ${pid}
   done
+  dind::accelerate-kube-dns
+  # FIXME: Crossing fingers that the deployment's pods get recreated
+  # here. It's not critical but if they don't subsequent cluster
+  # startup may be a bit slower.
+  sleep 3
+  dind::wait-for-dns
+}
+
+function dind::snapshot_container {
+  local container_name="$1"
+  docker diff ${container_name} | docker exec -i ${container_name} /usr/local/bin/snapshot save
+  docker rm -f "${container_name}"
+}
+
+function dind::snapshot {
+  dind::snapshot_container kube-master
+  for ((n=1; n <= NUM_NODES; n++)); do
+    dind::snapshot_container "kube-node-${n}"
+  done
+}
+
+function dind::restore_container {
+  local container_id="$1"
+  docker exec ${container_id} /usr/local/bin/snapshot restore
+}
+
+function dind::restore {
+  local master_ip="${dind_ip_base}.2"
+  dind::down
+  dind::ensure-final-image
+  dind::step "Restoring master container"
+  for ((n=0; n <= NUM_NODES; n++)); do
+    (
+      if [[ n -eq 0 ]]; then
+        dind::step "Restoring master container"
+        dind::restore_container "$(dind::run -r kube-master "${master_ip}" 1 127.0.0.1:${APISERVER_PORT}:8080)"
+        dind::step "Master container restored"
+      else
+        dind::step "Restoring node container:" ${n}
+        if ! container_id="$(dind::create-node-container -r ${n})"; then
+          echo >&2 "*** Failed to start node container ${n}"
+          exit 1
+        else
+          dind::restore_container "${container_id}"
+          dind::step "Node container restored:" ${n}
+        fi
+      fi
+    )&
+    pids[${n}]=$!
+  done
+  for pid in ${pids[*]}; do
+    wait ${pid}
+  done
+  dind::wait-for-dns
 }
 
 function dind::down {
-  docker ps -q --filter=label=kubeadm-dind | while read container_id; do
+  docker ps -q --filter=label=mirantis.kubeadm_dind_cluster | while read container_id; do
     dind::step "Removing container:" "${container_id}"
     docker rm -fv "${container_id}"
+  done
+}
+
+function dind::remove-images {
+  docker images -q -f label=mirantis.kubeadm_dind_cluster | while read image_id; do
+    dind::step "Removing image:" "${image_id}"
+    docker rmi -f "${image_id}"
+  done
+}
+
+function dind::remove-volumes {
+  docker volume ls -q -f label=mirantis.kubeadm_dind_cluster | while read volume_id; do
+    dind::step "Removing volume:" "${volume_id}"
+    docker volume rm -f "${volume_id}"
+  done
+}
+
+function dind::check-for-snapshot {
+  if ! dind::volume-exists "kubeadm-dind-kube-master"; then
+    return 1
+  fi
+  for ((n=1; n <= NUM_NODES; n++)); do
+    if ! dind::volume-exists "kubeadm-dind-kube-node-${n}"; then
+      return 1
+    fi
   done
 }
 
@@ -501,6 +643,15 @@ function dind::do-run-e2e {
          go run hack/e2e.go --v --test -check_version_skew=false --test_args='${test_args}'"
 }
 
+function dind::clean {
+  dind::down
+  dind::remove-images
+  dind::remove-volumes
+  if docker network inspect kubeadm-dind-net >&/dev/null; then
+    docker network remove kubeadm-dind-net
+  fi
+}
+
 function dind::run-e2e {
   local focus="${1:-}"
   local skip="${2:-\[Serial\]}"
@@ -532,7 +683,7 @@ function dind::step {
   fi
   GREEN="$1"
   shift
-  if [ -t 1 ] ; then
+  if [ -t 2 ] ; then
     echo -e ${OPTS} "\x1B[97m* \x1B[92m${GREEN}\x1B[39m $*" 1>&2
   else
     echo ${OPTS} "* ${GREEN} $*" 1>&2
@@ -546,7 +697,11 @@ case "${1:-}" in
     dind::push-binaries
     ;;
   up)
-    dind::up
+    if ! dind::check-for-snapshot; then
+      dind::up
+      dind::snapshot
+    fi
+    dind::restore
     ;;
   down)
     dind::down
@@ -557,11 +712,24 @@ case "${1:-}" in
     ;;
   join)
     shift
-    dind::join "" "$@"
+    dind::join "$(dind::create-node-container)" "$@"
     ;;
-  bare)
+  # bare)
+  #   shift
+  #   dind::bare "$@"
+  #   ;;
+  snapshot)
     shift
-    dind::bare "$@"
+    dind::snapshot
+    ;;
+  restore)
+    shift
+    dind::restore
+    ;;
+  clean)
+    dind::down
+    dind::remove-images
+    dind::remove-volumes
     ;;
   e2e)
     shift
@@ -580,7 +748,8 @@ case "${1:-}" in
     echo "  $0 down" >&2
     echo "  $0 init kubeadm-args..." >&2
     echo "  $0 join kubeadm-args..." >&2
-    echo "  $0 bare container_name [docker_options...]"
+    # echo "  $0 bare container_name [docker_options...]"
+    echo "  $0 clean"
     echo "  $0 e2e [test-name-substring]" >&2
     echo "  $0 e2e-serial [test-name-substring]" >&2
     exit 1

@@ -115,9 +115,6 @@ currently have some issues. You may still try running them though:
 ```
 $ dind/dind-cluster.sh e2e-serial
 ```
-CNI isn't used currently. The option to use it will be added in near
-future. For now, DIND containers' network interfaces are bridged together,
-see [image/systemd/wrapkubeadm](image/systemd/wrapkubeadm).
 
 ## Related work
 

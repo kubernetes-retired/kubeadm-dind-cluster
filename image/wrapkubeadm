@@ -28,10 +28,11 @@ if [ ! -z "${DOCKER_NETWORK_OFFSET:-}" ]; then
   DOCKER_NETWORK_SIZE=${DOCKER_NETWORK_SIZE:-24}
   NETWORK=$(ip route | grep dind0 | grep -v default | sed 's,/.*,,')
 
-  IFS=. read -r i1 i2 i3 i4 <<< $IP
-  IFS=. read -r n1 n2 n3 n4 <<< $NETWORK
-  IFS=. read -r o1 o2 o3 o4 <<< $DOCKER_NETWORK_OFFSET
-  IFS=. read -r w1 w2 w3 w4 <<< $(ipcalc $IP_CIDR | grep Wildcard | awk '{print $2;}')
+  WILDCARD=$(ipcalc $IP_CIDR | grep Wildcard | awk '{print $2;}')
+  IFS=. read -r i1 i2 i3 i4 <<< ${IP}
+  IFS=. read -r n1 n2 n3 n4 <<< ${NETWORK}
+  IFS=. read -r o1 o2 o3 o4 <<< ${DOCKER_NETWORK_OFFSET}
+  IFS=. read -r w1 w2 w3 w4 <<< ${WILDCARD}
 
   IP_PLUS_OFFSET=$(printf "%d.%d.%d.%d\n" \
     "$(( n1 + ((i1 - n1 + o1) & w1) ))" \
@@ -72,11 +73,20 @@ cat >"${kubelet_extra_conf}" <<EOF
 Environment='KUBELET_EXTRA_ARGS=--hostname-override=${hostname_override} --v=4'
 EOF
 
-start_services docker kubelet
-systemctl enable docker kubelet
+start_services docker
+systemctl enable docker
+
+# TODO: prepare docker volumes beforehand
+#time gunzip -c /save.tar.gz | docker load
+time docker load </save.tar
+
+# enable kubelet right before starting kubeadm to avoid
+# longer delays between container restarts
+start_services kubelet
+systemctl enable kubelet
 
 # start kubeadm init
-KUBE_HYPERKUBE_IMAGE=${HYPERKUBE_IMAGE} kubeadm "$@"
+time KUBE_HYPERKUBE_IMAGE=$(cat /hyperkube_image_name) kubeadm "$@"
 
 if [[ ${1:-} = init ]]; then
   # Trying to change conntrack settings fails even in priveleged containers,

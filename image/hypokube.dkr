@@ -1,0 +1,3 @@
+FROM mirantis/hypokube:base
+
+COPY hyperkube /hyperkube
