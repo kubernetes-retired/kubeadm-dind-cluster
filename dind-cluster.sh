@@ -430,6 +430,13 @@ function dind::ensure-final-image {
 #   dind::run "${container_name}"
 # }
 
+function dind::configure-kubectl {
+  dind::step "Setting cluster config"
+  "${kubectl}" config set-cluster dind --server="http://localhost:${APISERVER_PORT}" --insecure-skip-tls-verify=true
+  "${kubectl}" config set-context dind --cluster=dind
+  "${kubectl}" config use-context dind
+}
+
 function dind::init {
   dind::ensure-final-image
   local master_ip="${dind_ip_base}.2"
@@ -438,10 +445,7 @@ function dind::init {
   # 'failed to parse response as JWS object [square/go-jose: compact JWS format must have three parts]'
   # So we just pick the line from 'kubeadm init' output
   kubeadm_join_flags="$(dind::kubeadm "${container_id}" init --skip-preflight-checks "$@" | grep '^kubeadm join' | sed 's/^kubeadm join //')"
-  dind::step "Setting cluster config"
-  "${kubectl}" config set-cluster dind --server="http://localhost:${APISERVER_PORT}" --insecure-skip-tls-verify=true
-  "${kubectl}" config set-context dind --cluster=dind
-  "${kubectl}" config use-context dind
+  dind::configure-kubectl
 }
 
 function dind::create-node-container {
@@ -577,6 +581,9 @@ function dind::restore {
   for pid in ${pids[*]}; do
     wait ${pid}
   done
+  # Recheck kubectl config. It's possible that the cluster was started
+  # on this docker from different host
+  dind::configure-kubectl
   dind::wait-for-dns
 }
 
