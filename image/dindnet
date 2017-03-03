@@ -64,13 +64,3 @@ cat >/etc/kubernetes/cni/net.d/cni.conf <<EOF
     }
 }
 EOF
-
-hostname_override="$(getent hosts $(hostname) | cut -d' ' -f1 | sort -u | tail -1)"
-# This ensures that node names are IPs so we don't need dnsmasq
-# FIXME: put proper dns / domain from config.sh there (KUBELET_DNS_ARGS)
-kubelet_extra_conf=/etc/systemd/system/kubelet.service.d/20-hostname-override.conf
-mkdir -p "$(dirname "${kubelet_extra_conf}")"
-cat >"${kubelet_extra_conf}" <<EOF
-[Service]
-Environment='KUBELET_EXTRA_ARGS=--hostname-override=${hostname_override} --v=4'
-EOF

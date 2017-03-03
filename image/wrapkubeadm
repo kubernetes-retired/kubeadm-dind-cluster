@@ -63,16 +63,6 @@ if [ ! -z "${DOCKER_NETWORK_OFFSET:-}" ]; then
 EOF
 fi
 
-hostname_override="$(getent hosts $(hostname) | cut -d' ' -f1 | sort -u | tail -1)"
-# This ensures that node names are IPs so we don't need dnsmasq
-# FIXME: put proper dns / domain from config.sh there (KUBELET_DNS_ARGS)
-kubelet_extra_conf=/etc/systemd/system/kubelet.service.d/20-hostname-override.conf
-mkdir -p "$(dirname "${kubelet_extra_conf}")"
-cat >"${kubelet_extra_conf}" <<EOF
-[Service]
-Environment='KUBELET_EXTRA_ARGS=--hostname-override=${hostname_override} --v=4'
-EOF
-
 start_services docker
 systemctl enable docker
 
@@ -100,7 +90,7 @@ if [[ ${1:-} = init ]]; then
   # TODO: use proxy flags for kubeadm when/if #34522 is merged
   cluster_cidr="$(ip addr show docker0 | grep -w inet | awk '{ print $2; }')"
   kubectl -n kube-system get ds -l "component=kube-proxy" -o json |
-    jq ".items[0].spec.template.spec.containers[0].command |= .+ [\"--hostname-override=${hostname_override}\", \"--cluster-cidr=${cluster_cidr}\", \"--masquerade-all\", \"--conntrack-max=0\", \"--conntrack-max-per-core=0\"]" |
+    jq ".items[0].spec.template.spec.containers[0].command |= .+ [\"--cluster-cidr=${cluster_cidr}\", \"--masquerade-all\", \"--conntrack-max=0\", \"--conntrack-max-per-core=0\"]" |
     kubectl apply -f - && kubectl -n kube-system delete pods -l "component=kube-proxy"
   apiserver_conf_json="/etc/kubernetes/manifests/kube-apiserver.json"
   apiserver_conf_yaml="/etc/kubernetes/manifests/kube-apiserver.yaml"
