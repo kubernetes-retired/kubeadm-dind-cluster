@@ -29,7 +29,7 @@ COPY snapshot /usr/local/bin
 # via systemctl, so we need extra tricks to prevent it from doing so
 RUN apt-get -qq update && \
     apt-mark unhold docker-engine && \
-    DEBIAN_FRONTEND=noninteractive   apt-get install docker-engine=1.13.1-0~ubuntu-xenial -qqy && \
+    DEBIAN_FRONTEND=noninteractive apt-get install docker-engine=1.12.6-0~ubuntu-xenial -qqy && \
     apt-mark hold docker-engine && \
     DEBIAN_FRONTEND=noninteractive apt-get upgrade -qqy && \
     DEBIAN_FRONTEND=noninteractive apt-get install bridge-utils net-tools iproute2 iputils-ping tcpdump ipcalc jq curl liblz4-tool -qqy && \
