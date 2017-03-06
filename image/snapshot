@@ -23,6 +23,9 @@ function snapshot::save {
 
 function snapshot::restore {
   tar -C / -xf /dind/snapshot.tar
+  if [[ ${1:-} = "-u" ]]; then
+    wrapkubeadm ensure-binaries
+  fi
   start_services docker kubelet
 }
 
@@ -32,6 +35,9 @@ case "${1:-}" in
     ;;
   restore)
     snapshot::restore
+    ;;
+  update_and_restore)
+    snapshot::restore -u
     ;;
   *)
     echo "usage:" >&2

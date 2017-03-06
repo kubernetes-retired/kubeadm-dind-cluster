@@ -36,9 +36,9 @@ function dind::proxy-cidr-and-no-conntrack {
   echo ".items[0].spec.template.spec.containers[0].command |= .+ [\"--cluster-cidr=${cluster_cidr}\", \"--masquerade-all\", \"--conntrack-max=0\", \"--conntrack-max-per-core=0\"]"
 }
 
-in_init=
-if [[ ${1:-} = init ]]; then
-  in_init=y
+is_master=
+if [[ "$(hostname)" = kube-master ]]; then
+  is_master=y
 fi
 
 function dind::get-binary-from-build-data-container {
@@ -100,7 +100,7 @@ function dind::image-exists {
 function dind::ensure-binaries-and-hypokube {
   # avoid race - if binaries need to be fetched,
   # do it in just one container
-  if [[ ${in_init} ]]; then
+  if [[ ${is_master} ]]; then
      dind::get-binaries
   fi
   local hyperkube_bin="${binary_dir}/hyperkube"
@@ -216,12 +216,16 @@ function dind::prepare-for-kubeadm {
   systemctl enable kubelet
 }
 
-dind::prepare-for-kubeadm
+if [[ ${1:-} = ensure-binaries ]]; then
+  dind::ensure-binaries-and-hypokube
+else
+  dind::prepare-for-kubeadm
 
-time KUBE_HYPERKUBE_IMAGE="${hypokube_final_image}" kubeadm "$@"
+  time KUBE_HYPERKUBE_IMAGE="${hypokube_final_image}" kubeadm "$@"
 
-if [[ ${in_init} ]]; then
-  dind::frob-cluster
+  if [[ ${is_master} ]]; then
+    dind::frob-cluster
+  fi
 fi
 
 # TODO: only mount /k8s/hyperkube into containers in case if build:// source is used

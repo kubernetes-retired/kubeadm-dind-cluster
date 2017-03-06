@@ -443,27 +443,35 @@ function dind::configure-kubectl {
   "${kubectl}" config use-context dind
 }
 
-function dind::init {
-  dind::ensure-final-image
-  local -a opts
+make_binaries=
+function dind::set-master-opts {
+  master_opts=()
   if [[ ${BUILD_KUBEADM} || ${BUILD_HYPERKUBE} ]]; then
     # share binaries pulled from the build container between nodes
     dind::ensure-volume "dind-k8s-binaries"
     dind::set-build-volume-args
-    opts+=("${build_volume_args[@]}" -v dind-k8s-binaries:/k8s)
+    master_opts+=("${build_volume_args[@]}" -v dind-k8s-binaries:/k8s)
     local -a bins
     if [[ ${BUILD_KUBEADM} ]]; then
-      opts+=(-e KUBEADM_SOURCE=build://)
+      master_opts+=(-e KUBEADM_SOURCE=build://)
       bins+=(cmd/kubeadm)
     fi
     if [[ ${BUILD_HYPERKUBE} ]]; then
-      opts+=(-e HYPERKUBE_SOURCE=build://)
+      master_opts+=(-e HYPERKUBE_SOURCE=build://)
       bins+=(cmd/hyperkube)
     fi
-    dind::make-for-linux n "${bins[@]}"
+    if [[ ${make_binaries} ]]; then
+      dind::make-for-linux n "${bins[@]}"
+    fi
   fi
+}
+
+function dind::init {
+  dind::ensure-final-image
+  local -a opts
+  dind::set-master-opts
   local master_ip="${dind_ip_base}.2"
-  local container_id=$(dind::run kube-master "${master_ip}" 1 127.0.0.1:${APISERVER_PORT}:8080 ${opts[@]+"${opts[@]}"})
+  local container_id=$(dind::run kube-master "${master_ip}" 1 127.0.0.1:${APISERVER_PORT}:8080 ${master_opts[@]+"${master_opts[@]}"})
   # FIXME: I tried using custom tokens with 'kubeadm ex token create' but join failed with:
   # 'failed to parse response as JWS object [square/go-jose: compact JWS format must have three parts]'
   # So we just pick the line from 'kubeadm init' output
@@ -582,9 +590,10 @@ function dind::snapshot {
   done
 }
 
+restore_cmd=restore
 function dind::restore_container {
   local container_id="$1"
-  docker exec ${container_id} /usr/local/bin/snapshot restore
+  docker exec ${container_id} /usr/local/bin/snapshot "${restore_cmd}"
 }
 
 function dind::restore {
@@ -592,11 +601,12 @@ function dind::restore {
   dind::down
   dind::ensure-final-image
   dind::step "Restoring master container"
+  dind::set-master-opts
   for ((n=0; n <= NUM_NODES; n++)); do
     (
       if [[ n -eq 0 ]]; then
         dind::step "Restoring master container"
-        dind::restore_container "$(dind::run -r kube-master "${master_ip}" 1 127.0.0.1:${APISERVER_PORT}:8080)"
+        dind::restore_container "$(dind::run -r kube-master "${master_ip}" 1 127.0.0.1:${APISERVER_PORT}:8080 ${master_opts[@]+"${master_opts[@]}"})"
         dind::step "Master container restored"
       else
         dind::step "Restoring node container:" ${n}
@@ -731,22 +741,23 @@ function dind::step {
 }
 
 case "${1:-}" in
-  update)
-    dind::no-prebuilt
-    force_rebuild=y
-    dind::push-binaries
-    ;;
   up)
     if ! dind::check-for-snapshot; then
-      dind::up
+      make_binaries=y dind::up
       dind::snapshot
     fi
     dind::restore
     ;;
   reup)
-    dind::up
-    # dind::snapshot
-    # dind::restore
+    if ! dind::check-for-snapshot; then
+      dind::up
+      dind::snapshot
+      dind::restore
+    else
+      make_binaries=y
+      restore_cmd=update_and_restore
+      dind::restore
+    fi
     ;;
   down)
     dind::down
@@ -786,7 +797,6 @@ case "${1:-}" in
     ;;
   *)
     echo "usage:" >&2
-    echo "  $0 update" >&2
     echo "  $0 up" >&2
     echo "  $0 reup" >&2
     echo "  $0 down" >&2
