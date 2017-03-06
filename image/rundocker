@@ -10,4 +10,4 @@ if grep -q '[[:blank:]]overlay[[:blank:]]*' /proc/filesystems; then
     storage_opts="--storage-driver=overlay2"
 fi
 
-exec /usr/bin/dockerd -H fd:// "${storage_opts}" -g /dind/docker "$@"
+exec /usr/bin/dockerd -H fd:// ${storage_opts} -g /dind/docker "$@"

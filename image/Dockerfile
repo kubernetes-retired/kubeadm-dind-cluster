@@ -7,12 +7,14 @@ LABEL mirantis.kubeadm_dind_cluster=1
 ARG CNI_RELEASE=07a8a28637e97b22eb8dfe710eeae1344f69d16e
 
 ENV ARCH amd64
+
+# make systemd behave correctly in Docker container
+# (e.g. accept systemd.setenv args, etc.)
 ENV container docker
 
-RUN mkdir -p /etc/systemd/system/docker.service.d
+RUN mkdir -p /hypokube /etc/systemd/system/docker.service.d
 
-COPY hypokube.dkr /usr/local/bin/
-COPY place_binaries.sh /usr/local/bin/
+COPY hypokube.dkr /hypokube/
 COPY kubelet.service /lib/systemd/system/
 COPY dindnet.service /lib/systemd/system/
 COPY 20-fs.conf /etc/systemd/system/docker.service.d/
@@ -30,7 +32,7 @@ RUN apt-get -qq update && \
     DEBIAN_FRONTEND=noninteractive   apt-get install docker-engine=1.13.1-0~ubuntu-xenial -qqy && \
     apt-mark hold docker-engine && \
     DEBIAN_FRONTEND=noninteractive apt-get upgrade -qqy && \
-    DEBIAN_FRONTEND=noninteractive apt-get install bridge-utils net-tools iproute2 iputils-ping tcpdump ipcalc jq curl -qqy && \
+    DEBIAN_FRONTEND=noninteractive apt-get install bridge-utils net-tools iproute2 iputils-ping tcpdump ipcalc jq curl liblz4-tool -qqy && \
     apt-get -qq -y autoremove && \
     apt-get -qq clean && \
     mkdir -p /etc/systemd/system/kubelet.service.d /etc/kubernetes/cni/net.d && \
@@ -40,7 +42,9 @@ RUN apt-get -qq update && \
     curl -sSL --retry 5 https://storage.googleapis.com/kubernetes-release/network-plugins/cni-${ARCH}-${CNI_RELEASE}.tar.gz | \
       tar -C /usr/lib/kubernetes/cni -xz && \
     mkdir -p /etc/systemd/system/docker.service.wants && \
-    ln -s /lib/systemd/system/dindnet.service /etc/systemd/system/docker.service.wants/
+    ln -s /lib/systemd/system/dindnet.service /etc/systemd/system/docker.service.wants/ && \
+    ln -s /k8s/hyperkube /usr/bin/kubectl && \
+    ln -s /k8s/kubeadm /usr/bin/kubeadm
 
 # TODO: move getty target removal to the base image
 

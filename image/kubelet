@@ -15,7 +15,7 @@ docker run \
   --privileged \
   --name=kubelet \
   --restart=on-failure \
-  "$(cat /hyperkube_image_name)" \
+  mirantis/hypokube:final \
   nsenter --target=1 --mount --wd=. -- \
   ./hyperkube kubelet \
   "$@"

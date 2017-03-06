@@ -4,8 +4,9 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 
-# Tests are disabled for now (WiP)
-exit 0
+export PREBUILT_DIND_IMAGE=mirantis/kubeadm-dind-cluster:rmme
+./build.sh
+time bash -x ./dind-cluster.sh up
 
 # (
 #     export PREBUILT_HYPERKUBE_IMAGE=gcr.io/google_containers/hyperkube:v1.4.9
@@ -42,6 +43,6 @@ exit 0
 # ../dind-cluster.sh up
 # # e2e is too heavy for Travis VMs :(
 # # ../dind-cluster.sh e2e
-# cluster/kubectl.sh get pods -n kube-system | grep kube-dns
-# ../dind-cluster.sh down
 
+kubectl get pods -n kube-system | grep kube-dns
+bash -x ./dind-cluster.sh down

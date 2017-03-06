@@ -5,6 +5,22 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 
+IP_CIDR=$(ip addr show eth0 | grep -w inet | awk '{ print $2; }')
+IP=$(echo $IP_CIDR | sed 's,/.*,,')
+
+# make docker's kube-dns friendly
+old_ns="$(awk '/^nameserver/ {print $2; exit}' /etc/resolv.conf)"
+if [[ ${old_ns} ]]; then
+  # FIXME: socat should be started as the primary process of this service
+  socat udp4-listen:53,reuseaddr,fork,bind=${IP} UDP:${old_ns}:53 &
+  # sed -i doesn't work here because of docker's handling of /etc/resolv.conf
+  sed "s/^nameserver.*/nameserver ${IP}/" /etc/resolv.conf >/tmp/resolv.conf.updated
+  cat /tmp/resolv.conf.updated >/etc/resolv.conf
+  rm /tmp/resolv.conf.updated
+else
+  echo "WARNING: couldn't get nameserver"
+fi
+
 if [[ ! "${DOCKER_NETWORK_OFFSET:-}" ]]; then
    exit 0
 fi
@@ -15,8 +31,6 @@ brctl addif dind0 eth0
 ip link set dind0 up
 
 # move ip to the bridge and restore routing via the old gateway
-IP_CIDR=$(ip addr show eth0 | grep -w inet | awk '{ print $2; }')
-IP=$(echo $IP_CIDR | sed 's,/.*,,')
 NETWORK_SIZE=$(echo $IP_CIDR | sed 's,.*/,,')
 DEFAULT_ROUTE=$(ip route | grep default | sed 's/eth0/dind0/')
 DEFAULT_GW=$(echo $DEFAULT_ROUTE|awk '{print $3;}')

@@ -359,7 +359,7 @@ function dind::run {
   dind::ensure-kubectl
 
   # remove any previously created containers with the same name
-  docker rm -vf "${container_name}" 2>/dev/null || true
+  docker rm -vf "${container_name}" >&/dev/null || true
 
   if [[ "$portforward" ]]; then
     opts+=(-p "$portforward")
@@ -385,6 +385,10 @@ function dind::run {
   volume_name="kubeadm-dind-${container_name}"
   dind::ensure-network
   dind::ensure-volume ${reuse_volume} "${volume_name}"
+
+  # TODO: create named volume for binaries and mount it to /k8s
+  # in case of the source build
+
   # Start the new container.
   docker run \
          -d --privileged \

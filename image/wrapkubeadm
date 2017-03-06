@@ -5,80 +5,167 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 
-if [ ! -z "${DOCKER_NETWORK_OFFSET:-}" ]; then
-  # create dind0 bridge and attach it to the veth interface eth0
-  brctl addbr dind0
-  brctl addif dind0 eth0
-  ip link set dind0 up
+HYPERKUBE_SOURCE="${HYPERKUBE_SOURCE:-keep://}"
+KUBEADM_SOURCE="${KUBEADM_SOURCE:-keep://}"
 
-  # move ip to the bridge and restore routing via the old gateway
-  IP_CIDR=$(ip addr show eth0 | grep -w inet | awk '{ print $2; }')
-  IP=$(echo $IP_CIDR | sed 's,/.*,,')
-  NETWORK_SIZE=$(echo $IP_CIDR | sed 's,.*/,,')
-  DEFAULT_ROUTE=$(ip route | grep default | sed 's/eth0/dind0/')
-  DEFAULT_GW=$(echo $DEFAULT_ROUTE|awk '{print $3;}')
+hypokube_base_image="mirantis/hypokube:base"
+hypokube_final_image="mirantis/hypokube:final"
+build_src_dir="/go/src/k8s.io/kubernetes"
+binary_dir="/k8s"
+# FIXME: don't hardcode
+platform="linux/amd64"
 
-  ip addr del $IP_CIDR dev eth0
-  ip addr add $IP_CIDR dev dind0
-  ip route add $DEFAULT_ROUTE
- 
-  # compute a network for the containers to live in
-  # by adding DOCKER_NETWORK_OFFSET to the current IP and cutting off
-  # non-network bits according to DOCKER_NETWORK_SIZE
-  DOCKER_NETWORK_SIZE=${DOCKER_NETWORK_SIZE:-24}
-  NETWORK=$(ip route | grep dind0 | grep -v default | sed 's,/.*,,')
+# These files can be either .json or .yaml depending on kubeadm version
+# (TODO: use newer kubeadm)
+apiserver_static_pod="/etc/kubernetes/manifests/kube-apiserver"
+scheduler_static_pod="/etc/kubernetes/manifests/kube-scheduler"
+controller_manager_static_pod="/etc/kubernetes/manifests/kube-controller-manager"
 
-  WILDCARD=$(ipcalc $IP_CIDR | grep Wildcard | awk '{print $2;}')
-  IFS=. read -r i1 i2 i3 i4 <<< ${IP}
-  IFS=. read -r n1 n2 n3 n4 <<< ${NETWORK}
-  IFS=. read -r o1 o2 o3 o4 <<< ${DOCKER_NETWORK_OFFSET}
-  IFS=. read -r w1 w2 w3 w4 <<< ${WILDCARD}
-
-  IP_PLUS_OFFSET=$(printf "%d.%d.%d.%d\n" \
-    "$(( n1 + ((i1 - n1 + o1) & w1) ))" \
-    "$(( n2 + ((i2 - n2 + o2) & w2) ))" \
-    "$(( n3 + ((i3 - n3 + o3) & w3) ))" \
-    "$(( n4 + ((i4 - n4 + o4) & w4) ))")
-
-  HOST_MIN=$(ipcalc $IP_PLUS_OFFSET/$DOCKER_NETWORK_SIZE | grep HostMin | awk '{print $2;}')
-  HOST_MAX=$(ipcalc $IP_PLUS_OFFSET/$DOCKER_NETWORK_SIZE | grep HostMax | awk '{print $2;}')
-  echo "Using ${HOST_MIN} .. ${HOST_MAX} for docker containers"
-
-  cat >/etc/kubernetes/cni/net.d/cni.conf <<EOF
-{
-    "name": "dindnet",
-    "type": "bridge",
-    "bridge": "dind0",
-    "ipam": {
-        "type": "host-local",
-        "subnet": "${NETWORK}/${NETWORK_SIZE}",
-        "rangeStart": "${HOST_MIN}",
-        "rangeEnd": "${HOST_MAX}",
-        "gateway": "${DEFAULT_GW}",
-        "routes": [
-            { "dst": "0.0.0.0/0" }
-        ]
-    }
+# jq filters follow.
+# This filter updates static pod definitions to mount /hyperkube from hosts:
+mount_binaries='.spec.volumes|=.+[{"name":"hyperkube",hostPath:{"path":"/k8s/hyperkube"}}]|.spec.containers[0].volumeMounts|=.+[{"name":"hyperkube", "mountPath":"/hyperkube"}]'
+proxy_mount_binaries='.items[0].spec.template.spec.volumes|=.+[{"name":"hyperkube",hostPath:{"path":"/k8s/hyperkube"}}]|.items[0].spec.template.spec.containers[0].volumeMounts|=.+[{"name":"hyperkube", "mountPath":"/hyperkube"}]'
+# Make apiserver listen insecurely on 0.0.0.0, it's ~ok because it's done in a container
+# TODO: think about more secure possibilities
+apiserver_insecure_bind_address='.spec.containers[0].command|=map(select(startswith("--insecure-bind-address=")|not))+["--insecure-bind-address=0.0.0.0"]'
+# Enable streaming proxy redirects, needed for CRI in k8s 1.5
+apiserver_streaming_proxy_redirects='.spec.containers[0].command|=.+["--feature-gates=StreamingProxyRedirects=true"]'
+# Update kube-proxy CIDR, enable --masquerade-all and disable conntrack (see dind::frob-proxy below)
+function dind::proxy-cidr-and-no-conntrack {
+  cluster_cidr="$(ip addr show docker0 | grep -w inet | awk '{ print $2; }')"
+  echo ".items[0].spec.template.spec.containers[0].command |= .+ [\"--cluster-cidr=${cluster_cidr}\", \"--masquerade-all\", \"--conntrack-max=0\", \"--conntrack-max-per-core=0\"]"
 }
-EOF
+
+in_init=
+if [[ ${1:-} = init ]]; then
+  in_init=y
 fi
 
-start_services docker
-systemctl enable docker
+function dind::get-binary-from-build-data-container {
+  local filename="$1"
+  local src_path="${build_src_dir}/_output/dockerized/bin/${platform}/${filename}"
+  local dest_path="${binary_dir}/${filename}"
+  if [[ -f "${src_path}" ]]; then
+    if [[ "${src_path}" -nt "${dest_path}" ]]; then
+      cp "${src_path}" "${binary_dir}/${filename}"
+    fi
+  elif [[ ! -f "${dest_path}" ]]; then
+    echo "Cannot locate the file in build data container: ${src_path}" >&2
+    return 1
+  fi
+}
 
-# TODO: prepare docker volumes beforehand
-#time gunzip -c /save.tar.gz | docker load
-time docker load </save.tar
+function dind::verify-binary {
+  local filename="$1"
+  local dest_path="${binary_dir}/${filename}"
+  if [[ ! -f "${dest_path}" ]]; then
+    echo "Binary not found in the container: ${dest_path}" >&2
+    exit 1
+  fi
+}
 
-# enable kubelet right before starting kubeadm to avoid
-# longer delays between container restarts
-start_services kubelet
-systemctl enable kubelet
+function dind::get-binary-from-url {
+  local filename="$1"
+  local url="$2"
+  local dest_path="${binary_dir}/${filename}"
+  if [[ -f "${dest_path}" ]]; then
+    return 0
+  fi
+  wget -O "${dest_path}" "${url}"
+  chmod +x "${dest_path}"
+}
 
-# start kubeadm init
-time KUBE_HYPERKUBE_IMAGE=$(cat /hyperkube_image_name) kubeadm "$@"
+function dind::get-binary {
+  local filename="$1"
+  local src="$2"
+  if [[ ${src} = "build://" ]]; then
+    dind::get-binary-from-build-data-container "${filename}"
+  elif [[ ${src} = "keep://" ]]; then
+    dind::verify-binary "${filename}"
+  else
+    dind::get-binary-from-url "${filename}" "${src}"
+  fi
+}
 
-if [[ ${1:-} = init ]]; then
+function dind::get-binaries {
+  dind::get-binary hyperkube "${HYPERKUBE_SOURCE}"
+  dind::get-binary kubeadm "${KUBEADM_SOURCE}"
+}
+
+function dind::image-exists {
+  local name="$1"
+  if ! docker inspect "${name}" >&/dev/null; then
+    return 1
+  fi
+}
+
+function dind::ensure-binaries-and-hypokube {
+  # avoid race - if binaries need to be fetched,
+  # do it in just one container
+  if [[ ${in_init} ]]; then
+     dind::get-binaries
+  fi
+  local hyperkube_bin="${binary_dir}/hyperkube"
+  # in prebuilt (complete) DIND images, final hypokube image is
+  # already present
+  if ! dind::image-exists "${hypokube_final_image}"; then
+    # We use current hyperkube binary to build final hypokube image.
+    # It will be used for initial cluster deployment.
+    # After we "frob" the cluster, the hyperkube image is taken from /k8s directory.
+    cp "${hyperkube_bin}" /hypokube/
+    docker build -t "${hypokube_final_image}" -f /hypokube/hypokube.dkr /hypokube
+  fi
+}
+
+function dind::replace {
+  local path="$1"
+  # Replace the file after reading all of the standard input
+  # via: https://github.com/stedolan/jq/issues/105#issuecomment-272712293
+  # Could use 'sponge' from moreutils, but don't want to make the image larger
+  awk 'BEGIN{RS="";getline<"-";print>ARGV[1]}' "${path}"
+}
+
+function dind::yq {
+  local filter="$1"
+  local path="$2"
+  # TODO: not tried it yet
+  kubectl convert -q -f "${path}" --local -o json 2>/dev/null |
+    jq "${filter}" |
+    kubectl convert -q -f - --local -o yaml 2>/dev/null |
+    dind::replace "${path}"
+}
+
+function dind::jq {
+  local filter="$1"
+  local path="$2"
+  jq "${filter}" "${path}" | dind::replace "${path}"
+}
+
+function dind::join-filters {
+  local IFS="|"
+  echo "$*"
+}
+
+function dind::frob-file {
+  local path_base="$1"
+  shift
+  local filter="$(dind::join-filters "$@")"
+  local status=0
+  if [[ -f ${path_base}.json ]]; then
+    dind::jq "${filter}" "${path_base}.json" || status=$?
+  elif [[ -f ${path_base}.yaml ]]; then
+    dind::yq "${filter}" "${path_base}.yaml" || status=$?
+  else
+    echo "${path_base}.json or ${path_base}.yaml not found" >&2
+    return 1
+  fi
+  if [[ ${status} -ne 0 ]]; then
+    echo "Failed to frob ${path_base}.json or ${path_base}.yaml" >&2
+    return 1
+  fi
+}
+
+function dind::frob-proxy {
   # Trying to change conntrack settings fails even in priveleged containers,
   # so we need to avoid it. Here's sample error message from kube-proxy:
   # I1010 21:53:00.525940       1 conntrack.go:57] Setting conntrack hashsize to 49152
@@ -88,32 +175,56 @@ if [[ ${1:-} = init ]]; then
   # Recipe by @errordeveloper:
   # https://github.com/kubernetes/kubernetes/pull/34522#issuecomment-253248985
   # TODO: use proxy flags for kubeadm when/if #34522 is merged
-  cluster_cidr="$(ip addr show docker0 | grep -w inet | awk '{ print $2; }')"
   kubectl -n kube-system get ds -l "component=kube-proxy" -o json |
-    jq ".items[0].spec.template.spec.containers[0].command |= .+ [\"--cluster-cidr=${cluster_cidr}\", \"--masquerade-all\", \"--conntrack-max=0\", \"--conntrack-max-per-core=0\"]" |
+    jq "$(dind::join-filters "${proxy_mount_binaries}" "$(dind::proxy-cidr-and-no-conntrack)")" |
     kubectl apply -f - && kubectl -n kube-system delete pods -l "component=kube-proxy"
-  apiserver_conf_json="/etc/kubernetes/manifests/kube-apiserver.json"
-  apiserver_conf_yaml="/etc/kubernetes/manifests/kube-apiserver.yaml"
+}
+
+function dind::frob-apiserver {
+  local -a filters=("${mount_binaries}" "${apiserver_insecure_bind_address}")
   if [[ ${ENABLE_STREAMING_PROXY_REDIRECTS:-} ]]; then
-    if [[ -f ${apiserver_conf_json} ]]; then
-      # Make apiserver listen on 0.0.0.0 in the outer container.
-      # Also, enable StreamingProxyRedirects feature gate for CRI testing.
-      content="$(jq '.spec.containers[0].command|=map(select(startswith("--insecure-bind-address=")|not))+["--insecure-bind-address=0.0.0.0","--feature-gates=StreamingProxyRedirects=true"]' "${apiserver_conf_json}")"
-      echo "${content}" >"${apiserver_conf_json}"
-    fi
-    if [[ -f ${apiserver_conf_yaml} ]]; then
-      sed -i 's/^\(.*\)--insecure-bind-address=.*/\1--insecure-bind-address=0.0.0.0\
-\1--feature-gates=StreamingProxyRedirects=true/' ${apiserver_conf_yaml}
-    fi
-  else
-    if [[ -f ${apiserver_conf_json} ]]; then
-      # Make apiserver listen on 0.0.0.0 in the outer container.
-      # Also, enable StreamingProxyRedirects feature gate for CRI testing.
-      content="$(jq '.spec.containers[0].command|=map(select(startswith("--insecure-bind-address=")|not))+["--insecure-bind-address=0.0.0.0"]' "${apiserver_conf_json}")"
-      echo "${content}" >"${apiserver_conf_json}"
-    fi
-    if [[ -f ${apiserver_conf_yaml} ]]; then
-      sed -i 's/^\(.*\)--insecure-bind-address=.*/\1--insecure-bind-address=0.0.0.0' ${apiserver_conf_yaml}
-    fi
+    filters+=("${apiserver_streaming_proxy_redirects}")
   fi
+  dind::frob-file "${apiserver_static_pod}" "${filters[@]}"
+}
+
+function dind::frob-scheduler {
+  dind::frob-file "${scheduler_static_pod}" "${mount_binaries}"
+}
+
+function dind::frob-controller-manager {
+  dind::frob-file "${controller_manager_static_pod}" "${mount_binaries}"
+}
+
+function dind::frob-cluster {
+  dind::frob-proxy
+  dind::frob-apiserver
+  dind::frob-scheduler
+  dind::frob-controller-manager
+}
+
+function dind::prepare-for-kubeadm {
+  start_services docker
+  systemctl enable docker
+
+  if ! docker images gcr.io/google_containers/pause-amd64|grep -q 'gcr\.io/'; then
+    time lz4 -dc /save.tar.lz4 | docker load
+  fi
+  dind::ensure-binaries-and-hypokube
+
+  # enable kubelet right before starting kubeadm to avoid
+  # longer delays between container restarts
+  start_services kubelet
+  systemctl enable kubelet
+}
+
+dind::prepare-for-kubeadm
+
+time KUBE_HYPERKUBE_IMAGE="${hypokube_final_image}" kubeadm "$@"
+
+if [[ ${in_init} ]]; then
+  dind::frob-cluster
 fi
+
+# TODO: only mount /k8s/hyperkube into containers in case if build:// source is used
+# TODO: after 'frobbing' the components, wait for them to restart (restart count must increase)

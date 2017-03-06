@@ -18,13 +18,10 @@ ENABLE_STREAMING_PROXY_REDIRECTS=
 #PREBUILT_HYPERKUBE_IMAGE=${PREBUILT_HYPERKUBE_IMAGE:-gcr.io/google_containers/hyperkube:v1.5.3}
 #PREBUILT_HYPERKUBE_IMAGE=${PREBUILT_HYPERKUBE_IMAGE:-gcr.io/google_containers/hyperkube:v1.4.9}
 
-# Download prebuilt kubeadm & kubectl for use inside DIND container
-# PREBUILT_KUBEADM_AND_KUBECTL=${PREBUILT_KUBEADM_AND_KUBECTL:-v1.5.3}
-
-# sha1sum of kubeadm binary -- only used for prebuilt kubeadm
-# (obtained from https://storage.googleapis.com/kubernetes-release/release/v1.5.3/bin/linux/amd64/kubeadm.sha1)
+# url and sha1sum of kubeadm binary -- only used for prebuilt kubeadm
+KUBEADM_URL=${KUBEADM_URL:-https://storage.googleapis.com/kubernetes-release/release/v1.5.3/bin/linux/amd64/kubeadm}
 KUBEADM_SHA1=${KUBEADM_SHA1:-e99b0aa7dd7ec0b69c4accf8b1b2039c2f2749b7}
 
-# sha1sum of kubectl binary -- only used for prebuilt kubectl
-# (obtained from https://storage.googleapis.com/kubernetes-release/release/v1.5.3/bin/linux/amd64/kubectl.sha1)
-KUBECTL_SHA1=${KUBECTL_SHA1:-295ced9fdbd4e1efd27d44f6322b4ef19ae10a12}
+# url and sha1sum of hyperkube binary -- only used for prebuilt hyperkube
+HYPERKUBE_URL=${HYPERKUBE_URL:-https://storage.googleapis.com/kubernetes-release/release/v1.5.3/bin/linux/amd64/hyperkube}
+HYPERKUBE_SHA1=${HYPERKUBE_SHA1:-74dc5c4eb8c7077ecbad31d918d28a268fa447e7}
