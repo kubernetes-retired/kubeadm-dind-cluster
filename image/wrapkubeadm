@@ -46,10 +46,8 @@ function dind::get-binary-from-build-data-container {
   local src_path="${build_src_dir}/_output/dockerized/bin/${platform}/${filename}"
   local dest_path="${binary_dir}/${filename}"
   if [[ -f "${src_path}" ]]; then
-    if [[ "${src_path}" -nt "${dest_path}" ]]; then
-      cp "${src_path}" "${binary_dir}/${filename}"
-    fi
-  elif [[ ! -f "${dest_path}" ]]; then
+    cp "${src_path}" "${binary_dir}/${filename}"
+  else
     echo "Cannot locate the file in build data container: ${src_path}" >&2
     return 1
   fi
@@ -108,7 +106,7 @@ function dind::ensure-binaries-and-hypokube {
   local hyperkube_bin="${binary_dir}/hyperkube"
   # in prebuilt (complete) DIND images, final hypokube image is
   # already present
-  if ! dind::image-exists "${hypokube_final_image}"; then
+  if ! dind::image-exists "${hypokube_final_image}" || [[ ${HYPERKUBE_SOURCE} = build:// ]] ; then
     # We use current hyperkube binary to build final hypokube image.
     # It will be used for initial cluster deployment.
     # After we "frob" the cluster, the hyperkube image is taken from /k8s directory.

@@ -41,6 +41,9 @@ PREBUILT_DIND_IMAGE="${PREBUILT_DIND_IMAGE:-}"
 PREBUILT_KUBEADM_AND_KUBECTL="${PREBUILT_KUBEADM_AND_KUBECTL:-}"
 PREBUILT_HYPERKUBE_IMAGE="${PREBUILT_HYPERKUBE_IMAGE:-}"
 
+BUILD_KUBEADM="${BUILD_KUBEADM:-}"
+BUILD_HYPERKUBE="${BUILD_HYPERKUBE:-}"
+
 use_k8s_source=y
 if [[ ${PREBUILT_DIND_IMAGE} || ( ${PREBUILT_KUBEADM_AND_KUBECTL} && ${PREBUILT_HYPERKUBE_IMAGE} ) ]]; then
   use_k8s_source=
@@ -106,7 +109,7 @@ PREPULL_IMAGES=(gcr.io/google_containers/kube-discovery-amd64:1.0
 if [[ ${PREBUILT_HYPERKUBE_IMAGE} ]]; then
   PREPULL_IMAGES+=("${PREBUILT_HYPERKUBE_IMAGE}")
 fi
-volume_args=()
+build_volume_args=()
 
 function dind::no-prebuilt {
   if [[ ${PREBUILT_DIND_IMAGE} ]]; then
@@ -114,19 +117,19 @@ function dind::no-prebuilt {
   fi
 }
 
-function dind::set-volume-args {
-  if [ ${#volume_args[@]} -gt 0 ]; then
+function dind::set-build-volume-args {
+  if [ ${#build_volume_args[@]} -gt 0 ]; then
     return 0
   fi
   build_container_name=
   if [ -n "${KUBEADM_DIND_LOCAL:-}" ]; then
-    volume_args=(-v "$PWD:/go/src/k8s.io/kubernetes")
+    build_volume_args=(-v "$PWD:/go/src/k8s.io/kubernetes")
   else
     build_container_name="$(KUBE_ROOT=$PWD &&
                             . ${build_tools_dir}/common.sh &&
                             kube::build::verify_prereqs >&2 &&
                             echo "${KUBE_DATA_CONTAINER_NAME:-${KUBE_BUILD_DATA_CONTAINER_NAME}}")"
-    volume_args=(--volumes-from "${build_container_name}")
+    build_volume_args=(--volumes-from "${build_container_name}")
   fi
 }
 
@@ -229,13 +232,13 @@ function dind::check-binary {
   local filename="$1"
   local dockerized="_output/dockerized/bin/linux/amd64/${filename}"
   local plain="_output/local/bin/linux/amd64/${filename}"
-  dind::set-volume-args
+  dind::set-build-volume-args
   # FIXME: don't hardcode amd64 arch
   if [ -n "${KUBEADM_DIND_LOCAL:-${force_local:-}}" ]; then
     if [ -f "${dockerized}" -o -f "${plain}" ]; then
       return 0
     fi
-  elif docker run --rm "${volume_args[@]}" \
+  elif docker run --rm "${build_volume_args[@]}" \
               busybox test \
               -f "/go/src/k8s.io/kubernetes/${dockerized}" >&/dev/null; then
     return 0
@@ -285,7 +288,7 @@ function dind::push-binaries {
     return 0
   fi
 
-  dind::set-volume-args
+  dind::set-build-volume-args
   dind::ensure-kubectl
   if [[ ! ${PREBUILT_KUBEADM_AND_KUBECTL} ]]; then
     dind::ensure-binaries cmd/kubectl cmd/kubeadm
@@ -293,7 +296,7 @@ function dind::push-binaries {
   if [[ ! ${PREBUILT_HYPERKUBE_IMAGE} ]]; then
     dind::ensure-binaries cmd/hyperkube
   fi
-  dind::start-tmp-container "${volume_args[@]}" "${IMAGE_REPO}:${IMAGE_BASE_TAG}"
+  dind::start-tmp-container "${build_volume_args[@]}" "${IMAGE_REPO}:${IMAGE_BASE_TAG}"
   dind::step "Updating hypokube image"
   docker exec ${tmp_container} /usr/local/bin/place_binaries.sh
   dind::tmp-container-commit "${IMAGE_REPO}:${IMAGE_TAG}" final
@@ -321,17 +324,16 @@ function dind::ensure-volume {
   fi
   local name="$1"
   if dind::volume-exists "${name}"; then
-    if [[ ! ${reuse_volume} ]]; then
+    if [[ ! {reuse_volume} ]]; then
       docker volume rm "${name}" >/dev/null
     fi
-  elif [[ ! ${reuse_volume} ]]; then
+  elif [[ ${reuse_volume} ]]; then
     echo "*** Failed to locate volume: ${name}" 1>&2
     return 1
   fi
   docker volume create --label mirantis.kubeadm_dind_cluster --name "${name}" >/dev/null
 }
 
-run_opts=()
 
 function dind::run {
   local reuse_volume=
@@ -343,13 +345,13 @@ function dind::run {
   local ip="${2:-}"
   local netshift="${3:-}"
   local portforward="${4:-}"
-  local -a opts=(--ip "${ip}" ${run_opts[@]+"${run_opts[@]}"})
-  local -a args
-  if [[ $# -gt 3 ]]; then
-    shift 3
+  if [[ $# -gt 4 ]]; then
+    shift 4
   else
     shift $#
   fi
+  local -a opts=(--ip "${ip}" "$@")
+  local -a args
 
   if [[ ! "${container_name}" ]]; then
     echo >&2 "Must specify container name"
@@ -443,8 +445,25 @@ function dind::configure-kubectl {
 
 function dind::init {
   dind::ensure-final-image
+  local -a opts
+  if [[ ${BUILD_KUBEADM} || ${BUILD_HYPERKUBE} ]]; then
+    # share binaries pulled from the build container between nodes
+    dind::ensure-volume "dind-k8s-binaries"
+    dind::set-build-volume-args
+    opts+=("${build_volume_args[@]}" -v dind-k8s-binaries:/k8s)
+    local -a bins
+    if [[ ${BUILD_KUBEADM} ]]; then
+      opts+=(-e KUBEADM_SOURCE=build://)
+      bins+=(cmd/kubeadm)
+    fi
+    if [[ ${BUILD_HYPERKUBE} ]]; then
+      opts+=(-e HYPERKUBE_SOURCE=build://)
+      bins+=(cmd/hyperkube)
+    fi
+    dind::make-for-linux n "${bins[@]}"
+  fi
   local master_ip="${dind_ip_base}.2"
-  local container_id=$(dind::run kube-master "${master_ip}" 1 127.0.0.1:${APISERVER_PORT}:8080)
+  local container_id=$(dind::run kube-master "${master_ip}" 1 127.0.0.1:${APISERVER_PORT}:8080 ${opts[@]+"${opts[@]}"})
   # FIXME: I tried using custom tokens with 'kubeadm ex token create' but join failed with:
   # 'failed to parse response as JWS object [square/go-jose: compact JWS format must have three parts]'
   # So we just pick the line from 'kubeadm init' output
@@ -463,7 +482,17 @@ function dind::create-node-container {
   # kube-node-2 and so on
   local next_node_index=${1:-$(docker ps -q --filter=label=mirantis.kubeadm_dind_cluster | wc -l | sed 's/^ *//g')}
   local node_ip="${dind_ip_base}.$((next_node_index + 2))"
-  dind::run ${reuse_volume} kube-node-${next_node_index} ${node_ip} $((next_node_index + 1))
+  local -a opts
+  if [[ ${BUILD_KUBEADM} || ${BUILD_HYPERKUBE} ]]; then
+    opts+=(-v dind-k8s-binaries:/k8s)
+    if [[ ${BUILD_KUBEADM} ]]; then
+      opts+=(-e KUBEADM_SOURCE=build://)
+    fi
+    if [[ ${BUILD_HYPERKUBE} ]]; then
+      opts+=(-e HYPERKUBE_SOURCE=build://)
+    fi
+  fi
+  dind::run ${reuse_volume} kube-node-${next_node_index} ${node_ip} $((next_node_index + 1)) "" ${opts[@]+"${opts[@]}"}
 }
 
 function dind::join {
@@ -598,12 +627,12 @@ function dind::down {
   done
 }
 
-function dind::remove-images {
-  docker images -q -f label=mirantis.kubeadm_dind_cluster | while read image_id; do
-    dind::step "Removing image:" "${image_id}"
-    docker rmi -f "${image_id}"
-  done
-}
+# function dind::remove-images {
+#   docker images -q -f label=mirantis.kubeadm_dind_cluster | while read image_id; do
+#     dind::step "Removing image:" "${image_id}"
+#     docker rmi -f "${image_id}"
+#   done
+# }
 
 function dind::remove-volumes {
   docker volume ls -q -f label=mirantis.kubeadm_dind_cluster | while read volume_id; do
@@ -636,11 +665,11 @@ function dind::do-run-e2e {
   fi
   dind::ensure-binaries cmd/kubectl test/e2e/e2e.test vendor/github.com/onsi/ginkgo/ginkgo
   dind::step "Running e2e tests with args:" "${test_args}"
-  dind::set-volume-args
+  dind::set-build-volume-args
   docker run \
          --rm -it \
          --net=host \
-         "${volume_args[@]}" \
+         "${build_volume_args[@]}" \
          -e KUBERNETES_PROVIDER=dind \
          -e KUBE_MASTER_IP=http://localhost:${APISERVER_PORT} \
          -e KUBE_MASTER=local \
@@ -656,7 +685,7 @@ function dind::do-run-e2e {
 
 function dind::clean {
   dind::down
-  dind::remove-images
+  # dind::remove-images
   dind::remove-volumes
   if docker network inspect kubeadm-dind-net >&/dev/null; then
     docker network remove kubeadm-dind-net
@@ -714,6 +743,11 @@ case "${1:-}" in
     fi
     dind::restore
     ;;
+  reup)
+    dind::up
+    # dind::snapshot
+    # dind::restore
+    ;;
   down)
     dind::down
     ;;
@@ -738,9 +772,7 @@ case "${1:-}" in
     dind::restore
     ;;
   clean)
-    dind::down
-    dind::remove-images
-    dind::remove-volumes
+    dind::clean
     ;;
   e2e)
     shift
@@ -756,6 +788,7 @@ case "${1:-}" in
     echo "usage:" >&2
     echo "  $0 update" >&2
     echo "  $0 up" >&2
+    echo "  $0 reup" >&2
     echo "  $0 down" >&2
     echo "  $0 init kubeadm-args..." >&2
     echo "  $0 join kubeadm-args..." >&2

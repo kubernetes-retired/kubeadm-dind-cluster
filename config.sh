@@ -14,6 +14,12 @@ PREBUILT_DIND_IMAGE="${PREBUILT_DIND_IMAGE:-}"
 # Set to non-empty string to make CRI work in Kubernetes 1.5.x
 ENABLE_STREAMING_PROXY_REDIRECTS=
 
+# Set to non-empty string to enable building kubeadm
+# BUILD_KUBEADM=y
+
+# Set to non-empty string to enable building hyperkube
+# BUILD_HYPERKUBE=y
+
 # Install prebuilt hyperkube image
 #PREBUILT_HYPERKUBE_IMAGE=${PREBUILT_HYPERKUBE_IMAGE:-gcr.io/google_containers/hyperkube:v1.5.3}
 #PREBUILT_HYPERKUBE_IMAGE=${PREBUILT_HYPERKUBE_IMAGE:-gcr.io/google_containers/hyperkube:v1.4.9}
