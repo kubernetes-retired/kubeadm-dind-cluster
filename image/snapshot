@@ -6,9 +6,11 @@ set -o pipefail
 set -o errtrace
 
 
-function snapshot::save {
+function snapshot::prepare {
   systemctl stop kubelet docker
-  
+}
+
+function snapshot::save {
   # the scripts expects output the output of 'docker diff' as input
   grep -v '^D ' |
     sed 's@^. /@@' |
@@ -30,6 +32,9 @@ function snapshot::restore {
 }
 
 case "${1:-}" in
+  prepare)
+    snapshot::prepare
+    ;;
   save)
     snapshot::save
     ;;

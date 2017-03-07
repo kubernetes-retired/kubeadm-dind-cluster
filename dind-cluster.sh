@@ -579,6 +579,7 @@ function dind::up {
 
 function dind::snapshot_container {
   local container_name="$1"
+  docker exec -i ${container_name} /usr/local/bin/snapshot prepare
   docker diff ${container_name} | docker exec -i ${container_name} /usr/local/bin/snapshot save
   docker rm -f "${container_name}"
 }
