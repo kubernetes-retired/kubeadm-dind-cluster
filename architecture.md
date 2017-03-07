@@ -26,6 +26,7 @@ Important points:
   * when k8s binaries are rebuilt
 
 How binary injection works in `wrapkubeadm`:
+
 1. Start docker daemon
 1. Purge any remaining containers
 1. Remove saved filesystem diffs for the current node
