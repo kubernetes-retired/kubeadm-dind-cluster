@@ -591,7 +591,6 @@ function dind::snapshot_container {
   local container_name="$1"
   docker exec -i ${container_name} /usr/local/bin/snapshot prepare
   docker diff ${container_name} | docker exec -i ${container_name} /usr/local/bin/snapshot save
-  docker rm -f "${container_name}"
 }
 
 function dind::snapshot {
@@ -599,6 +598,7 @@ function dind::snapshot {
   for ((n=1; n <= NUM_NODES; n++)); do
     dind::snapshot_container "kube-node-${n}"
   done
+  dind::wait-for-dns
 }
 
 restore_cmd=restore
@@ -757,14 +757,14 @@ case "${1:-}" in
     if ! dind::check-for-snapshot; then
       force_make_binaries=y dind::up
       dind::snapshot
+    else
+      dind::restore
     fi
-    dind::restore
     ;;
   reup)
     if ! dind::check-for-snapshot; then
       force_make_binaries=y dind::up
       dind::snapshot
-      dind::restore
     else
       force_make_binaries=y
       restore_cmd=update_and_restore

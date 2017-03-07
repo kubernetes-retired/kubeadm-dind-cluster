@@ -21,6 +21,7 @@ function snapshot::save {
       fi
     done |
     tar -C / -cf /dind/snapshot.tar -T -
+  systemctl start kubelet docker
 }
 
 function snapshot::restore {
