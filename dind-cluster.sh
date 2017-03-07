@@ -443,7 +443,7 @@ function dind::configure-kubectl {
   "${kubectl}" config use-context dind
 }
 
-make_binaries=
+force_make_binaries=
 function dind::set-master-opts {
   master_opts=()
   if [[ ${BUILD_KUBEADM} || ${BUILD_HYPERKUBE} ]]; then
@@ -460,8 +460,10 @@ function dind::set-master-opts {
       master_opts+=(-e HYPERKUBE_SOURCE=build://)
       bins+=(cmd/hyperkube)
     fi
-    if [[ ${make_binaries} ]]; then
+    if [[ ${force_make_binaries} ]]; then
       dind::make-for-linux n "${bins[@]}"
+    else
+      dind::ensure-binaries "${bins[@]}"
     fi
   fi
 }
@@ -744,18 +746,18 @@ function dind::step {
 case "${1:-}" in
   up)
     if ! dind::check-for-snapshot; then
-      make_binaries=y dind::up
+      force_make_binaries=y dind::up
       dind::snapshot
     fi
     dind::restore
     ;;
   reup)
     if ! dind::check-for-snapshot; then
-      dind::up
+      force_make_binaries=y dind::up
       dind::snapshot
       dind::restore
     else
-      make_binaries=y
+      force_make_binaries=y
       restore_cmd=update_and_restore
       dind::restore
     fi
