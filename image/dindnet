@@ -12,7 +12,7 @@ IP=$(echo $IP_CIDR | sed 's,/.*,,')
 old_ns="$(awk '/^nameserver/ {print $2; exit}' /etc/resolv.conf)"
 if [[ ${old_ns} ]]; then
   # FIXME: socat should be started as the primary process of this service
-  socat udp4-listen:53,reuseaddr,fork,bind=${IP} UDP:${old_ns}:53 &
+  socat udp4-recvfrom:53,reuseaddr,fork,bind=${IP} UDP:${old_ns}:53 &
   # sed -i doesn't work here because of docker's handling of /etc/resolv.conf
   sed "s/^nameserver.*/nameserver ${IP}/" /etc/resolv.conf >/etc/resolv.conf.updated
   cat /etc/resolv.conf.updated >/etc/resolv.conf
