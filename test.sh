@@ -5,44 +5,22 @@ set -o pipefail
 set -o errtrace
 
 export PREBUILT_DIND_IMAGE=mirantis/kubeadm-dind-cluster:rmme
+
 ./build.sh
-time bash -x ./dind-cluster.sh up
 
-# (
-#     export PREBUILT_HYPERKUBE_IMAGE=gcr.io/google_containers/hyperkube:v1.4.9
-#     export PREBUILT_KUBEADM_AND_KUBECTL=v1.5.3
-#     ./dind-cluster.sh up
-#     kubectl get pods -n kube-system | grep kube-dns
-#     ./dind-cluster.sh down
+function test_cluster {
+  time bash -x ./dind-cluster.sh up
+  kubectl get pods -n kube-system | grep kube-dns
+  time bash -x ./dind-cluster.sh up
+  kubectl get pods -n kube-system | grep kube-dns
+  bash -x ./dind-cluster.sh down
+  bash -x ./dind-cluster.sh clean
+}
 
-#     docker ps -qa|xargs docker rm -fv 2>/dev/null || true
-#     docker images -qa|docker rmi -f 2>/dev/null || true
-# )
+test_cluster
 
-
-# (
-#     export PREBUILT_HYPERKUBE_IMAGE=gcr.io/google_containers/hyperkube:v1.5.3
-#     export PREBUILT_KUBEADM_AND_KUBECTL=v1.5.3
-#     ./dind-cluster.sh up
-#     kubectl get pods -n kube-system | grep kube-dns
-#     ./dind-cluster.sh down
-
-#     docker ps -qa|xargs docker rm -fv 2>/dev/null || true
-#     docker images -qa|docker rmi -f 2>/dev/null || true
-# )
-
-# TODO: also test fully prebuilt kubeadm-dind-cluster image
-
-# if [ ! -d kubernetes ]; then
-#     git clone https://github.com/kubernetes/kubernetes.git
-# fi
-
-# cd kubernetes
-# git checkout v1.5.3
-
-# ../dind-cluster.sh up
-# # e2e is too heavy for Travis VMs :(
-# # ../dind-cluster.sh e2e
-
-kubectl get pods -n kube-system | grep kube-dns
-bash -x ./dind-cluster.sh down
+KUBEADM_URL=https://storage.googleapis.com/kubernetes-release/release/v1.6.0-beta.1/bin/linux/amd64/kubeadm \
+  KUBEADM_SHA1=049fc44729ec953aad78f54e3f8df652b91005f0 \
+  HYPERKUBE_URL=https://storage.googleapis.com/kubernetes-release/release/v1.6.0-beta.1/bin/linux/amd64/hyperkube \
+  HYPERKUBE_SHA1=d60060dde9c74b368c4191a05ebe0216e75c4204 \
+  test_cluster
