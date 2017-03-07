@@ -412,7 +412,7 @@ function dind::kubeadm {
   # See image/bare/wrapkubeadm.
   # Capturing output is necessary to grab flags for 'kubeadm join'
   if ! docker exec "${container_id}" /bin/bash -x wrapkubeadm "$@" 2>&1 | tee /dev/fd/2; then
-    echo "*** kubeadm failed with status $?"
+    echo "*** kubeadm failed" >&2
     return 1
   fi
   return ${status}
