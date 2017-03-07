@@ -1,19 +1,6 @@
 #!/bin/bash
 
-set -o errexit
-set -o nounset
-set -o pipefail
-set -o errtrace
-
-if [ $(uname) = Darwin ]; then
-  readlinkf(){ perl -MCwd -e 'print Cwd::abs_path shift' "$1";}
-else
-  readlinkf(){ readlink -f "$1"; }
-fi
-DIND_ROOT="$(cd $(dirname "$(readlinkf "${BASH_SOURCE}")"); pwd)"
-
-# FIXME
-source "${DIND_ROOT}/config.sh"
+source "${DIND_ROOT}/build/buildconf.sh"
 
 IMAGE_CACHE_DIR="${IMAGE_CACHE_DIR:-}"
 
@@ -81,6 +68,7 @@ function dind::save-images {
             docker pull "${image}"
         fi
     done
+    dind::step "Saving images to:" "${archive}"
     docker save "${images[@]}" | lz4 -9 > "${archive}"
 }
 
@@ -123,5 +111,3 @@ function dind::build-image {
            .
 }
 
-dind::build-base
-dind::build-image "${image_name}:rmme"

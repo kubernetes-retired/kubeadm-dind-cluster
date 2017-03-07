@@ -4,10 +4,10 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 
-export DIND_IMAGE=mirantis/kubeadm-dind-cluster:rmme
+export DIND_IMAGE=mirantis/kubeadm-dind-cluster:local
 
 function test_cluster {
-  ./build.sh
+  ./build/build-local.sh
   time bash -x ./dind-cluster.sh up
   kubectl get pods -n kube-system | grep kube-dns
   time bash -x ./dind-cluster.sh up
