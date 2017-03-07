@@ -207,11 +207,26 @@ function dind::frob-controller-manager {
   dind::frob-file "${controller_manager_static_pod}" "${mount_binaries}"
 }
 
+function dind::num-apiserver-restarts {
+  kubectl get pod kube-apiserver-kube-master -n kube-system -o 'jsonpath={.status.containerStatuses[0].restartCount}'
+}
+
 function dind::frob-cluster {
+  local num_apiserver_restarts=$(dind::num-apiserver-restarts)
   dind::frob-apiserver
   dind::frob-scheduler
   dind::frob-controller-manager
-  sleep 10 # XXXX: wait for apiserver to come up and pods to restart
+  # make sure apiserver gets restarted
+  while true; do
+    local n
+    if ! n="$(dind::num-apiserver-restarts)"; then
+      continue
+    fi
+    if [[ ${n} -gt ${num_apiserver_restarts} ]]; then
+      break
+    fi
+    sleep 1
+  done
   dind::frob-proxy
 }
 
