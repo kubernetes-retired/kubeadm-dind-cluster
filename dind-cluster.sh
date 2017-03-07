@@ -1,19 +1,5 @@
 #!/bin/bash
 
-# Copyright 2015 The Kubernetes Authors All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 set -o errexit
 set -o nounset
 set -o pipefail
@@ -37,52 +23,29 @@ source "${DIND_ROOT}/config.sh"
 
 DIND_SUBNET="${DIND_SUBNET:-10.192.0.0}"
 dind_ip_base="$(echo "${DIND_SUBNET}" | sed 's/\.0$//')"
-PREBUILT_DIND_IMAGE="${PREBUILT_DIND_IMAGE:-}"
-PREBUILT_KUBEADM_AND_KUBECTL="${PREBUILT_KUBEADM_AND_KUBECTL:-}"
-PREBUILT_HYPERKUBE_IMAGE="${PREBUILT_HYPERKUBE_IMAGE:-}"
-
+DIND_IMAGE="${DIND_IMAGE:-}"
 BUILD_KUBEADM="${BUILD_KUBEADM:-}"
 BUILD_HYPERKUBE="${BUILD_HYPERKUBE:-}"
-
-use_k8s_source=y
-if [[ ${PREBUILT_DIND_IMAGE} || ( ${PREBUILT_KUBEADM_AND_KUBECTL} && ${PREBUILT_HYPERKUBE_IMAGE} ) ]]; then
-  use_k8s_source=
-fi
-
-image_version_suffix=v4
-if [[ ${PREBUILT_KUBEADM_AND_KUBECTL} ]]; then
-  image_version_suffix="${image_version_suffix}-extkubeadm"
-fi
-if [[ ${PREBUILT_HYPERKUBE_IMAGE} ]]; then
-  prebuilt_hash="$(echo -n "${PREBUILT_HYPERKUBE_IMAGE}"|md5sum|head -c 8)"
-  image_version_suffix="${image_version_suffix}-extk8s-${prebuilt_hash}"
-fi
-
 APISERVER_PORT=${APISERVER_PORT:-8080}
-IMAGE_REPO=${IMAGE_REPO:-mirantis/kubeadm-dind-cluster}
-IMAGE_TAG=${IMAGE_TAG:-${image_version_suffix}}
-IMAGE_BASE_TAG=base-${image_version_suffix}
-if [[ ! ${use_k8s_source} ]]; then
-  # in case if the source isn't used, base image is the same as the
-  # one used to run actual DIND containers
-  IMAGE_BASE_TAG="${IMAGE_TAG}"
-fi
-IMAGE_TO_RUN=${PREBUILT_DIND_IMAGE:-"${IMAGE_REPO}:${IMAGE_TAG}"}
-hypokube_image_name="mirantis/hypokube:v1"
+NUM_NODES=${NUM_NODES:-2}
 
-pass_discovery_flags=
-build_tools_dir="build"
-if [[ ${use_k8s_source} ]]; then
-  if [[ ! -f ${build_tools_dir}/common.sh ]]; then
-    build_tools_dir="build-tools"
-  fi
+function dind::need-source {
   if [[ ! -f cluster/kubectl.sh ]]; then
     echo "$0 must be called from the Kubernetes repository root directory" 1>&2
     exit 1
   fi
-  # https://github.com/kubernetes/kubernetes/commit/7945c437e59e3211c94a432e803d173282a677cd
-  if git merge-base --is-ancestor 7945c437e59e3211c94a432e803d173282a677cd HEAD; then
-    pass_discovery_flags=y
+}
+
+build_tools_dir="build"
+use_k8s_source=y
+if [[ ! ${BUILD_KUBEADM} && ! ${BUILD_HYPERKUBE} ]]; then
+  use_k8s_source=
+fi
+if [[ ${use_k8s_source} ]]; then
+  dind::need-source
+  kubectl=cluster/kubectl.sh
+  if [[ ! -f ${build_tools_dir}/common.sh ]]; then
+    build_tools_dir="build-tools"
   fi
 else
   if ! hash kubectl 2>/dev/null; then
@@ -92,29 +55,8 @@ else
   kubectl=kubectl
 fi
 
-force_rebuild=
-bare_image_with_tag="${IMAGE_REPO}:bare-${image_version_suffix}"
 e2e_base_image="golang:1.7.1"
-# fixme: don't hardcode versions here
-# fixme: consistent var name case
-# TBD: try to extract versions from cmd/kubeadm/app/images/images.go
-PREPULL_IMAGES=(gcr.io/google_containers/kube-discovery-amd64:1.0
-                debian:jessie
-                gcr.io/google_containers/kubedns-amd64:1.7
-                gcr.io/google_containers/exechealthz-amd64:1.1
-                gcr.io/google_containers/kube-dnsmasq-amd64:1.3
-                gcr.io/google_containers/pause-amd64:3.0
-                gcr.io/google_containers/etcd-amd64:2.2.5)
-if [[ ${PREBUILT_HYPERKUBE_IMAGE} ]]; then
-  PREPULL_IMAGES+=("${PREBUILT_HYPERKUBE_IMAGE}")
-fi
 build_volume_args=()
-
-function dind::no-prebuilt {
-  if [[ ${PREBUILT_DIND_IMAGE} ]]; then
-    echo >&2 "This command cannot be used with prebuilt images"
-  fi
-}
 
 function dind::set-build-volume-args {
   if [ ${#build_volume_args[@]} -gt 0 ]; then
@@ -151,64 +93,6 @@ function dind::check-image {
   else
     return 1
   fi
-}
-
-function dind::maybe-rebuild-bare-image {
-  if [[ "${DIND_KUBEADM_FORCE_REBUILD:-}" ]] || ! dind::check-image "${bare_image_with_tag}"; then
-    dind::step "Building bare image:" "${bare_image_with_tag}"
-    docker build \
-           --build-arg PREBUILT_KUBEADM_AND_KUBECTL="${PREBUILT_KUBEADM_AND_KUBECTL}" \
-           -t "${bare_image_with_tag}" \
-           "${DIND_ROOT}/image/bare"
-  fi
-}
-
-function dind::start-tmp-container {
-  dind::step "Starting temporary DIND container"
-  tmp_container=$(docker run \
-                         -d --privileged \
-                         --name kubeadm-base-$(openssl rand -hex 16) \
-                         --hostname kubeadm-base \
-                         "$@")
-  tmp_containers+=("${tmp_container}")
-  docker exec ${tmp_container} start_services docker
-}
-
-function dind::tmp-container-commit {
-  local image="$1"
-  local role="$2"
-  dind::step "Committing image:" "${image}"
-  # make sure Docker doesn't start before docker0 bridge is created
-  docker exec ${tmp_container} systemctl stop docker
-  docker exec ${tmp_container} systemctl disable docker
-
-  # stop the container & commit the image
-  docker stop ${tmp_container}
-  # TBD: update gcr.io/kubeadm/ci-xenial-systemd:base / bare
-  docker commit \
-         --change "LABEL mirantis.kubeadm_dind_cluster_${role}=1" \
-         --change 'ENTRYPOINT ["/sbin/dind_init"]' "${tmp_container}" "${image}"
-}
-
-# dind::prepare prepares a DIND image with base
-# 'hypokube' image inside it & pre-pulls images used by k8s into it.
-# It doesn't place actual k8s binaries into the image though.
-function dind::prepare {
-  dind::start-tmp-container "${bare_image_with_tag}"
-
-  if [[ ! ${PREBUILT_HYPERKUBE_IMAGE} ]]; then
-    dind::step "Building hypokube image"
-    docker cp "$DIND_ROOT/image/hypokube" ${tmp_container}:/
-    docker exec ${tmp_container} docker build -t mirantis/hypokube:base -f /hypokube/base.dkr /hypokube
-  fi
-
-  for image in "${PREPULL_IMAGES[@]}"; do
-    dind::step "Pulling image:" "${image}"
-    docker exec ${tmp_container} docker pull "${image}"
-  done
-
-  docker exec ${tmp_container} bash -c "echo -n '${PREBUILT_HYPERKUBE_IMAGE:-${hypokube_image_name}}' >/hyperkube_image_name"
-  dind::tmp-container-commit "${IMAGE_REPO}:${IMAGE_BASE_TAG}" base
 }
 
 function dind::make-for-linux {
@@ -264,7 +148,7 @@ function dind::ensure-kubectl {
 function dind::ensure-binaries {
   local -a to_build=()
   for name in "$@"; do
-    if [[ "${force_rebuild}" ]] || ! dind::check-binary "$(basename "${name}")"; then
+    if ! dind::check-binary "$(basename "${name}")"; then
       to_build+=("${name}")
     fi
   done
@@ -272,33 +156,6 @@ function dind::ensure-binaries {
     dind::make-for-linux n "${to_build[@]}"
   fi
   return 0
-}
-
-# dind::push-binaries creates a DIND image
-# with kubectl and kubeadm binaries along with 'hypokube'
-# image with hyperkube binary inside it.
-function dind::push-binaries {
-  if [[ "${DIND_KUBEADM_FORCE_REBUILD:-}" ]] || ! dind::check-image "${IMAGE_REPO}:${IMAGE_BASE_TAG}"; then
-    dind::maybe-rebuild-bare-image
-    dind::prepare
-  fi
-
-  if [[ ! ${use_k8s_source} ]]; then
-    return 0
-  fi
-
-  dind::set-build-volume-args
-  dind::ensure-kubectl
-  if [[ ! ${PREBUILT_KUBEADM_AND_KUBECTL} ]]; then
-    dind::ensure-binaries cmd/kubectl cmd/kubeadm
-  fi
-  if [[ ! ${PREBUILT_HYPERKUBE_IMAGE} ]]; then
-    dind::ensure-binaries cmd/hyperkube
-  fi
-  dind::start-tmp-container "${build_volume_args[@]}" "${IMAGE_REPO}:${IMAGE_BASE_TAG}"
-  dind::step "Updating hypokube image"
-  docker exec ${tmp_container} /usr/local/bin/place_binaries.sh
-  dind::tmp-container-commit "${IMAGE_REPO}:${IMAGE_TAG}" final
 }
 
 function dind::volume-exists {
@@ -332,7 +189,6 @@ function dind::ensure-volume {
   fi
   docker volume create --label mirantis.kubeadm_dind_cluster --name "${name}" >/dev/null
 }
-
 
 function dind::run {
   local reuse_volume=
@@ -399,7 +255,7 @@ function dind::run {
          -l mirantis.kubeadm_dind_cluster \
          -v ${volume_name}:/dind \
          ${opts[@]+"${opts[@]}"} \
-         "${IMAGE_TO_RUN}" \
+         "${DIND_IMAGE}" \
          ${args[@]+"${args[@]}"}
 }
 
@@ -410,17 +266,11 @@ function dind::kubeadm {
   status=0
   # See image/bare/wrapkubeadm.
   # Capturing output is necessary to grab flags for 'kubeadm join'
-  if ! docker exec "${container_id}" wrapkubeadm "$@" 2>&1 | tee /dev/fd/2; then
+  if ! docker exec "${container_id}" bash -x wrapkubeadm "$@" 2>&1 | tee /dev/fd/2; then
     echo "*** kubeadm failed" >&2
     return 1
   fi
   return ${status}
-}
-
-function dind::ensure-final-image {
-  if [[ ! ${PREBUILT_DIND_IMAGE} ]] && ! dind::check-image "${IMAGE_REPO}:${IMAGE_TAG}"; then
-    dind::push-binaries
-  fi
 }
 
 # function dind::bare {
@@ -431,7 +281,6 @@ function dind::ensure-final-image {
 #   fi
 #   shift
 #   run_opts=(${@+"$@"})
-#   dind::ensure-final-image
 #   dind::run "${container_name}"
 # }
 
@@ -468,7 +317,6 @@ function dind::set-master-opts {
 }
 
 function dind::init {
-  dind::ensure-final-image
   local -a opts
   dind::set-master-opts
   local master_ip="${dind_ip_base}.2"
@@ -524,16 +372,16 @@ function dind::accelerate-kube-dns {
 function dind::wait-for-dns {
   dind::step "Waiting for DNS"
   # wait for the cluster to become accessible
-  while ! kubectl get nodes >&/dev/null; do
+  while ! "${kubectl}" get nodes >&/dev/null; do
     echo -n "." >&2
     sleep 1
   done
   label="k8s-app"
-  if kubectl -n kube-system get pods -l component=kube-dns -o name|grep '^pods/'; then
+  if "${kubectl}" -n kube-system get pods -l component=kube-dns -o name|grep '^pods/'; then
     label="component"
   fi
-  while [[ $(kubectl get pods -l "${label}=kube-dns" -n kube-system \
-                     -o jsonpath='{.items[0].status.conditions[?(@.type == "Ready")].status}' 2>/dev/null) != "True" ]]; do
+  while [[ $("${kubectl}" get pods -l "${label}=kube-dns" -n kube-system \
+                          -o jsonpath='{.items[0].status.conditions[?(@.type == "Ready")].status}' 2>/dev/null) != "True" ]]; do
     echo -n "." >&2
     sleep 1
   done
@@ -542,12 +390,7 @@ function dind::wait-for-dns {
 
 function dind::up {
   dind::down
-  if [[ ${pass_discovery_flags} ]]; then
-    # newer kubeadm
-    dind::init --discovery token://
-  else
-    dind::init
-  fi
+  dind::init
   local master_ip="$(docker inspect --format="{{.NetworkSettings.IPAddress}}" kube-master)"
   # pre-create node containers sequentially so they get predictable IPs
   local -a node_containers
@@ -610,7 +453,6 @@ function dind::restore_container {
 function dind::restore {
   local master_ip="${dind_ip_base}.2"
   dind::down
-  dind::ensure-final-image
   dind::step "Restoring master container"
   dind::set-master-opts
   for ((n=0; n <= NUM_NODES; n++)); do
@@ -648,13 +490,6 @@ function dind::down {
   done
 }
 
-# function dind::remove-images {
-#   docker images -q -f label=mirantis.kubeadm_dind_cluster | while read image_id; do
-#     dind::step "Removing image:" "${image_id}"
-#     docker rmi -f "${image_id}"
-#   done
-# }
-
 function dind::remove-volumes {
   # docker 1.13+: docker volume ls -q -f label=mirantis.kubeadm_dind_cluster
   docker volume ls -q | grep '^kubeadm-dind' | while read volume_id; do
@@ -678,6 +513,7 @@ function dind::do-run-e2e {
   local parallel="${1:-}"
   local focus="${2:-}"
   local skip="${3:-}"
+  dind::need-source
   local test_args="--host=http://localhost:${APISERVER_PORT}"
   if [[ "$focus" ]]; then
     test_args="--ginkgo.focus=${focus} ${test_args}"
@@ -728,6 +564,7 @@ function dind::run-e2e {
 function dind::run-e2e-serial {
   local focus="${1:-}"
   local skip="${2:-}"
+  dind::need-source
   if [[ "$focus" ]]; then
     focus="$(dind::escape-e2e-name "${focus}")"
   else
@@ -799,12 +636,10 @@ case "${1:-}" in
     ;;
   e2e)
     shift
-    dind::no-prebuilt
     dind::run-e2e "$@"
     ;;
   e2e-serial)
     shift
-    dind::no-prebuilt
     dind::run-e2e-serial "$@"
     ;;
   *)
@@ -821,5 +656,3 @@ case "${1:-}" in
     exit 1
     ;;
 esac
-
-# TODO: predictable IPs of the nodes (just using netshift is not enough)
