@@ -22,6 +22,16 @@ HYPERKUBE_URL="${HYPERKUBE_URL:-}"
 KUBEADM_SHA1=${KUBEADM_SHA1:-}
 HYPERKUBE_SHA1=${HYPERKUBE_SHA1:-}
 
+# TODO: the following is for newer kubeadm:
+# prepull_images=(gcr.io/google_containers/etcd-amd64:3.0.17
+#                 gcr.io/google_containers/k8s-dns-sidecar-amd64:1.13.0
+#                 gcr.io/google_containers/k8s-dns-kube-dns-amd64:1.13.0
+#                 gcr.io/google_containers/k8s-dns-dnsmasq-amd64:1.13.0
+#                 gcr.io/google_containers/kube-discovery-amd64:1.0
+#                 gcr.io/google_containers/exechealthz-amd64:1.1
+#                 gcr.io/google_containers/kube-dnsmasq-amd64:1.3
+#                 gcr.io/google_containers/pause-amd64:3.0)
+
 prepull_images=(gcr.io/google_containers/kube-discovery-amd64:1.0
                 gcr.io/google_containers/kubedns-amd64:1.7
                 gcr.io/google_containers/exechealthz-amd64:1.1
@@ -115,5 +125,3 @@ function dind::build-image {
 
 dind::build-base
 dind::build-image "${image_name}:rmme"
-
-# todo: for prebuilt images, just update dl targets to /k8s

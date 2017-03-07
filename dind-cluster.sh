@@ -71,7 +71,6 @@ IMAGE_TO_RUN=${PREBUILT_DIND_IMAGE:-"${IMAGE_REPO}:${IMAGE_TAG}"}
 hypokube_image_name="mirantis/hypokube:v1"
 
 pass_discovery_flags=
-kubectl=cluster/kubectl.sh
 build_tools_dir="build"
 if [[ ${use_k8s_source} ]]; then
   if [[ ! -f ${build_tools_dir}/common.sh ]]; then
@@ -524,7 +523,16 @@ function dind::accelerate-kube-dns {
 
 function dind::wait-for-dns {
   dind::step "Waiting for DNS"
-  while [[ $(kubectl get pods -l component=kube-dns -n kube-system \
+  # wait for the cluster to become accessible
+  while ! kubectl get nodes >&/dev/null; do
+    echo -n "." >&2
+    sleep 1
+  done
+  label="k8s-app"
+  if kubectl -n kube-system get pods -l component=kube-dns -o name|grep '^pods/'; then
+    label="component"
+  fi
+  while [[ $(kubectl get pods -l "${label}=kube-dns" -n kube-system \
                      -o jsonpath='{.items[0].status.conditions[?(@.type == "Ready")].status}' 2>/dev/null) != "True" ]]; do
     echo -n "." >&2
     sleep 1

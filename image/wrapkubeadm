@@ -28,6 +28,9 @@ proxy_mount_binaries='.items[0].spec.template.spec.volumes|=.+[{"name":"hyperkub
 # Make apiserver listen insecurely on 0.0.0.0, it's ~ok because it's done in a container
 # TODO: think about more secure possibilities
 apiserver_insecure_bind_address='.spec.containers[0].command|=map(select(startswith("--insecure-bind-address=")|not))+["--insecure-bind-address=0.0.0.0"]'
+# Make apiserver accept insecure connections on port 8080
+# TODO: don't use insecure port
+apiserver_insecure_bind_port='.spec.containers[0].command|=map(select(startswith("--insecure-port=")|not))+["--insecure-port=8080"]'
 # Enable streaming proxy redirects, needed for CRI in k8s 1.5
 apiserver_streaming_proxy_redirects='.spec.containers[0].command|=.+["--feature-gates=StreamingProxyRedirects=true"]'
 # Update kube-proxy CIDR, enable --masquerade-all and disable conntrack (see dind::frob-proxy below)
@@ -126,11 +129,14 @@ function dind::replace {
 function dind::yq {
   local filter="$1"
   local path="$2"
-  # TODO: not tried it yet
-  kubectl convert -q -f "${path}" --local -o json 2>/dev/null |
-    jq "${filter}" |
-    kubectl convert -q -f - --local -o yaml 2>/dev/null |
-    dind::replace "${path}"
+  # We need to use a temp file here because if you feed an object to
+  # 'kubectl convert' via stdin, you'll get a List object because
+  # multiple input objects are implied
+  tmp="$(mktemp tmp-XXXXXXXXXX.json)"
+  kubectl convert -f "${path}" --local -o json 2>/dev/null |
+    jq "${filter}" > "${tmp}"
+  kubectl convert -f "${tmp}" --local -o yaml 2>/dev/null >"${path}"
+  rm -f "$(tempfile)"
 }
 
 function dind::jq {
@@ -173,13 +179,20 @@ function dind::frob-proxy {
   # Recipe by @errordeveloper:
   # https://github.com/kubernetes/kubernetes/pull/34522#issuecomment-253248985
   # TODO: use proxy flags for kubeadm when/if #34522 is merged
-  kubectl -n kube-system get ds -l "component=kube-proxy" -o json |
+
+  # k8s-app label is used by newer kubeadm
+  label="k8s-app"
+  if kubectl -n kube-system get pods -l component=kube-proxy -o name|grep '^pods/'; then
+    label="component"
+  fi
+  kubectl -n kube-system get ds -l "${label}=kube-proxy" -o json |
     jq "$(dind::join-filters "${proxy_mount_binaries}" "$(dind::proxy-cidr-and-no-conntrack)")" |
-    kubectl apply -f - && kubectl -n kube-system delete pods -l "component=kube-proxy"
+    kubectl apply -f -
+  kubectl -n kube-system delete pods --now -l "${label}=kube-proxy"
 }
 
 function dind::frob-apiserver {
-  local -a filters=("${mount_binaries}" "${apiserver_insecure_bind_address}")
+  local -a filters=("${mount_binaries}" "${apiserver_insecure_bind_address}" "${apiserver_insecure_bind_port}")
   if [[ ${ENABLE_STREAMING_PROXY_REDIRECTS:-} ]]; then
     filters+=("${apiserver_streaming_proxy_redirects}")
   fi
@@ -195,10 +208,11 @@ function dind::frob-controller-manager {
 }
 
 function dind::frob-cluster {
-  dind::frob-proxy
   dind::frob-apiserver
   dind::frob-scheduler
   dind::frob-controller-manager
+  sleep 10 # XXXX: wait for apiserver to come up and pods to restart
+  dind::frob-proxy
 }
 
 function dind::prepare-for-kubeadm {
