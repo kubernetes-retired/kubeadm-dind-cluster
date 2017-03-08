@@ -11,7 +11,7 @@ NUM_NODES=${NUM_NODES:-2}
 KUBEADM_DIND_LOCAL=
 
 # Use prebuilt DIND image
-DIND_IMAGE="${DIND_IMAGE:-mirantis/kubeadm-dind-cluster:local}"
+DIND_IMAGE="${DIND_IMAGE:-mirantis/kubeadm-dind-cluster:v1.5}"
 
 # Set to non-empty string to make CRI work in Kubernetes 1.5.x
 ENABLE_STREAMING_PROXY_REDIRECTS=
