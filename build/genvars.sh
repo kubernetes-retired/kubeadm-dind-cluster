@@ -4,7 +4,7 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 
-VERSIONS=(1.4.9 1.5.3)
+VERSIONS=(1.4.9 1.5.3 1.6.0-beta.2)
 
 first=1
 for version in ${VERSIONS[@]}; do
@@ -15,7 +15,7 @@ for version in ${VERSIONS[@]}; do
     echo
   fi
   echo "# Version ${version}"
-  suffix="${version//./_}"
+  suffix="$(tr .- _ <<<"${version}" | tr a-z A-Z)"
   if [[ ! (${version} =~ ^1\.4\.) ]]; then
       echo "KUBEADM_URL_${suffix}='${base_url}/kubeadm'"
       echo "KUBEADM_SHA1_${suffix}=$(curl -sSL "${base_url}/kubeadm.sha1")"
