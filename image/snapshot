@@ -6,7 +6,31 @@ set -o pipefail
 set -o errtrace
 
 function snapshot::prepare {
-  systemctl stop kubelet docker
+  if [[ -f /etc/kubernetes/manifests/kube-controller-manager.json || -f /etc/kubernetes/manifests/kube-controller-manager.yaml ]]; then
+    # remove kube-dns RS to make sure updated one is used
+    kubectl delete rs -n kube-system -l k8s-app=kube-dns
+
+    mkdir /manifests.bak
+    # stop controller manager so it doesn't launch new pods
+    mv /etc/kubernetes/manifests/kube-controller-manager.* /manifests.bak/
+    while kubectl get pod kube-controller-manager-kube-master -n kube-system -o name 2>/dev/null | grep -q pod/; do
+      sleep 0.3
+    done
+    # delete k8s component and dashboard pods so they don't "blink" after cluster restart
+    kubectl delete pod --now -l k8s-app=kube-proxy -n kube-system 2>/dev/null
+    kubectl delete pod --now -l k8s-app=kube-dns -n kube-system 2>/dev/null
+    kubectl delete pod --now -l app=kubernetes-dashboard -n kube-system 2>/dev/null
+    while kubectl get pods -n kube-system -o name | egrep -q '^pod/(kube-proxy-|kube-dns-|kubernetes-dashboard-)'; do
+      sleep 0.3
+    done
+    kubectl get pods -n kube-system
+    systemctl stop kubelet docker
+    # now it's safe to put back the manifest
+    mv /manifests.bak/* /etc/kubernetes/manifests/
+    rmdir /manifests.bak
+  else
+    systemctl stop kubelet docker
+  fi
 }
 
 function snapshot::save {

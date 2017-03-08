@@ -418,7 +418,7 @@ function dind::accelerate-kube-dns {
   dind::step "Patching kube-dns deployment to make it start faster"
   # could do this on the host, too, but we don't want to require jq here
   docker exec kube-master /bin/bash -c \
-         "kubectl get deployment kube-dns -n kube-system -o json | jq '.spec.template.spec.containers[0].readinessProbe.initialDelaySeconds = 3' | kubectl apply -f -"
+         "kubectl get deployment kube-dns -n kube-system -o json | jq '.spec.template.spec.containers[0].readinessProbe.initialDelaySeconds = 3|.spec.template.spec.containers[0].readinessProbe.periodSeconds = 3' | kubectl apply -f -"
 }
 
 function dind::component-ready {
@@ -439,7 +439,6 @@ function dind::wait-for-ready {
   local proxy_ready
   local dns_ready
   local nodes_ready
-  local n=3
   while true; do
     if kubectl get nodes 2>/dev/null| grep -q NotReady; then
       nodes_ready=
@@ -457,12 +456,8 @@ function dind::wait-for-ready {
       dns_ready=
     fi
     if [[ ${nodes_ready} && ${proxy_ready} && ${dns_ready} ]]; then
-      if (( n-- == 0 )); then
-        echo "[done]" >&2
-        break
-      fi
-    else
-      n=3
+      echo "[done]" >&2
+      break
     fi
     echo -n "." >&2
     sleep 1
@@ -509,11 +504,6 @@ function dind::up {
     wait ${pid}
   done
   dind::accelerate-kube-dns
-  # FIXME: Crossing fingers that the deployment's pods get recreated
-  # here. It's not critical but if they don't subsequent cluster
-  # startup may be a bit slower.
-  sleep 3
-  dind::wait-for-ready
 }
 
 function dind::snapshot_container {
