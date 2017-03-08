@@ -562,7 +562,7 @@ function dind::restore {
 }
 
 function dind::down {
-  docker ps -q --filter=label=mirantis.kubeadm_dind_cluster | while read container_id; do
+  docker ps -a -q --filter=label=mirantis.kubeadm_dind_cluster | while read container_id; do
     dind::step "Removing container:" "${container_id}"
     docker rm -fv "${container_id}"
   done
