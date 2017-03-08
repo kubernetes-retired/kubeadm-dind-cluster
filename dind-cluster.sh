@@ -369,23 +369,65 @@ function dind::accelerate-kube-dns {
          "kubectl get deployment kube-dns -n kube-system -o json | jq '.spec.template.spec.containers[0].readinessProbe.initialDelaySeconds = 3' | kubectl apply -f -"
 }
 
-function dind::wait-for-dns {
-  dind::step "Waiting for DNS"
-  # wait for the cluster to become accessible
-  while ! "${kubectl}" get nodes >&/dev/null; do
+function dind::component-ready {
+  local label="$1"
+  local out
+  if ! out="$("${kubectl}" get pod -l "${label}" -n kube-system \
+                           -o jsonpath='{ .items[*].status.conditions[?(@.type == "Ready")].status }')"; then
+    return 1
+  fi
+  if ! grep -v False <<<"${out}" | grep -q True; then
+    return 1
+  fi
+  return 0
+}
+
+function dind::wait-for-ready {
+  dind::step "Waiting for the cluster to become ready"
+  local out
+  local label="k8s-app"
+  # FIXME: in newer kubeadm, the label is always k8s-app
+  while ! out="$("${kubectl}" -n kube-system get pods -l component=kube-dns -o name 2>/dev/null)"; do
     echo -n "." >&2
     sleep 1
   done
-  label="k8s-app"
-  if "${kubectl}" -n kube-system get pods -l component=kube-dns -o name|grep '^pods/'; then
+  if grep -q '^pods/' <<<"${out}"; then
     label="component"
   fi
-  while [[ $("${kubectl}" get pods -l "${label}=kube-dns" -n kube-system \
-                          -o jsonpath='{.items[0].status.conditions[?(@.type == "Ready")].status}' 2>/dev/null) != "True" ]]; do
+
+  local proxy_ready
+  local dns_ready
+  local nodes_ready
+  local n=3
+  while true; do
+    if kubectl get nodes | grep -q NotReady; then
+      nodes_ready=
+    else
+      nodes_ready=y
+    fi
+    if dind::component-ready "${label}=kube-proxy"; then
+      proxy_ready=y
+    else
+      proxy_ready=
+    fi
+    if dind::component-ready "${label}=kube-dns"; then
+      dns_ready=y
+    else
+      dns_ready=
+    fi
+    if [[ ${nodes_ready} && ${proxy_ready} && ${dns_ready} ]]; then
+      if (( n-- == 0 )); then
+        echo "[done]" >&2
+        break
+      fi
+    else
+      n=3
+    fi
     echo -n "." >&2
     sleep 1
   done
-  echo "[done]" >&2
+
+  kubectl get nodes >&2
 }
 
 function dind::up {
@@ -427,7 +469,7 @@ function dind::up {
   # here. It's not critical but if they don't subsequent cluster
   # startup may be a bit slower.
   sleep 3
-  dind::wait-for-dns
+  dind::wait-for-ready
 }
 
 function dind::snapshot_container {
@@ -437,11 +479,12 @@ function dind::snapshot_container {
 }
 
 function dind::snapshot {
+  dind::step "Taking snapshot of the cluster"
   dind::snapshot_container kube-master
   for ((n=1; n <= NUM_NODES; n++)); do
     dind::snapshot_container "kube-node-${n}"
   done
-  dind::wait-for-dns
+  dind::wait-for-ready
 }
 
 restore_cmd=restore
@@ -480,7 +523,7 @@ function dind::restore {
   # Recheck kubectl config. It's possible that the cluster was started
   # on this docker from different host
   dind::configure-kubectl
-  dind::wait-for-dns
+  dind::wait-for-ready
 }
 
 function dind::down {
