@@ -416,9 +416,10 @@ function dind::escape-e2e-name {
 
 function dind::accelerate-kube-dns {
   dind::step "Patching kube-dns deployment to make it start faster"
-  # could do this on the host, too, but we don't want to require jq here
+  # Could do this on the host, too, but we don't want to require jq here
+  # TODO: do this in wrapkubeadm
   docker exec kube-master /bin/bash -c \
-         "kubectl get deployment kube-dns -n kube-system -o json | jq '.spec.template.spec.containers[0].readinessProbe.initialDelaySeconds = 3|.spec.template.spec.containers[0].readinessProbe.periodSeconds = 3' | kubectl apply -f -"
+         "kubectl get deployment kube-dns -n kube-system -o json | jq '.spec.template.spec.containers[0].readinessProbe.initialDelaySeconds = 3|.spec.template.spec.containers[0].readinessProbe.periodSeconds = 3' | kubectl apply --force -f -"
 }
 
 function dind::component-ready {
