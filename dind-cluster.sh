@@ -28,6 +28,7 @@ BUILD_KUBEADM="${BUILD_KUBEADM:-}"
 BUILD_HYPERKUBE="${BUILD_HYPERKUBE:-}"
 APISERVER_PORT=${APISERVER_PORT:-8080}
 NUM_NODES=${NUM_NODES:-2}
+DEPLOY_DASHBOARD=${DEPLOY_DASHBOARD:-}
 
 function dind::need-source {
   if [[ ! -f cluster/kubectl.sh ]]; then
@@ -316,6 +317,11 @@ function dind::set-master-opts {
   fi
 }
 
+function dind::deploy-dashboard {
+  dind::step "Deploying k8s dashboard"
+  kubectl create -f https://rawgit.com/kubernetes/dashboard/master/src/deploy/kubernetes-dashboard.yaml
+}
+
 function dind::init {
   local -a opts
   dind::set-master-opts
@@ -326,6 +332,9 @@ function dind::init {
   # So we just pick the line from 'kubeadm init' output
   kubeadm_join_flags="$(dind::kubeadm "${container_id}" init --skip-preflight-checks "$@" | grep '^kubeadm join' | sed 's/^kubeadm join //')"
   dind::configure-kubectl
+  if [[ ${DEPLOY_DASHBOARD} ]]; then
+    dind::deploy-dashboard
+  fi
 }
 
 function dind::create-node-container {
@@ -428,6 +437,9 @@ function dind::wait-for-ready {
   done
 
   kubectl get nodes >&2
+  if [[ ${DEPLOY_DASHBOARD} ]]; then
+    dind::step "Access dashboard at:" "http://localhost:${APISERVER_PORT}/ui"
+  fi
 }
 
 function dind::up {

@@ -21,3 +21,6 @@ ENABLE_STREAMING_PROXY_REDIRECTS=
 
 # Set to non-empty string to enable building hyperkube
 # BUILD_HYPERKUBE=y
+
+# Set to true to deploy k8s dashboard
+DEPLOY_DASHBOARD=y
