@@ -44,6 +44,11 @@ if [[ "$(hostname)" = kube-master ]]; then
   is_master=y
 fi
 
+# unpack saved /boot & /lib/modules if there are any
+if [[ -f /dind-sys/sys.tar ]]; then
+  tar -C / -xf /dind-sys/sys.tar
+fi
+
 function dind::get-binary-from-build-data-container {
   local filename="$1"
   local src_path="${build_src_dir}/_output/dockerized/bin/${platform}/${filename}"

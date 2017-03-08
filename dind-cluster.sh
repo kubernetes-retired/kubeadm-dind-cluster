@@ -56,7 +56,9 @@ else
   kubectl=kubectl
 fi
 
+busybox_image="busybox:1.26.2"
 e2e_base_image="golang:1.7.1"
+sys_volume_args=()
 build_volume_args=()
 
 function dind::set-build-volume-args {
@@ -73,6 +75,56 @@ function dind::set-build-volume-args {
                             echo "${KUBE_DATA_CONTAINER_NAME:-${KUBE_BUILD_DATA_CONTAINER_NAME}}")"
     build_volume_args=(--volumes-from "${build_container_name}")
   fi
+}
+
+function dind::volume-exists {
+  local name="$1"
+  if docker volume inspect "${name}" >& /dev/null; then
+    return 0
+  fi
+  return 1
+}
+
+function dind::create-volume {
+  local name="$1"
+  docker volume create --label mirantis.kubeadm_dind_cluster --name "${name}" >/dev/null
+}
+
+# We mount /boot and /lib/modules into the container
+# below to in case some of the workloads need them.
+# This includes virtlet, for instance. Also this may be
+# useful in future if we want DIND nodes to pass
+# preflight checks.
+# Unfortunately we can't do this when using Mac Docker
+# (unless a remote docker daemon on Linux is used)
+# NB: there's no /boot on recent Mac dockers
+function dind::prepare-sys-mounts {
+  if [[ ! ${is_moby_linux} ]]; then
+    sys_volume_args=()
+    if [[ -d /boot ]]; then
+      sys_volume_args+=(-v /boot:/boot)
+    fi
+    if [[ -d /lib/modules ]]; then
+      sys_volume_args+=(-v /lib/modules:/lib/modules)
+    fi
+    return 0
+  fi
+  if ! dind::volume-exists kubeadm-dind-sys; then
+    dind::step "Saving a copy of docker host's /lib/modules"
+    dind::create-volume kubeadm-dind-sys
+    # Use a dirty nsenter trick to fool Docker on Mac and grab system
+    # /lib/modules into sys.tar file on kubeadm-dind-sys volume.
+    local nsenter="nsenter --mount=/proc/1/ns/mnt --"
+    docker run \
+           --rm \
+           --privileged \
+           -v kubeadm-dind-sys:/dest \
+           --pid=host \
+           "${busybox_image}" \
+           /bin/sh -c \
+           "if ${nsenter} test -d /lib/modules; then ${nsenter} tar -C / -c lib/modules >/dest/sys.tar; fi"
+  fi
+  sys_volume_args=(-v kubeadm-dind-sys:/dind-sys)
 }
 
 tmp_containers=()
@@ -123,8 +175,8 @@ function dind::check-binary {
       return 0
     fi
   elif docker run --rm "${build_volume_args[@]}" \
-              busybox test \
-              -f "/go/src/k8s.io/kubernetes/${dockerized}" >&/dev/null; then
+              "${busybox_image}" \
+              test -f "/go/src/k8s.io/kubernetes/${dockerized}" >&/dev/null; then
     return 0
   fi
   return 1
@@ -159,14 +211,6 @@ function dind::ensure-binaries {
   return 0
 }
 
-function dind::volume-exists {
-  local name="$1"
-  if docker volume inspect "${name}" >& /dev/null; then
-    return 0
-  fi
-  return 1
-}
-
 function dind::ensure-network {
   if ! docker network inspect kubeadm-dind-net >&/dev/null; then
     docker network create --subnet=10.192.0.0/16 kubeadm-dind-net >/dev/null
@@ -188,7 +232,7 @@ function dind::ensure-volume {
     echo "*** Failed to locate volume: ${name}" 1>&2
     return 1
   fi
-  docker volume create --label mirantis.kubeadm_dind_cluster --name "${name}" >/dev/null
+  dind::create-volume "${name}"
 }
 
 function dind::run {
@@ -227,15 +271,14 @@ function dind::run {
     args+=("systemd.setenv=DOCKER_NETWORK_OFFSET=0.0.${netshift}.0")
   fi
 
+  opts+=(${sys_volume_args[@]+"${sys_volume_args[@]}"})
+
   dind::step "Starting DIND container:" "${container_name}"
-  # We mount /boot and /lib/modules into the container
-  # below to in case some of the workloads need them.
-  # This includes virtlet, for instance. Unfortunately
-  # we can't do this when using Mac Docker
-  # (unless a remote docker daemon on Linux is used)
+
   if [[ ! ${is_moby_linux} ]]; then
     opts+=(-v /boot:/boot -v /lib/modules:/lib/modules)
   fi
+
   if [[ ${ENABLE_STREAMING_PROXY_REDIRECTS} ]]; then
     args+=("systemd.setenv=ENABLE_STREAMING_PROXY_REDIRECTS=y")
   fi
@@ -646,6 +689,7 @@ function dind::step {
 
 case "${1:-}" in
   up)
+    dind::prepare-sys-mounts
     if ! dind::check-for-snapshot; then
       force_make_binaries=y dind::up
       dind::snapshot
@@ -654,6 +698,7 @@ case "${1:-}" in
     fi
     ;;
   reup)
+    dind::prepare-sys-mounts
     if ! dind::check-for-snapshot; then
       force_make_binaries=y dind::up
       dind::snapshot
@@ -668,10 +713,12 @@ case "${1:-}" in
     ;;
   init)
     shift
+    dind::prepare-sys-mounts
     dind::init "$@"
     ;;
   join)
     shift
+    dind::prepare-sys-mounts
     dind::join "$(dind::create-node-container)" "$@"
     ;;
   # bare)
