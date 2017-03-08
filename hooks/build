@@ -2,4 +2,11 @@
 set -u -e -x
 DIND_ROOT="${PWD}"
 . build/funcs.sh
+if [[ ${DOCKER_TAG} =~ v1.4$ ]]; then
+  HYPERKUBE_URL=${HYPERKUBE_URL_1_4_9}
+  HYPERKUBE_SHA1=${HYPERKUBE_SHA1_1_4_9}
+else
+  HYPERKUBE_URL=${HYPERKUBE_URL_1_5_3}
+  HYPERKUBE_SHA1=${HYPERKUBE_SHA1_1_5_3}
+fi
 dind::build-image "${IMAGE_NAME}"
