@@ -422,10 +422,10 @@ function dind::accelerate-kube-dns {
 }
 
 function dind::component-ready {
-  local label="$1"
+  local component="$1"
   local out
-  if ! out="$("${kubectl}" get pod -l "${label}" -n kube-system \
-                           -o jsonpath='{ .items[*].status.conditions[?(@.type == "Ready")].status }')"; then
+  if ! out="$("${kubectl}" get pod -l k8s-app="${component}" -n kube-system \
+                           -o jsonpath='{ .items[*].status.conditions[?(@.type == "Ready")].status }' 2>/dev/null)"; then
     return 1
   fi
   if ! grep -v False <<<"${out}" | grep -q True; then
@@ -436,33 +436,22 @@ function dind::component-ready {
 
 function dind::wait-for-ready {
   dind::step "Waiting for the cluster to become ready"
-  local out
-  local label="k8s-app"
-  # FIXME: in newer kubeadm, the label is always k8s-app
-  while ! out="$("${kubectl}" -n kube-system get pods -l component=kube-dns -o name 2>/dev/null)"; do
-    echo -n "." >&2
-    sleep 1
-  done
-  if grep -q '^pods/' <<<"${out}"; then
-    label="component"
-  fi
-
   local proxy_ready
   local dns_ready
   local nodes_ready
   local n=3
   while true; do
-    if kubectl get nodes | grep -q NotReady; then
+    if kubectl get nodes 2>/dev/null| grep -q NotReady; then
       nodes_ready=
     else
       nodes_ready=y
     fi
-    if dind::component-ready "${label}=kube-proxy"; then
+    if dind::component-ready kube-proxy; then
       proxy_ready=y
     else
       proxy_ready=
     fi
-    if dind::component-ready "${label}=kube-dns"; then
+    if dind::component-ready kube-dns; then
       dns_ready=y
     else
       dns_ready=

@@ -183,17 +183,10 @@ function dind::frob-proxy {
   #
   # Recipe by @errordeveloper:
   # https://github.com/kubernetes/kubernetes/pull/34522#issuecomment-253248985
-  # TODO: use proxy flags for kubeadm when/if #34522 is merged
-
-  # k8s-app label is used by newer kubeadm
-  label="k8s-app"
-  if kubectl -n kube-system get pods -l component=kube-proxy -o name|grep '^pods/'; then
-    label="component"
-  fi
-  kubectl -n kube-system get ds -l "${label}=kube-proxy" -o json |
+  kubectl -n kube-system get ds -l k8s-app=kube-proxy -o json |
     jq "$(dind::join-filters "${proxy_mount_binaries}" "$(dind::proxy-cidr-and-no-conntrack)")" |
     kubectl apply -f -
-  kubectl -n kube-system delete pods --now -l "${label}=kube-proxy"
+  kubectl -n kube-system delete pods --now -l "k8s-app=kube-proxy"
 }
 
 function dind::frob-apiserver {
