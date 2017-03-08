@@ -13,14 +13,26 @@ function snapshot::prepare {
     mkdir /manifests.bak
     # stop controller manager so it doesn't launch new pods
     mv /etc/kubernetes/manifests/kube-controller-manager.* /manifests.bak/
+    local n=40
     while kubectl get pod kube-controller-manager-kube-master -n kube-system -o name 2>/dev/null | grep -q pod/; do
+      if ((--n == 0)); then
+        echo "WARNING: kubelet glitch: kube-controller-manager won't stop; pods may 'blink' for some time after restore" >&2
+        systemctl stop kubelet docker
+        return
+      fi
       sleep 0.3
     done
     # delete k8s component and dashboard pods so they don't "blink" after cluster restart
     kubectl delete pod --now -l k8s-app=kube-proxy -n kube-system 2>/dev/null
     kubectl delete pod --now -l k8s-app=kube-dns -n kube-system 2>/dev/null
     kubectl delete pod --now -l app=kubernetes-dashboard -n kube-system 2>/dev/null
+    n=40
     while kubectl get pods -n kube-system -o name | egrep -q '^pod/(kube-proxy-|kube-dns-|kubernetes-dashboard-)'; do
+      if ((--n == 0)); then
+        echo "WARNING: cluster glitch: component pods aren't removed; pods may 'blink' for some time after restore" >&2
+        systemctl stop kubelet docker
+        return
+      fi
       sleep 0.3
     done
     kubectl get pods -n kube-system
