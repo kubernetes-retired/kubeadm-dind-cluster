@@ -358,7 +358,7 @@ function dind::set-master-opts {
 
 function dind::deploy-dashboard {
   dind::step "Deploying k8s dashboard"
-  kubectl create -f https://rawgit.com/kubernetes/dashboard/master/src/deploy/kubernetes-dashboard.yaml
+  "${kubectl}" create -f https://rawgit.com/kubernetes/dashboard/master/src/deploy/kubernetes-dashboard.yaml
 }
 
 function dind::init {
@@ -460,7 +460,7 @@ function dind::wait-for-ready {
     sleep 1
   done
 
-  kubectl get nodes >&2
+  "${kubectl}" get nodes >&2
   if [[ ${DEPLOY_DASHBOARD} ]]; then
     dind::step "Access dashboard at:" "http://localhost:${APISERVER_PORT}/ui"
   fi
