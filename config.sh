@@ -8,13 +8,10 @@ APISERVER_PORT=${APISERVER_PORT:-8080}
 NUM_NODES=${NUM_NODES:-2}
 
 # Use non-dockerized build
-KUBEADM_DIND_LOCAL=
+# KUBEADM_DIND_LOCAL=
 
 # Use prebuilt DIND image
 DIND_IMAGE="${DIND_IMAGE:-mirantis/kubeadm-dind-cluster:v1.5}"
-
-# Set to non-empty string to make CRI work in Kubernetes 1.5.x
-ENABLE_STREAMING_PROXY_REDIRECTS=
 
 # Set to non-empty string to enable building kubeadm
 # BUILD_KUBEADM=y

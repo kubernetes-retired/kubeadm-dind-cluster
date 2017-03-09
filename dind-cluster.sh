@@ -279,10 +279,6 @@ function dind::run {
     opts+=(-v /boot:/boot -v /lib/modules:/lib/modules)
   fi
 
-  if [[ ${ENABLE_STREAMING_PROXY_REDIRECTS} ]]; then
-    args+=("systemd.setenv=ENABLE_STREAMING_PROXY_REDIRECTS=y")
-  fi
-
   volume_name="kubeadm-dind-${container_name}"
   dind::ensure-network
   dind::ensure-volume ${reuse_volume} "${volume_name}"
