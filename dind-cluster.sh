@@ -469,6 +469,11 @@ function dind::wait-for-ready {
   done
   echo "[done]" >&2
 
+  kubectl get pods -n kube-system -l k8s-app=kube-discovery | grep MatchNodeSelector | awk '{print $1}' | while read name; do
+    dind::step "Killing off stale kube-discovery pod" "${name}"
+    kubectl delete pod --now -n kube-system "${name}"
+  done
+
   "${kubectl}" get nodes >&2
   if [[ ${DEPLOY_DASHBOARD} ]]; then
     dind::step "Access dashboard at:" "http://localhost:${APISERVER_PORT}/ui"
