@@ -419,9 +419,9 @@ function dind::accelerate-kube-dns {
 }
 
 function dind::component-ready {
-  local component="$1"
+  local label="$1"
   local out
-  if ! out="$("${kubectl}" get pod -l k8s-app="${component}" -n kube-system \
+  if ! out="$("${kubectl}" get pod -l "${label}" -n kube-system \
                            -o jsonpath='{ .items[*].status.conditions[?(@.type == "Ready")].status }' 2>/dev/null)"; then
     return 1
   fi
@@ -432,33 +432,42 @@ function dind::component-ready {
 }
 
 function dind::wait-for-ready {
-  dind::step "Waiting for the cluster to become ready"
+  dind::step "Waiting for kube-proxy and the nodes"
   local proxy_ready
-  local dns_ready
   local nodes_ready
+  local n=3
   while true; do
     if kubectl get nodes 2>/dev/null| grep -q NotReady; then
       nodes_ready=
     else
       nodes_ready=y
     fi
-    if dind::component-ready kube-proxy; then
+    if dind::component-ready k8s-app=kube-proxy; then
       proxy_ready=y
     else
       proxy_ready=
     fi
-    if dind::component-ready kube-dns; then
-      dns_ready=y
+    if [[ ${nodes_ready} && ${proxy_ready} ]]; then
+      if ((--n == 0)); then
+        echo "[done]" >&2
+        break
+      fi
     else
-      dns_ready=
-    fi
-    if [[ ${nodes_ready} && ${proxy_ready} && ${dns_ready} ]]; then
-      echo "[done]" >&2
-      break
+      n=3
     fi
     echo -n "." >&2
     sleep 1
   done
+
+  dind::step "Bringing up kube-dns and kubernetes-dashboard"
+  kubectl scale deployment --replicas=1 -n kube-system kube-dns
+  kubectl scale deployment --replicas=1 -n kube-system kubernetes-dashboard
+
+  while ! dind::component-ready k8s-app=kube-dns || ! dind::component-ready app=kubernetes-dashboard; do
+    echo -n "." >&2
+    sleep 1
+  done
+  echo "[done]" >&2
 
   "${kubectl}" get nodes >&2
   if [[ ${DEPLOY_DASHBOARD} ]]; then

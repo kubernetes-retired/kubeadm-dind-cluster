@@ -7,14 +7,26 @@ set -o errtrace
 
 function snapshot::prepare {
   if [[ -f /etc/kubernetes/manifests/kube-controller-manager.json || -f /etc/kubernetes/manifests/kube-controller-manager.yaml ]]; then
-    # remove kube-dns RS to make sure updated one is used
-    kubectl delete rs -n kube-system -l k8s-app=kube-dns
+    # remove kube-dns and kube-dashboard pods to avoid 'blinking'
+    # FIXME: when using k8s 1.6 kube-dns pods stay in 'Terminating' state
+    # Possibly related: https://github.com/kubernetes/kubernetes/issues/42685
+    kubectl scale deployment --replicas=0 -n kube-system kube-dns
+    kubectl scale deployment --replicas=0 -n kube-system kubernetes-dashboard
+    local n=40
+    while kubectl get pods -n kube-system -o name | egrep -q '^pods*/(kube-dns-|kubernetes-dashboard-)'; do
+      if ((--n == 0)); then
+        echo "WARNING: controller manager glitch: dns & dashboard won't stop; pods may 'blink' for some time after restore" >&2
+        systemctl stop kubelet docker
+        return
+      fi
+      sleep 0.3
+    done
 
     mkdir /manifests.bak
-    # stop controller manager so it doesn't launch new pods
+    # stop controller manager so it doesn't launch new proxy daemon pods
     mv /etc/kubernetes/manifests/kube-controller-manager.* /manifests.bak/
-    local n=40
-    while kubectl get pod kube-controller-manager-kube-master -n kube-system -o name 2>/dev/null | grep -q pod/; do
+    n=100
+    while kubectl get pod kube-controller-manager-kube-master -n kube-system -o name 2>/dev/null | grep -q pods*/; do
       if ((--n == 0)); then
         echo "WARNING: kubelet glitch: kube-controller-manager won't stop; pods may 'blink' for some time after restore" >&2
         systemctl stop kubelet docker
@@ -22,14 +34,13 @@ function snapshot::prepare {
       fi
       sleep 0.3
     done
-    # delete k8s component and dashboard pods so they don't "blink" after cluster restart
+
+    # delete proxy pods so they don't "blink" after cluster restart
     kubectl delete pod --now -l k8s-app=kube-proxy -n kube-system 2>/dev/null
-    kubectl delete pod --now -l k8s-app=kube-dns -n kube-system 2>/dev/null
-    kubectl delete pod --now -l app=kubernetes-dashboard -n kube-system 2>/dev/null
     n=40
-    while kubectl get pods -n kube-system -o name | egrep -q '^pod/(kube-proxy-|kube-dns-|kubernetes-dashboard-)'; do
+    while kubectl get pod -n kube-system -o name -l k8s-app=kube-proxy | grep -q '^pods*/'; do
       if ((--n == 0)); then
-        echo "WARNING: cluster glitch: component pods aren't removed; pods may 'blink' for some time after restore" >&2
+        echo "WARNING: cluster glitch: proxy pods aren't removed; pods may 'blink' for some time after restore" >&2
         systemctl stop kubelet docker
         return
       fi
