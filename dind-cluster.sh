@@ -414,8 +414,10 @@ function dind::accelerate-kube-dns {
   dind::step "Patching kube-dns deployment to make it start faster"
   # Could do this on the host, too, but we don't want to require jq here
   # TODO: do this in wrapkubeadm
+  # 'kubectl version --short' is a quick check for kubectl 1.4
+  # which doesn't support 'kubectl apply --force'
   docker exec kube-master /bin/bash -c \
-         "kubectl get deployment kube-dns -n kube-system -o json | jq '.spec.template.spec.containers[0].readinessProbe.initialDelaySeconds = 3|.spec.template.spec.containers[0].readinessProbe.periodSeconds = 3' | kubectl apply --force -f -"
+         "kubectl get deployment kube-dns -n kube-system -o json | jq '.spec.template.spec.containers[0].readinessProbe.initialDelaySeconds = 3|.spec.template.spec.containers[0].readinessProbe.periodSeconds = 3' | if kubectl version --short >&/dev/null; then kubectl apply --force -f -; else kubectl apply -f -; fi"
 }
 
 function dind::component-ready {
@@ -469,7 +471,7 @@ function dind::wait-for-ready {
   done
   echo "[done]" >&2
 
-  kubectl get pods -n kube-system -l k8s-app=kube-discovery | grep MatchNodeSelector | awk '{print $1}' | while read name; do
+  kubectl get pods -n kube-system -l k8s-app=kube-discovery | (grep MatchNodeSelector || true) | awk '{print $1}' | while read name; do
     dind::step "Killing off stale kube-discovery pod" "${name}"
     kubectl delete pod --now -n kube-system "${name}"
   done

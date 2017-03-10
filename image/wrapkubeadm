@@ -183,9 +183,14 @@ function dind::frob-proxy {
   #
   # Recipe by @errordeveloper:
   # https://github.com/kubernetes/kubernetes/pull/34522#issuecomment-253248985
+  local force_apply=--force
+  if ! kubectl version --short >&/dev/null; then
+    # kubectl 1.4 doesn't have version --short and also it doesn't support apply --force
+    force_apply=
+  fi
   kubectl -n kube-system get ds -l k8s-app=kube-proxy -o json |
     jq "$(dind::join-filters "${proxy_mount_binaries}" "$(dind::proxy-cidr-and-no-conntrack)")" |
-    kubectl apply --force -f -
+    kubectl apply ${force_apply} -f -
   kubectl -n kube-system delete pods --now -l "k8s-app=kube-proxy"
 }
 
@@ -193,7 +198,7 @@ function dind::frob-apiserver {
   local -a filters=("${mount_binaries}" "${apiserver_insecure_bind_address}" "${apiserver_insecure_bind_port}")
   # StreamingProxyRedirects is needed for CRI
   # In 1.4 there's no StreamingProxyRedirects feature gate and in 1.6 it's enabled by default
-  if kubectl version --short|grep -q 'Server.*: v1\.5\.'; then
+  if kubectl version --short >&/dev/null|grep -q 'Server.*: v1\.5\.'; then
     filters+=("${apiserver_streaming_proxy_redirects}")
   fi
   dind::frob-file "${apiserver_static_pod}" "${filters[@]}"
