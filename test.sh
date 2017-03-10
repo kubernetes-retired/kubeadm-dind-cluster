@@ -18,15 +18,10 @@ function test_cluster {
 
 test_cluster
 
-# kubeadm 1.6.0-beta.1 has a bug that makes it print wrong join string
-# let's wait till 1.6.0-beta.2
-# FIXME: the proper solution is always using newer kubeadm and not
-# relying on 'kubeadm init' output
-
-# (
-#     export KUBEADM_URL=https://storage.googleapis.com/kubernetes-release/release/v1.6.0-beta.1/bin/linux/amd64/kubeadm
-#     export KUBEADM_SHA1=049fc44729ec953aad78f54e3f8df652b91005f0
-#     export HYPERKUBE_URL=https://storage.googleapis.com/kubernetes-release/release/v1.6.0-beta.1/bin/linux/amd64/hyperkube
-#     export HYPERKUBE_SHA1=d60060dde9c74b368c4191a05ebe0216e75c4204
-#     test_cluster
-# )
+(
+    export KUBEADM_URL=https://storage.googleapis.com/kubernetes-release/release/v1.6.0-beta.2/bin/linux/amd64/kubeadm
+    export KUBEADM_SHA1=61286285fa2d1ecbd85ca1980f556b41d188f34f
+    export HYPERKUBE_URL=https://storage.googleapis.com/kubernetes-release/release/v1.6.0-beta.2/bin/linux/amd64/hyperkube
+    export HYPERKUBE_SHA1=27e3c04c248aa972a6a3f1dd742fde7fcb5e1598
+    test_cluster
+)
