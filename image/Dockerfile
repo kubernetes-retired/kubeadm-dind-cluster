@@ -21,12 +21,9 @@ COPY 20-fs.conf /etc/systemd/system/docker.service.d/
 COPY wrapkubeadm /usr/local/bin/
 COPY start_services /usr/local/bin/
 COPY rundocker /usr/local/bin
-COPY kubelet /usr/local/bin/
 COPY dindnet /usr/local/bin
 COPY snapshot /usr/local/bin
 
-# kubeadm package tries to restart kubelet during its installation
-# via systemctl, so we need extra tricks to prevent it from doing so
 RUN apt-get -qq update && \
     apt-mark unhold docker-engine && \
     DEBIAN_FRONTEND=noninteractive apt-get install docker-engine=1.12.6-0~ubuntu-xenial -qqy && \
@@ -37,7 +34,7 @@ RUN apt-get -qq update && \
     apt-get -qq clean && \
     mkdir -p /etc/systemd/system/kubelet.service.d /etc/kubernetes/cni/net.d && \
     rm -f /lib/systemd/system/multi-user.target.wants/getty.target && \
-    chmod +x /usr/local/bin/rundocker /usr/local/bin/kubelet /usr/local/bin/dindnet /usr/local/bin/snapshot && \
+    chmod +x /usr/local/bin/rundocker /usr/local/bin/dindnet /usr/local/bin/snapshot && \
     mkdir -p /usr/lib/kubernetes/cni/bin && \
     curl -sSL --retry 5 https://storage.googleapis.com/kubernetes-release/network-plugins/cni-${ARCH}-${CNI_RELEASE}.tar.gz | \
       tar -C /usr/lib/kubernetes/cni -xz && \
