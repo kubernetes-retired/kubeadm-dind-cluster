@@ -29,6 +29,7 @@ BUILD_HYPERKUBE="${BUILD_HYPERKUBE:-}"
 APISERVER_PORT=${APISERVER_PORT:-8080}
 NUM_NODES=${NUM_NODES:-2}
 DEPLOY_DASHBOARD=${DEPLOY_DASHBOARD:-}
+LOCAL_KUBECTL_VERSION=${LOCAL_KUBECTL_VERSION:-}
 
 function dind::need-source {
   if [[ ! -f cluster/kubectl.sh ]]; then
@@ -49,7 +50,7 @@ if [[ ${use_k8s_source} ]]; then
     build_tools_dir="build-tools"
   fi
 else
-  if ! hash kubectl 2>/dev/null; then
+  if [[ ! ${LOCAL_KUBECTL_VERSION:-} ]] && ! hash kubectl 2>/dev/null; then
     echo "You need kubectl binary in your PATH to use prebuilt DIND image" 1>&2
     exit 1
   fi
@@ -60,6 +61,7 @@ busybox_image="busybox:1.26.2"
 e2e_base_image="golang:1.7.1"
 sys_volume_args=()
 build_volume_args=()
+kubectl_dir="${HOME}/.kubeadm-dind-cluster"
 
 function dind::set-build-volume-args {
   if [ ${#build_volume_args[@]} -gt 0 ]; then
@@ -182,9 +184,57 @@ function dind::check-binary {
   return 1
 }
 
+function dind::ensure-downloaded-kubectl {
+  local kubectl_url
+  local kubectl_sha1
+  local kubectl_sha1_linux
+  local kubectl_sha1_darwin
+  local kubectl_link
+
+  if [[ ${LOCAL_KUBECTL_VERSION:-} = "v1.4.9" ]]; then
+    kubectl_sha1_linux=5726e8f17d56a5efeb2a644d8e7e2fdd8da8b8fd
+    kubectl_sha1_darwin=630fb3e0f4f442178cde0264d4b399291226eb2b
+  elif [[ ${LOCAL_KUBECTL_VERSION:-} = "v1.5.3" ]]; then
+    kubectl_sha1_linux=295ced9fdbd4e1efd27d44f6322b4ef19ae10a12
+    kubectl_sha1_darwin=c3b2a031763e32105c560c9819d0333524ca19bc
+  elif [[ ${LOCAL_KUBECTL_VERSION:-} = "v1.6.0-beta.2" ]]; then
+    kubectl_sha1_linux=ab400e5e2d6f0977f22e60a8e09cda924b348572
+    kubectl_sha1_darwin=b6331b2d47798766e68484d7e38bcb04ee5086c7
+  elif [[ ${LOCAL_KUBECTL_VERSION} ]]; then
+    echo "Invalid kubectl version" >&2
+    exit 1
+  else
+    return 0
+  fi
+
+  export PATH="${kubectl_dir}:$PATH"
+
+  if [ $(uname) = Darwin ]; then
+    kubectl_sha1="${kubectl_sha1_darwin}"
+  else
+    kubectl_sha1="${kubectl_sha1_linux}"
+  fi
+  local link_target="kubectl-${LOCAL_KUBECTL_VERSION}"
+  local link_name="${kubectl_dir}"/kubectl
+  if [[ -h "${link_name}" && "$(readlink "${link_name}")" = "${link_target}" ]]; then
+    return 0
+  fi
+
+  if [[ ! -f "${link_target}" ]]; then
+    mkdir -p "${kubectl_dir}"
+    local path="${kubectl_dir}/${link_target}"
+    wget -O "${path}" "https://storage.googleapis.com/kubernetes-release/release/${LOCAL_KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+    echo "${kubectl_sha1} ${path}" | sha1sum -c
+    chmod +x "${path}"
+  fi
+
+  ln -fs "${link_target}" "${kubectl_dir}/kubectl"
+}
+
 function dind::ensure-kubectl {
   if [[ ! ${use_k8s_source} ]]; then
     # already checked on startup
+    dind::ensure-downloaded-kubectl
     return 0
   fi
   if [ $(uname) = Darwin ]; then
@@ -257,8 +307,6 @@ function dind::run {
     echo >&2 "Must specify container name"
     exit 1
   fi
-
-  dind::ensure-kubectl
 
   # remove any previously created containers with the same name
   docker rm -vf "${container_name}" >&/dev/null || true
@@ -682,6 +730,7 @@ function dind::step {
 case "${1:-}" in
   up)
     dind::prepare-sys-mounts
+    dind::ensure-kubectl
     if ! dind::check-for-snapshot; then
       force_make_binaries=y dind::up
       dind::snapshot
@@ -691,6 +740,7 @@ case "${1:-}" in
     ;;
   reup)
     dind::prepare-sys-mounts
+    dind::ensure-kubectl
     if ! dind::check-for-snapshot; then
       force_make_binaries=y dind::up
       dind::snapshot
@@ -706,11 +756,13 @@ case "${1:-}" in
   init)
     shift
     dind::prepare-sys-mounts
+    dind::ensure-kubectl
     dind::init "$@"
     ;;
   join)
     shift
     dind::prepare-sys-mounts
+    dind::ensure-kubectl
     dind::join "$(dind::create-node-container)" "$@"
     ;;
   # bare)

@@ -21,3 +21,6 @@ DIND_IMAGE="${DIND_IMAGE:-mirantis/kubeadm-dind-cluster:v1.5}"
 
 # Set to true to deploy k8s dashboard
 DEPLOY_DASHBOARD=y
+
+# download kubectl on the host
+LOCAL_KUBECTL_VERSION="${LOCAL_KUBECTL_VERSION:-v1.5.3}"

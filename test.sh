@@ -15,8 +15,8 @@ function download-kubectl {
   local sha1="$2"
   local path="${tempdir}/kubectl-${version}"
   wget -O "${path}" "https://storage.googleapis.com/kubernetes-release/release/${version}/bin/linux/amd64/kubectl"
-  chmod +x "${path}"
   echo "${sha1} ${path}" | sha1sum -c
+  chmod +x "${path}"
 }
 
 function select-kubectl {
