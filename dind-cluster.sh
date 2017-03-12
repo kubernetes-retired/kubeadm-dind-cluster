@@ -582,7 +582,7 @@ function dind::down {
 
 function dind::remove-volumes {
   # docker 1.13+: docker volume ls -q -f label=mirantis.kubeadm_dind_cluster
-  docker volume ls -q | grep '^kubeadm-dind' | while read volume_id; do
+  docker volume ls -q | (grep '^kubeadm-dind' || true) | while read volume_id; do
     dind::step "Removing volume:" "${volume_id}"
     docker volume rm "${volume_id}"
   done
