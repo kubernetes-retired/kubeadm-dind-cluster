@@ -462,8 +462,8 @@ function dind::wait-for-ready {
   done
 
   dind::step "Bringing up kube-dns and kubernetes-dashboard"
-  kubectl scale deployment --replicas=1 -n kube-system kube-dns
-  kubectl scale deployment --replicas=1 -n kube-system kubernetes-dashboard
+  "${kubectl}" scale deployment --replicas=1 -n kube-system kube-dns
+  "${kubectl}" scale deployment --replicas=1 -n kube-system kubernetes-dashboard
 
   while ! dind::component-ready k8s-app=kube-dns || ! dind::component-ready app=kubernetes-dashboard; do
     echo -n "." >&2
@@ -473,7 +473,7 @@ function dind::wait-for-ready {
 
   kubectl get pods -n kube-system -l k8s-app=kube-discovery | (grep MatchNodeSelector || true) | awk '{print $1}' | while read name; do
     dind::step "Killing off stale kube-discovery pod" "${name}"
-    kubectl delete pod --now -n kube-system "${name}"
+    "${kubectl}" delete pod --now -n kube-system "${name}"
   done
 
   "${kubectl}" get nodes >&2
