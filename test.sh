@@ -4,10 +4,35 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 
+. build/buildconf.sh
+
+tempdir="$(mktemp -d)"
+trap "rm -rf '${tempdir}'" EXIT
+export PATH="${tempdir}:${PATH}"
+
+function download-kubectl {
+  local version="$1"
+  local sha1="$2"
+  local path="${tempdir}/kubectl-${version}"
+  wget -O "${path}" "https://storage.googleapis.com/kubernetes-release/release/${version}/bin/linux/amd64/kubectl"
+  chmod +x "${path}"
+  echo "${sha1} ${path}" | sha1sum -c
+}
+
+function select-kubectl {
+  local version="$1"
+  ln -fs "${tempdir}/kubectl-${version}" "${tempdir}/kubectl"
+}
+
+download-kubectl v1.4.9 5726e8f17d56a5efeb2a644d8e7e2fdd8da8b8fd
+download-kubectl v1.5.3 295ced9fdbd4e1efd27d44f6322b4ef19ae10a12
+download-kubectl v1.6.0-beta.2 ab400e5e2d6f0977f22e60a8e09cda924b348572
+
 export DIND_IMAGE=mirantis/kubeadm-dind-cluster:local
 
-function test_cluster {
+function test-cluster {
   ./build/build-local.sh
+  bash -x ./dind-cluster.sh clean
   time bash -x ./dind-cluster.sh up
   kubectl get pods -n kube-system | grep kube-dns
   time bash -x ./dind-cluster.sh up
@@ -16,12 +41,31 @@ function test_cluster {
   bash -x ./dind-cluster.sh clean
 }
 
-test_cluster
+(
+  export KUBEADM_URL="${KUBEADM_URL_1_5_3}"
+  export KUBEADM_SHA1="${KUBEADM_SHA1_1_5_3}"
+  export HYPERKUBE_URL="${HYPERKUBE_URL_1_4_9}"
+  export HYPERKUBE_SHA1="${HYPERKUBE_SHA1_1_4_9}"
+  select-kubectl v1.4.9
+  test-cluster
+)
 
 (
-    export KUBEADM_URL=https://storage.googleapis.com/kubernetes-release/release/v1.6.0-beta.2/bin/linux/amd64/kubeadm
-    export KUBEADM_SHA1=61286285fa2d1ecbd85ca1980f556b41d188f34f
-    export HYPERKUBE_URL=https://storage.googleapis.com/kubernetes-release/release/v1.6.0-beta.2/bin/linux/amd64/hyperkube
-    export HYPERKUBE_SHA1=27e3c04c248aa972a6a3f1dd742fde7fcb5e1598
-    test_cluster
+  export KUBEADM_URL="${KUBEADM_URL_1_5_3}"
+  export KUBEADM_SHA1="${KUBEADM_SHA1_1_5_3}"
+  export HYPERKUBE_URL="${HYPERKUBE_URL_1_5_3}"
+  export HYPERKUBE_SHA1="${HYPERKUBE_SHA1_1_5_3}"
+  select-kubectl v1.5.3
+  test-cluster
 )
+
+(
+  export KUBEADM_URL="${KUBEADM_URL_1_6_0_BETA_2}"
+  export KUBEADM_SHA1="${KUBEADM_SHA1_1_6_0_BETA_2}"
+  export HYPERKUBE_URL="${HYPERKUBE_URL_1_6_0_BETA_2}"
+  export HYPERKUBE_SHA1="${HYPERKUBE_SHA1_1_6_0_BETA_2}"
+  select-kubectl v1.6.0-beta.2
+  test-cluster
+)
+
+echo "*** OK ***"
