@@ -19,6 +19,7 @@ export APISERVER_PORT=8899
 docker-machine create \
                --driver=google \
                --google-project=${KUBE_DIND_GCE_PROJECT} \
+               --google-machine-image=ubuntu-os-cloud/global/images/ubuntu-1604-xenial-v20170307 \
                --google-zone=us-west1-a \
                --google-machine-type=n1-standard-8 \
                --google-disk-size=50 \
