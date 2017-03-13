@@ -193,6 +193,7 @@ function dind::ensure-downloaded-kubectl {
   local kubectl_sha1_linux
   local kubectl_sha1_darwin
   local kubectl_link
+  local kubectl_os
 
   if [[ ! ${LOCAL_KUBECTL_VERSION:-} && ${DIND_IMAGE:-} =~ :(v[0-9]+\.[0-9]+)$ ]]; then
     local k8s_version="${BASH_REMATCH[1]}"
@@ -237,8 +238,10 @@ function dind::ensure-downloaded-kubectl {
 
   if [ $(uname) = Darwin ]; then
     kubectl_sha1="${kubectl_sha1_darwin}"
+    kubectl_os=darwin
   else
     kubectl_sha1="${kubectl_sha1_linux}"
+    kubectl_os=linux
   fi
   local link_target="kubectl-${LOCAL_KUBECTL_VERSION}"
   local link_name="${KUBECTL_DIR}"/kubectl
@@ -249,7 +252,7 @@ function dind::ensure-downloaded-kubectl {
   if [[ ! -f "${link_target}" ]]; then
     mkdir -p "${KUBECTL_DIR}"
     local path="${KUBECTL_DIR}/${link_target}"
-    wget -O "${path}" "https://storage.googleapis.com/kubernetes-release/release/${LOCAL_KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+    wget -O "${path}" "https://storage.googleapis.com/kubernetes-release/release/${LOCAL_KUBECTL_VERSION}/bin/${kubectl_os}/amd64/kubectl"
     echo "${kubectl_sha1} ${path}" | sha1sum -c
     chmod +x "${path}"
   fi
