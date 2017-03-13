@@ -19,7 +19,7 @@ if docker info|grep -q '^Kernel Version: .*-moby$'; then
     is_moby_linux=1
 fi
 
-#%CONFIG%
+EMBEDDED_CONFIG=y;DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.4
 
 if [[ ! ${EMBEDDED_CONFIG:-} ]]; then
   source "${DIND_ROOT}/config.sh"

@@ -6,37 +6,29 @@ set -o errtrace
 
 . build/buildconf.sh
 
+NOBUILD="${NOBUILD:-}"
+
 tempdir="$(mktemp -d)"
 trap "rm -rf '${tempdir}'" EXIT
-export PATH="${tempdir}:${PATH}"
+export KUBECTL_DIR="${tempdir}"
 
-function download-kubectl {
-  local version="$1"
-  local sha1="$2"
-  local path="${tempdir}/kubectl-${version}"
-  wget -O "${path}" "https://storage.googleapis.com/kubernetes-release/release/${version}/bin/linux/amd64/kubectl"
-  echo "${sha1} ${path}" | sha1sum -c
-  chmod +x "${path}"
-}
+kubectl="${KUBECTL_DIR}/kubectl"
 
-function select-kubectl {
-  local version="$1"
-  ln -fs "${tempdir}/kubectl-${version}" "${tempdir}/kubectl"
-}
-
-download-kubectl v1.4.9 5726e8f17d56a5efeb2a644d8e7e2fdd8da8b8fd
-download-kubectl v1.5.3 295ced9fdbd4e1efd27d44f6322b4ef19ae10a12
-download-kubectl v1.6.0-beta.2 ab400e5e2d6f0977f22e60a8e09cda924b348572
-
-export DIND_IMAGE=mirantis/kubeadm-dind-cluster:local
+if [[ ${NOBUILD} ]]; then
+  bash -x ./dind-cluster.sh clean
+else
+  export DIND_IMAGE=mirantis/kubeadm-dind-cluster:local
+fi
 
 function test-cluster {
-  ./build/build-local.sh
+  if [[ ! ${NOBUILD} ]]; then
+    ./build/build-local.sh
+  fi
   bash -x ./dind-cluster.sh clean
   time bash -x ./dind-cluster.sh up
-  kubectl get pods -n kube-system | grep kube-dns
+  "${kubectl}" get pods -n kube-system | grep kube-dns
   time bash -x ./dind-cluster.sh up
-  kubectl get pods -n kube-system | grep kube-dns
+  "${kubectl}" get pods -n kube-system | grep kube-dns
   bash -x ./dind-cluster.sh down
   bash -x ./dind-cluster.sh clean
 }
@@ -46,7 +38,12 @@ function test-cluster {
   export KUBEADM_SHA1="${KUBEADM_SHA1_1_5_3}"
   export HYPERKUBE_URL="${HYPERKUBE_URL_1_4_9}"
   export HYPERKUBE_SHA1="${HYPERKUBE_SHA1_1_4_9}"
-  select-kubectl v1.4.9
+  if [[ ${NOBUILD} ]]; then
+    export DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.4
+    docker pull "${DIND_IMAGE}"
+  else
+    export LOCAL_KUBECTL_VERSION=v1.4.9
+  fi
   test-cluster
 )
 
@@ -55,7 +52,12 @@ function test-cluster {
   export KUBEADM_SHA1="${KUBEADM_SHA1_1_5_3}"
   export HYPERKUBE_URL="${HYPERKUBE_URL_1_5_3}"
   export HYPERKUBE_SHA1="${HYPERKUBE_SHA1_1_5_3}"
-  select-kubectl v1.5.3
+  if [[ ${NOBUILD} ]]; then
+    export DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.5
+    docker pull "${DIND_IMAGE}"
+  else
+    export LOCAL_KUBECTL_VERSION=v1.5.3
+  fi
   test-cluster
 )
 
@@ -66,7 +68,12 @@ if [[ ! ${TRAVIS:-} ]]; then
     export KUBEADM_SHA1="${KUBEADM_SHA1_1_6_0_BETA_2}"
     export HYPERKUBE_URL="${HYPERKUBE_URL_1_6_0_BETA_2}"
     export HYPERKUBE_SHA1="${HYPERKUBE_SHA1_1_6_0_BETA_2}"
-    select-kubectl v1.6.0-beta.2
+    if [[ ${NOBUILD} ]]; then
+      export DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.6
+      docker pull "${DIND_IMAGE}"
+    else
+      export LOCAL_KUBECTL_VERSION=v1.6.0-beta.2
+    fi
     test-cluster
   )
 fi

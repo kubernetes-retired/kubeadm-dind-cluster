@@ -19,8 +19,7 @@ DIND_IMAGE="${DIND_IMAGE:-mirantis/kubeadm-dind-cluster:v1.5}"
 # Set to non-empty string to enable building hyperkube
 # BUILD_HYPERKUBE=y
 
-# Set to true to deploy k8s dashboard
-DEPLOY_DASHBOARD=y
-
 # download kubectl on the host
-LOCAL_KUBECTL_VERSION="${LOCAL_KUBECTL_VERSION:-v1.5.3}"
+# Set automatically based on DIND image version tag
+# if image version tag is of the form vNNN.NNN
+# LOCAL_KUBECTL_VERSION="${LOCAL_KUBECTL_VERSION:-v1.5.3}"
