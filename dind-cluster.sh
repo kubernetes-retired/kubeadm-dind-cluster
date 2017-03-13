@@ -35,6 +35,24 @@ NUM_NODES=${NUM_NODES:-2}
 LOCAL_KUBECTL_VERSION=${LOCAL_KUBECTL_VERSION:-}
 KUBECTL_DIR="${KUBECTL_DIR:-${HOME}/.kubeadm-dind-cluster}"
 
+if [[ ! ${LOCAL_KUBECTL_VERSION:-} && ${DIND_IMAGE:-} =~ :(v[0-9]+\.[0-9]+)$ ]]; then
+  k8s_version="${BASH_REMATCH[1]}"
+  case "${k8s_version}" in
+    v1.4)
+      LOCAL_KUBECTL_VERSION=v1.4.9
+      ;;
+    v1.5)
+      LOCAL_KUBECTL_VERSION=v1.5.3
+      ;;
+    v1.6)
+      LOCAL_KUBECTL_VERSION=v1.6.0-beta.2
+      ;;
+    *)
+      echo "Warning: can't infer k8s version from image tag '${k8s_version}'"
+      ;;
+  esac
+fi
+
 function dind::need-source {
   if [[ ! -f cluster/kubectl.sh ]]; then
     echo "$0 must be called from the Kubernetes repository root directory" 1>&2
@@ -194,24 +212,6 @@ function dind::ensure-downloaded-kubectl {
   local kubectl_sha1_darwin
   local kubectl_link
   local kubectl_os
-
-  if [[ ! ${LOCAL_KUBECTL_VERSION:-} && ${DIND_IMAGE:-} =~ :(v[0-9]+\.[0-9]+)$ ]]; then
-    local k8s_version="${BASH_REMATCH[1]}"
-    case "${k8s_version}" in
-      v1.4)
-        LOCAL_KUBECTL_VERSION=v1.4.9
-        ;;
-      v1.5)
-        LOCAL_KUBECTL_VERSION=v1.5.3
-        ;;
-      v1.6)
-        LOCAL_KUBECTL_VERSION=v1.6.0-beta.2
-        ;;
-      *)
-        echo "Warning: can't infer k8s version from image tag '${k8s_version}'"
-        ;;
-    esac
-  fi
 
   case "${LOCAL_KUBECTL_VERSION}" in
     v1.4.9)
