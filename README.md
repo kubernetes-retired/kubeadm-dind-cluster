@@ -1,43 +1,91 @@
 # kubeadm-dind-cluster [![Build Status](https://travis-ci.org/Mirantis/kubeadm-dind-cluster.svg?branch=master)](https://travis-ci.org/Mirantis/kubeadm-dind-cluster)
-A Kubernetes multi-node cluster for developer _of_ Kubernetes. Based
-on kubeadm and DIND (Docker in Docker).
+A Kubernetes multi-node cluster for developer _of_ Kubernetes and
+projects that extend Kubernetes. Based on kubeadm and DIND (Docker in
+Docker).
 
 Supports both local workflows and workflows utilizing powerful remote
 machines/cloud instances for building Kubernetes, starting test
 clusters and running e2e tests.
 
-## Usage
-```shell
-$ cd kubernetes
-$ git clone git@github.com:Mirantis/kubeadm-dind-cluster.git dind
+## Requirements
+Docker 1.12+ is recommended. If you're not using one of the
+preconfigured scripts (see below) and not building from source, it's
+necessary to have `kubectl` executable in your path matching the
+version of k8s binaries you're using (i.e. for example don't try to
+use `kubectl` 1.6.x with `hyperkube` 1.5.x).
 
-$ # build binaries+images and start the cluster
-$ dind/dind-cluster.sh up
+kubeadm-dind-cluster supports k8s versions 1.4.x (tested with 1.4.9),
+1.5.x (tested with 1.5.3) and 1.6.x (tested with 1.6.0-beta.2).  1.6
+branch currently has some stability issues because of pod termination
+taking too long so your mileage may vary.
+
+## Using preconfigured scripts
+kubeadm-dind-cluster currently provides preconfigured scripts for
+Kubernetes 1.4.9, 1.5.3 and 1.6.0-beta.2. This may be convenient for
+use with projects that extend or use Kubernetes. For example, you can
+start Kubernetes 1.5.3 like this:
+
+```shell
+$ wget https://cdn.rawgit.com/Mirantis/kubeadm-dind-cluster/master/fixed/dind-cluster-v1.5.sh
+$ chmod +x dind-cluster-v1.5.sh
+
+$ # start the cluster
+$ ./dind-cluster-v1.5.sh up
+
+$ # add kubectl directory to PATH
+$ export PATH="$HOME/.kubeadm-dind-cluster:$PATH"
 
 $ kubectl get nodes
-NAME         STATUS    AGE
-172.17.0.2   Ready     2m
-172.17.0.3   Ready     2m
-172.17.0.4   Ready     2m
+NAME          STATUS         AGE
+kube-master   Ready,master   1m
+kube-node-1   Ready          34s
+kube-node-2   Ready          34s
+
+$ # k8s dashboard available at http://localhost:8080/ui
+
+$ # restart the cluster, this should happen much quicker than initial startup
+$ ./dind-cluster-v1.5.sh up
+
+$ # stop the cluster
+$ ./dind-cluster-v1.5.sh down
+
+$ # remote DIND containers and volumes
+$ ./dind-cluster-v1.5.sh clean
+```
+
+Replace 1.5 with with 1.4 or 1.6 to use other Kubernetes versions.
+
+## Using with Kubernetes source
+```shell
+$ git clone git@github.com:Mirantis/kubeadm-dind-cluster.git ~/dind
+
+$ cd ~/work/kubernetes/src/k8s.io/kubernetes
+
+$ export BUILD_KUBEADM=y
+$ export BUILD_HYPERKUBE=y
+
+$ # build binaries+images and start the cluster
+$ ~/dind/dind-cluster.sh up
+
+$ kubectl get nodes
+NAME          STATUS         AGE
+kube-master   Ready,master   1m
+kube-node-1   Ready          34s
+kube-node-2   Ready          34s
+
+$ # k8s dashboard available at http://localhost:8080/ui
 
 $ # run conformance tests
-$ dind/dind-cluster.sh e2e
+$ ~/dind/dind-cluster.sh e2e
 
-$ # rebuild binaries & update images
-$ dind/dind-cluster.sh update
-
-$ # restart the cluster
-$ dind/dind-cluster.sh up
+$ # restart the cluster rebuilding
+$ ~/dind/dind-cluster.sh up
 
 $ # run particular e2e test based on substring
-$ dind/dind-cluster.sh e2e "existing RC"
-
-$ # create 'bare' DIND container for experimentation
-$ dind/dind-cluster.sh bare foobar -v /somedir:/somedir
-$ docker exec foobar ls -l /
+$ ~/dind/dind-cluster.sh e2e "existing RC"
 
 $ # shut down the cluster
-$ dind/dind-cluster.sh down
+$ ~/dind/dind-cluster.sh down
 ```
 
 The first `dind/dind-cluster.sh up` invocation can be slow because it
@@ -68,7 +116,7 @@ shell environment is preserved, e.g.
 . gce-setup.sh
 ```
 The example is based on sample commands from
-[build-tools/README.md](https://github.com/kubernetes/kubernetes/blob/master/build-tools/README.md#really-remote-docker-engine)
+[build/README.md](https://github.com/kubernetes/kubernetes/blob/master/build/README.md#really-remote-docker-engine)
 in Kubernetes source.
 
 When using a remote machine, you need to use ssh port forwarding
@@ -107,6 +155,12 @@ kubeadm-dind-cluster uses kubeadm to create a cluster consisting of
 docker containers instead of VMs. That's somewhat of a compromise but
 allows one to (re)start clusters quickly which is quite important when
 making changes to k8s source.
+
+Moreover, some projects that extend Kubernetes such as
+[Virtlet](https://github.com/Mirantis/virtlet) need a way to start
+kubernetes cluster quickly in CI environment without involving nested
+virtulization. Current kubeadm-dind-cluster version provides means to
+do this without the need to build Kubernetes locally.
 
 ## Additional notes
 At the moment, all non-serial `[Conformance]` e2e tests pass for
