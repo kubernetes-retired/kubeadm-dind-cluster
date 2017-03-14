@@ -60,7 +60,7 @@ function snapshot::save {
   # the scripts expects output the output of 'docker diff' as input
   grep -v '^D ' |
     sed 's@^. /@@' |
-    egrep -v '^(tmp|var/lib/kubelet|var/log|etc/mtab)' |
+    egrep -v '^(tmp|var/lib/kubelet|var/log|etc/mtab|run/)' |
     while read path; do
       if [[ ! -d ${path} || ${path} =~ ^var/lib/etcd/.*/snap$ ]]; then
         echo "${path}"
