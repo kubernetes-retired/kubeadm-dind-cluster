@@ -754,6 +754,11 @@ function dind::step {
 
 case "${1:-}" in
   up)
+    if [[ ! ( ${DIND_IMAGE} =~ local ) ]]; then
+      dind::step "Making sure DIND image is up to date"
+      docker pull "${DIND_IMAGE}" >&2
+    fi
+
     dind::prepare-sys-mounts
     dind::ensure-kubectl
     if ! dind::check-for-snapshot; then
