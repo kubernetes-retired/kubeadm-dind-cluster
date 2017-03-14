@@ -198,7 +198,7 @@ function dind::frob-apiserver {
   local -a filters=("${mount_binaries}" "${apiserver_insecure_bind_address}" "${apiserver_insecure_bind_port}")
   # StreamingProxyRedirects is needed for CRI
   # In 1.4 there's no StreamingProxyRedirects feature gate and in 1.6 it's enabled by default
-  if kubectl version --short >&/dev/null|grep -q 'Server.*: v1\.5\.'; then
+  if kubectl version --short 2>/dev/null|grep -q 'Server.*: v1\.5\.'; then
     filters+=("${apiserver_streaming_proxy_redirects}")
   fi
   dind::frob-file "${apiserver_static_pod}" "${filters[@]}"
