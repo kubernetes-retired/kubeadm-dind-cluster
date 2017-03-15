@@ -34,6 +34,7 @@ APISERVER_PORT=${APISERVER_PORT:-8080}
 NUM_NODES=${NUM_NODES:-2}
 LOCAL_KUBECTL_VERSION=${LOCAL_KUBECTL_VERSION:-}
 KUBECTL_DIR="${KUBECTL_DIR:-${HOME}/.kubeadm-dind-cluster}"
+DASHBOARD_URL="${DASHBOARD_URL:-https://rawgit.com/kubernetes/dashboard/e312513254db6e807ecb3d077f3598ebd22447c4/src/deploy/kubernetes-dashboard.yaml}"
 
 if [[ ! ${LOCAL_KUBECTL_VERSION:-} && ${DIND_IMAGE:-} =~ :(v[0-9]+\.[0-9]+)$ ]]; then
   k8s_version="${BASH_REMATCH[1]}"
@@ -435,7 +436,7 @@ function dind::set-master-opts {
 
 function dind::deploy-dashboard {
   dind::step "Deploying k8s dashboard"
-  "${kubectl}" create -f https://rawgit.com/kubernetes/dashboard/master/src/deploy/kubernetes-dashboard.yaml
+  "${kubectl}" create -f "${DASHBOARD_URL}"
 }
 
 function dind::init {
