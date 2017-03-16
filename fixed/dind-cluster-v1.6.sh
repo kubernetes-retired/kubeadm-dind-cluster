@@ -178,14 +178,14 @@ function dind::make-for-linux {
   shift
   dind::step "Building binaries:" "$*"
   if [ -n "${KUBEADM_DIND_LOCAL:-}" ]; then
-    make WHAT="$*"
     dind::step "+ make WHAT=\"$*\""
+    make WHAT="$*"
   elif [ "${copy}" = "y" ]; then
-    "${build_tools_dir}/run.sh" make WHAT="$*"
     dind::step "+ ${build_tools_dir}/run.sh make WHAT=\"$*\""
+    "${build_tools_dir}/run.sh" make WHAT="$*"
   else
-    KUBE_RUN_COPY_OUTPUT=n "${build_tools_dir}/run.sh" make WHAT="$*"
     dind::step "+ KUBE_RUN_COPY_OUTPUT=n ${build_tools_dir}/run.sh make WHAT=\"$*\""
+    KUBE_RUN_COPY_OUTPUT=n "${build_tools_dir}/run.sh" make WHAT="$*"
   fi
 }
 
