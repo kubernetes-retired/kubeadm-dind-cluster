@@ -24,6 +24,8 @@ COPY rundocker /usr/local/bin
 COPY dindnet /usr/local/bin
 COPY snapshot /usr/local/bin
 
+# TODO: use 'systemctl mask' to disable units
+# See here for example: https://github.com/docker/docker/issues/27202#issuecomment-253579916
 RUN apt-get -qq update && \
     apt-mark unhold docker-engine && \
     DEBIAN_FRONTEND=noninteractive apt-get install docker-engine=1.12.6-0~ubuntu-xenial -qqy && \
@@ -33,7 +35,7 @@ RUN apt-get -qq update && \
     apt-get -qq -y autoremove && \
     apt-get -qq clean && \
     mkdir -p /etc/systemd/system/kubelet.service.d /etc/kubernetes/cni/net.d && \
-    rm -f /lib/systemd/system/multi-user.target.wants/getty.target && \
+    rm -f /lib/systemd/system/multi-user.target.wants/getty.target /lib/systemd/system/sysinit.target.wants/systemd-udev* /lib/systemd/system/sockets.target.wants/systemd-udev* && \
     chmod +x /usr/local/bin/rundocker /usr/local/bin/dindnet /usr/local/bin/snapshot && \
     mkdir -p /usr/lib/kubernetes/cni/bin && \
     curl -sSL --retry 5 https://storage.googleapis.com/kubernetes-release/network-plugins/cni-${ARCH}-${CNI_RELEASE}.tar.gz | \
