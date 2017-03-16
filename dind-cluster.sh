@@ -35,6 +35,7 @@ NUM_NODES=${NUM_NODES:-2}
 LOCAL_KUBECTL_VERSION=${LOCAL_KUBECTL_VERSION:-}
 KUBECTL_DIR="${KUBECTL_DIR:-${HOME}/.kubeadm-dind-cluster}"
 DASHBOARD_URL="${DASHBOARD_URL:-https://rawgit.com/kubernetes/dashboard/e312513254db6e807ecb3d077f3598ebd22447c4/src/deploy/kubernetes-dashboard.yaml}"
+E2E_REPORT_DIR="${E2E_REPORT_DIR:-}"
 
 if [[ ! ${LOCAL_KUBECTL_VERSION:-} && ${DIND_IMAGE:-} =~ :(v[0-9]+\.[0-9]+)$ ]]; then
   k8s_version="${BASH_REMATCH[1]}"
@@ -679,11 +680,16 @@ function dind::do-run-e2e {
   local skip="${3:-}"
   dind::need-source
   local test_args="--host=http://localhost:${APISERVER_PORT}"
-  if [[ "$focus" ]]; then
+  local -a e2e_volume_opts=()
+  if [[ ${focus} ]]; then
     test_args="--ginkgo.focus=${focus} ${test_args}"
   fi
-  if [[ "$skip" ]]; then
+  if [[ ${skip} ]]; then
     test_args="--ginkgo.skip=${skip} ${test_args}"
+  fi
+  if [[ ${E2E_REPORT_DIR} ]]; then
+    test_args="--ginkgo.noColor --report-dir=/report ${test_args}"
+    e2e_volume_opts=(-v "${E2E_REPORT_DIR}:/report")
   fi
   dind::ensure-binaries cmd/kubectl test/e2e/e2e.test vendor/github.com/onsi/ginkgo/ginkgo
   dind::step "Running e2e tests with args:" "${test_args}"
@@ -697,6 +703,7 @@ function dind::do-run-e2e {
          -e KUBE_MASTER=local \
          -e KUBERNETES_CONFORMANCE_TEST=y \
          -e GINKGO_PARALLEL=${parallel} \
+         ${e2e_volume_opts[@]+"${e2e_volume_opts[@]}"} \
          -w /go/src/k8s.io/kubernetes \
          "${e2e_base_image}" \
          bash -c "cluster/kubectl.sh config set-cluster dind --server='http://localhost:${APISERVER_PORT}' --insecure-skip-tls-verify=true &&
