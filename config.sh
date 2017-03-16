@@ -25,4 +25,4 @@ DIND_IMAGE="${DIND_IMAGE:-mirantis/kubeadm-dind-cluster:v1.5}"
 # LOCAL_KUBECTL_VERSION="${LOCAL_KUBECTL_VERSION:-v1.5}"
 
 # Set custom URL for Dashboard yaml file
-# DASHBOARD_URL="${DASHBOARD_URL:-https://rawgit.com/kubernetes/dashboard/e312513254db6e807ecb3d077f3598ebd22447c4/src/deploy/kubernetes-dashboard.yaml}"
+# DASHBOARD_URL="${DASHBOARD_URL:-https://rawgit.com/kubernetes/dashboard/bfab10151f012d1acc5dfb1979f3172e2400aa3c/src/deploy/kubernetes-dashboard.yaml}"
