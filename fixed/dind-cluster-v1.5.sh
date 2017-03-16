@@ -384,7 +384,7 @@ function dind::kubeadm {
   status=0
   # See image/bare/wrapkubeadm.
   # Capturing output is necessary to grab flags for 'kubeadm join'
-  if ! docker exec "${container_id}" wrapkubeadm "$@" 2>&1 | tee /dev/fd/2; then
+  if ! docker exec "${container_id}" /bin/bash -x /usr/local/bin/wrapkubeadm "$@" 2>&1 | tee /dev/fd/2; then
     echo "*** kubeadm failed" >&2
     return 1
   fi
@@ -447,7 +447,7 @@ function dind::init {
   # FIXME: I tried using custom tokens with 'kubeadm ex token create' but join failed with:
   # 'failed to parse response as JWS object [square/go-jose: compact JWS format must have three parts]'
   # So we just pick the line from 'kubeadm init' output
-  kubeadm_join_flags="$(dind::kubeadm "${container_id}" init --skip-preflight-checks "$@" | grep '^kubeadm join' | sed 's/^kubeadm join //')"
+  kubeadm_join_flags="$(dind::kubeadm "${container_id}" init --skip-preflight-checks "$@" | grep '^ *kubeadm join' | sed 's/^ *kubeadm join //')"
   dind::configure-kubectl
   dind::deploy-dashboard
 }
