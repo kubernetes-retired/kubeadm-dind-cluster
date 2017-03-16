@@ -515,7 +515,7 @@ function dind::wait-for-ready {
   local nodes_ready
   local n=3
   while true; do
-    if kubectl get nodes 2>/dev/null| grep -q NotReady; then
+    if "${kubectl}" get nodes 2>/dev/null| grep -q NotReady; then
       nodes_ready=
     else
       nodes_ready=y
@@ -547,7 +547,7 @@ function dind::wait-for-ready {
   done
   echo "[done]" >&2
 
-  kubectl get pods -n kube-system -l k8s-app=kube-discovery | (grep MatchNodeSelector || true) | awk '{print $1}' | while read name; do
+  "${kubectl}" get pods -n kube-system -l k8s-app=kube-discovery | (grep MatchNodeSelector || true) | awk '{print $1}' | while read name; do
     dind::step "Killing off stale kube-discovery pod" "${name}"
     "${kubectl}" delete pod --now -n kube-system "${name}"
   done
