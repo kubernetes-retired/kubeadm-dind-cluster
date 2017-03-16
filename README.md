@@ -15,15 +15,15 @@ version of k8s binaries you're using (i.e. for example don't try to
 use `kubectl` 1.6.x with `hyperkube` 1.5.x).
 
 kubeadm-dind-cluster supports k8s versions 1.4.x (tested with 1.4.9),
-1.5.x (tested with 1.5.3) and 1.6.x (tested with 1.6.0-beta.2).  1.6
+1.5.x (tested with 1.5.4) and 1.6.x (tested with 1.6.0-beta.3).  1.6
 branch currently has some stability issues because of pod termination
 taking too long so your mileage may vary.
 
 ## Using preconfigured scripts
 kubeadm-dind-cluster currently provides preconfigured scripts for
-Kubernetes 1.4.9, 1.5.3 and 1.6.0-beta.2. This may be convenient for
-use with projects that extend or use Kubernetes. For example, you can
-start Kubernetes 1.5.3 like this:
+Kubernetes 1.4, 1.5 and 1.6. This may be convenient for use with
+projects that extend or use Kubernetes. For example, you can start
+Kubernetes 1.5 like this:
 
 ```shell
 $ wget https://cdn.rawgit.com/Mirantis/kubeadm-dind-cluster/master/fixed/dind-cluster-v1.5.sh

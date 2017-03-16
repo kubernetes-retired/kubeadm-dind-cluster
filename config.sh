@@ -22,7 +22,7 @@ DIND_IMAGE="${DIND_IMAGE:-mirantis/kubeadm-dind-cluster:v1.5}"
 # download kubectl on the host
 # Set automatically based on DIND image version tag
 # if image version tag is of the form vNNN.NNN
-# LOCAL_KUBECTL_VERSION="${LOCAL_KUBECTL_VERSION:-v1.5.3}"
+# LOCAL_KUBECTL_VERSION="${LOCAL_KUBECTL_VERSION:-v1.5}"
 
 # Set custom URL for Dashboard yaml file
 # DASHBOARD_URL="${DASHBOARD_URL:-https://rawgit.com/kubernetes/dashboard/e312513254db6e807ecb3d077f3598ebd22447c4/src/deploy/kubernetes-dashboard.yaml}"

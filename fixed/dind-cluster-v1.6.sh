@@ -38,21 +38,7 @@ DASHBOARD_URL="${DASHBOARD_URL:-https://rawgit.com/kubernetes/dashboard/e3125132
 E2E_REPORT_DIR="${E2E_REPORT_DIR:-}"
 
 if [[ ! ${LOCAL_KUBECTL_VERSION:-} && ${DIND_IMAGE:-} =~ :(v[0-9]+\.[0-9]+)$ ]]; then
-  k8s_version="${BASH_REMATCH[1]}"
-  case "${k8s_version}" in
-    v1.4)
-      LOCAL_KUBECTL_VERSION=v1.4.9
-      ;;
-    v1.5)
-      LOCAL_KUBECTL_VERSION=v1.5.3
-      ;;
-    v1.6)
-      LOCAL_KUBECTL_VERSION=v1.6.0-beta.2
-      ;;
-    *)
-      echo "Warning: can't infer k8s version from image tag '${k8s_version}'"
-      ;;
-  esac
+  LOCAL_KUBECTL_VERSION="${BASH_REMATCH[1]}"
 fi
 
 function dind::need-source {
@@ -214,19 +200,23 @@ function dind::ensure-downloaded-kubectl {
   local kubectl_sha1_darwin
   local kubectl_link
   local kubectl_os
+  local full_kubectl_version
 
   case "${LOCAL_KUBECTL_VERSION}" in
-    v1.4.9)
+    v1.4)
+      full_kubectl_version=v1.4.9
       kubectl_sha1_linux=5726e8f17d56a5efeb2a644d8e7e2fdd8da8b8fd
       kubectl_sha1_darwin=630fb3e0f4f442178cde0264d4b399291226eb2b
       ;;
-    v1.5.3)
-      kubectl_sha1_linux=295ced9fdbd4e1efd27d44f6322b4ef19ae10a12
-      kubectl_sha1_darwin=c3b2a031763e32105c560c9819d0333524ca19bc
+    v1.5)
+      full_kubectl_version=v1.5.4
+      kubectl_sha1_linux=15d8430dc52b1f3772b88bc6a236c8fa58e07c0d
+      kubectl_sha1_darwin=5e671ba792567574eea48be4eddd844ba2f07c27
       ;;
-    v1.6.0-beta.2)      
-      kubectl_sha1_linux=ab400e5e2d6f0977f22e60a8e09cda924b348572
-      kubectl_sha1_darwin=b6331b2d47798766e68484d7e38bcb04ee5086c7
+    v1.6)
+      full_kubectl_version=v1.6.0-beta.3
+      kubectl_sha1_linux=894ea988a92568fce3ed290bc4728171b45b11ef
+      kubectl_sha1_darwin=ce48630a490d6f3cd7298482e11eaf87f89b4e38
       ;;
     "")
       return 0
@@ -245,7 +235,7 @@ function dind::ensure-downloaded-kubectl {
     kubectl_sha1="${kubectl_sha1_linux}"
     kubectl_os=linux
   fi
-  local link_target="kubectl-${LOCAL_KUBECTL_VERSION}"
+  local link_target="kubectl-${full_kubectl_version}"
   local link_name="${KUBECTL_DIR}"/kubectl
   if [[ -h "${link_name}" && "$(readlink "${link_name}")" = "${link_target}" ]]; then
     return 0
@@ -254,7 +244,7 @@ function dind::ensure-downloaded-kubectl {
   if [[ ! -f "${link_target}" ]]; then
     mkdir -p "${KUBECTL_DIR}"
     local path="${KUBECTL_DIR}/${link_target}"
-    wget -O "${path}" "https://storage.googleapis.com/kubernetes-release/release/${LOCAL_KUBECTL_VERSION}/bin/${kubectl_os}/amd64/kubectl"
+    wget -O "${path}" "https://storage.googleapis.com/kubernetes-release/release/${full_kubectl_version}/bin/${kubectl_os}/amd64/kubectl"
     echo "${kubectl_sha1} ${path}" | sha1sum -c
     chmod +x "${path}"
   fi
