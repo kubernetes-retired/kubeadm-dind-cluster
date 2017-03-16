@@ -2,10 +2,7 @@
 Description=DIND network setup
 
 [Service]
-Type=oneshot
 ExecStart=/usr/local/bin/dindnet
-Restart=no
-RemainAfterExit=true
 
 [Install]
 WantedBy=docker.service

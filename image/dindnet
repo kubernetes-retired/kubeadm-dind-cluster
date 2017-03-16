@@ -8,60 +8,44 @@ set -o errtrace
 IP_CIDR=$(ip addr show eth0 | grep -w inet | awk '{ print $2; }')
 IP=$(echo $IP_CIDR | sed 's,/.*,,')
 
-# make docker's kube-dns friendly
-old_ns="$(awk '/^nameserver/ {print $2; exit}' /etc/resolv.conf)"
-if [[ ${old_ns} ]]; then
-  # FIXME: socat should be started as the primary process of this service
-  socat udp4-recvfrom:53,reuseaddr,fork,bind=${IP} UDP:${old_ns}:53 &
-  # sed -i doesn't work here because of docker's handling of /etc/resolv.conf
-  sed "s/^nameserver.*/nameserver ${IP}/" /etc/resolv.conf >/etc/resolv.conf.updated
-  cat /etc/resolv.conf.updated >/etc/resolv.conf
-  # rm /tmp/resolv.conf.updated
-else
-  echo "WARNING: couldn't get nameserver"
-fi
-
-if [[ ! "${DOCKER_NETWORK_OFFSET:-}" ]]; then
-   exit 0
-fi
-
-# create dind0 bridge and attach it to the veth interface eth0
-brctl addbr dind0
-brctl addif dind0 eth0
-ip link set dind0 up
-
-# move ip to the bridge and restore routing via the old gateway
-NETWORK_SIZE=$(echo $IP_CIDR | sed 's,.*/,,')
-DEFAULT_ROUTE=$(ip route | grep default | sed 's/eth0/dind0/')
-DEFAULT_GW=$(echo $DEFAULT_ROUTE|awk '{print $3;}')
-
-ip addr del $IP_CIDR dev eth0
-ip addr add $IP_CIDR dev dind0
-ip route add $DEFAULT_ROUTE
-
-# compute a network for the containers to live in
-# by adding DOCKER_NETWORK_OFFSET to the current IP and cutting off
-# non-network bits according to DOCKER_NETWORK_SIZE
-DOCKER_NETWORK_SIZE=${DOCKER_NETWORK_SIZE:-24}
-NETWORK=$(ip route | grep dind0 | grep -v default | sed 's,/.*,,')
-
-WILDCARD=$(ipcalc $IP_CIDR | grep Wildcard | awk '{print $2;}')
-IFS=. read -r i1 i2 i3 i4 <<< ${IP}
-IFS=. read -r n1 n2 n3 n4 <<< ${NETWORK}
-IFS=. read -r o1 o2 o3 o4 <<< ${DOCKER_NETWORK_OFFSET}
-IFS=. read -r w1 w2 w3 w4 <<< ${WILDCARD}
-
-IP_PLUS_OFFSET=$(printf "%d.%d.%d.%d\n" \
-                        "$(( n1 + ((i1 - n1 + o1) & w1) ))" \
-                        "$(( n2 + ((i2 - n2 + o2) & w2) ))" \
-                        "$(( n3 + ((i3 - n3 + o3) & w3) ))" \
-                        "$(( n4 + ((i4 - n4 + o4) & w4) ))")
-
-HOST_MIN=$(ipcalc $IP_PLUS_OFFSET/$DOCKER_NETWORK_SIZE | grep HostMin | awk '{print $2;}')
-HOST_MAX=$(ipcalc $IP_PLUS_OFFSET/$DOCKER_NETWORK_SIZE | grep HostMax | awk '{print $2;}')
-echo "Using ${HOST_MIN} .. ${HOST_MAX} for docker containers"
-
-cat >/etc/kubernetes/cni/net.d/cni.conf <<EOF
+function dind::setup-bridge {
+  # create dind0 bridge and attach it to the veth interface eth0
+  brctl addbr dind0
+  brctl addif dind0 eth0
+  ip link set dind0 up
+  
+  # move ip to the bridge and restore routing via the old gateway
+  NETWORK_SIZE=$(echo $IP_CIDR | sed 's,.*/,,')
+  DEFAULT_ROUTE=$(ip route | grep default | sed 's/eth0/dind0/')
+  DEFAULT_GW=$(echo $DEFAULT_ROUTE|awk '{print $3;}')
+  
+  ip addr del $IP_CIDR dev eth0
+  ip addr add $IP_CIDR dev dind0
+  ip route add $DEFAULT_ROUTE
+  
+  # compute a network for the containers to live in
+  # by adding DOCKER_NETWORK_OFFSET to the current IP and cutting off
+  # non-network bits according to DOCKER_NETWORK_SIZE
+  DOCKER_NETWORK_SIZE=${DOCKER_NETWORK_SIZE:-24}
+  NETWORK=$(ip route | grep dind0 | grep -v default | sed 's,/.*,,')
+  
+  WILDCARD=$(ipcalc $IP_CIDR | grep Wildcard | awk '{print $2;}')
+  IFS=. read -r i1 i2 i3 i4 <<< ${IP}
+  IFS=. read -r n1 n2 n3 n4 <<< ${NETWORK}
+  IFS=. read -r o1 o2 o3 o4 <<< ${DOCKER_NETWORK_OFFSET}
+  IFS=. read -r w1 w2 w3 w4 <<< ${WILDCARD}
+  
+  IP_PLUS_OFFSET=$(printf "%d.%d.%d.%d\n" \
+                          "$(( n1 + ((i1 - n1 + o1) & w1) ))" \
+                          "$(( n2 + ((i2 - n2 + o2) & w2) ))" \
+                          "$(( n3 + ((i3 - n3 + o3) & w3) ))" \
+                          "$(( n4 + ((i4 - n4 + o4) & w4) ))")
+  
+  HOST_MIN=$(ipcalc $IP_PLUS_OFFSET/$DOCKER_NETWORK_SIZE | grep HostMin | awk '{print $2;}')
+  HOST_MAX=$(ipcalc $IP_PLUS_OFFSET/$DOCKER_NETWORK_SIZE | grep HostMax | awk '{print $2;}')
+  echo "Using ${HOST_MIN} .. ${HOST_MAX} for docker containers"
+  
+  cat >/etc/kubernetes/cni/net.d/cni.conf <<EOF
 {
     "name": "dindnet",
     "type": "bridge",
@@ -78,3 +62,24 @@ cat >/etc/kubernetes/cni/net.d/cni.conf <<EOF
     }
 }
 EOF
+}
+
+if [[ "${DOCKER_NETWORK_OFFSET:-}" ]]; then
+   dind::setup-bridge
+fi
+
+# make docker's kube-dns friendly
+old_ns="$(awk '/^nameserver/ {print $2; exit}' /etc/resolv.conf)"
+if [[ ${old_ns} ]]; then
+  # sed -i doesn't work here because of docker's handling of /etc/resolv.conf
+  sed "s/^nameserver.*/nameserver ${IP}/" /etc/resolv.conf >/etc/resolv.conf.updated
+  cat /etc/resolv.conf.updated >/etc/resolv.conf
+  # rm /tmp/resolv.conf.updated
+  while true; do
+    socat udp4-recvfrom:53,reuseaddr,fork,bind=${IP} UDP:${old_ns}:53 || true
+    echo "WARNING: restarting socat" >&2
+  done
+else
+  echo "WARNING: couldn't get nameserver" >&2
+  exit 1  
+fi
