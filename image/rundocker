@@ -5,6 +5,9 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 
+echo "Trying to load overlay module (this may fail)" >&2
+modprobe overlay || true
+
 storage_opts=
 if grep -q '[[:blank:]]overlay[[:blank:]]*' /proc/filesystems; then
     storage_opts="--storage-driver=overlay2"
