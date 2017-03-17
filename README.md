@@ -14,13 +14,32 @@ necessary to have `kubectl` executable in your path matching the
 version of k8s binaries you're using (i.e. for example don't try to
 use `kubectl` 1.6.x with `hyperkube` 1.5.x).
 
-kubeadm-dind-cluster supports k8s versions 1.4.x (tested with 1.4.9),
-1.5.x (tested with 1.5.4) and 1.6.x (tested with 1.6.0-beta.3).  1.6
-branch currently has some stability issues because of pod termination
-taking too long so your mileage may vary.
+`kubeadm-dind-cluster` supports k8s versions 1.4.x (tested with
+1.4.9), 1.5.x (tested with 1.5.4) and 1.6.x (tested with
+1.6.0-beta.3).  1.6 branch currently has some stability issues because
+of pod termination taking too long so your mileage may vary.
+
+**As of now, running `kubeadm-dind-cluster` on Docker with `btrfs`
+storage driver is not supported.**
+
+The problems include inability to properly clean up DIND volumes due
+to a [docker bug](https://github.com/docker/docker/issues/9939) which
+is not really fixed and, more importantly, a
+[kubelet problem](https://github.com/kubernetes/kubernetes/issues/38337).
+If you want to run `kubeadm-dind-cluster` on btrfs anyway, set
+`RUN_ON_BTRFS_ANYWAY` environment variable to a non-empty value.
+
+By default `kubeadm-dind-cluster` uses dockerized builds, so no Go
+installation is necessary even if you're building Kubernetes from
+source. If you want you can overridde this behavior by setting
+`KUBEADM_DIND_LOCAL` to a non-empty value in [config.sh](config.sh).
+
+When building Kubernetes from source on Mac OS X, it should be
+possible to build `kubectl` locally, i.e. `make WHAT=cmd/kubectl` must
+work.
 
 ## Using preconfigured scripts
-kubeadm-dind-cluster currently provides preconfigured scripts for
+`kubeadm-dind-cluster` currently provides preconfigured scripts for
 Kubernetes 1.4, 1.5 and 1.6. This may be convenient for use with
 projects that extend or use Kubernetes. For example, you can start
 Kubernetes 1.5 like this:
@@ -95,15 +114,6 @@ invocations are much faster.
 ## Configuration
 You may edit `config.sh` to override default settings. See comments in
 the file for more info.
-
-## Requirements
-On Linux, the only requirement is Docker (tested on 1.12.2). By
-default kubeadm-dind-cluster uses dockerized builds, but this
-can be overridden by setting `KUBEADM_DIND_LOCAL` to a non-empty
-value in [config.sh](config.sh).
-
-On Mac OS X, it should be possible to build `kubectl` locally,
-i.e. `make WHAT=cmd/kubectl` must work.
 
 ## Remote Docker / GCE
 It's possible to build Kubernetes on a remote machine running Docker.

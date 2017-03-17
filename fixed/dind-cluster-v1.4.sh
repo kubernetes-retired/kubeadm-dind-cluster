@@ -12,6 +12,14 @@ else
 fi
 DIND_ROOT="$(cd $(dirname "$(readlinkf "${BASH_SOURCE}")"); pwd)"
 
+RUN_ON_BTRFS_ANYWAY="${RUN_ON_BTRFS_ANYWAY:-}"
+if [[ ! ${RUN_ON_BTRFS_ANYWAY} ]] && docker info| grep -q '^Storage Driver: btrfs'; then
+  echo "ERROR: Docker is using btrfs storage driver which is unsupported by kubeadm-dind-cluster" >&2
+  echo "Please refer to the documentation for more info." >&2
+  echo "Set RUN_ON_BTRFS_ANYWAY to non-empty string to continue anyway." >&2
+  exit 1
+fi
+
 # In case of moby linux, -v will not work so we can't
 # mount /lib/modules and /boot
 is_moby_linux=
