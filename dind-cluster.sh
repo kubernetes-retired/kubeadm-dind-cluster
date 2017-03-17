@@ -679,6 +679,7 @@ function dind::do-run-e2e {
   dind::need-source
   local test_args="--host=http://localhost:${APISERVER_PORT}"
   local -a e2e_volume_opts=()
+  local term=
   if [[ ${focus} ]]; then
     test_args="--ginkgo.focus=${focus} ${test_args}"
   fi
@@ -686,14 +687,18 @@ function dind::do-run-e2e {
     test_args="--ginkgo.skip=${skip} ${test_args}"
   fi
   if [[ ${E2E_REPORT_DIR} ]]; then
-    test_args="--ginkgo.noColor --report-dir=/report ${test_args}"
+    test_args="--report-dir=/report ${test_args}"
     e2e_volume_opts=(-v "${E2E_REPORT_DIR}:/report")
   fi
   dind::ensure-binaries cmd/kubectl test/e2e/e2e.test vendor/github.com/onsi/ginkgo/ginkgo
   dind::step "Running e2e tests with args:" "${test_args}"
   dind::set-build-volume-args
+  if [ -t 1 ] ; then
+    term="-it"
+    test_args="--ginkgo.noColor ${test_args}"
+  fi
   docker run \
-         --rm -it \
+         --rm ${term} \
          --net=host \
          "${build_volume_args[@]}" \
          -e KUBERNETES_PROVIDER=dind \
