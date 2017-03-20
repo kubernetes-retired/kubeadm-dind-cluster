@@ -193,7 +193,8 @@ $ dind/dind-cluster.sh e2e-serial
 ## Related work
 
 * kubeadm-dind-cluster was initially derived from
-  [kubernetes-dind-cluster](https://github.com/sttts/kubernetes-dind-cluster).
+  [kubernetes-dind-cluster](https://github.com/sttts/kubernetes-dind-cluster),
+  although as of now the code was completely rewritten.
   kubernetes-dind-cluster is somewhat faster but uses less standard
   way of k8s deployment. It also doesn't include support for consuming
   binaries from remote dockerized builds.
