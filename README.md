@@ -68,7 +68,7 @@ $ ./dind-cluster-v1.5.sh up
 $ # stop the cluster
 $ ./dind-cluster-v1.5.sh down
 
-$ # remote DIND containers and volumes
+$ # remove DIND containers and volumes
 $ ./dind-cluster-v1.5.sh clean
 ```
 
