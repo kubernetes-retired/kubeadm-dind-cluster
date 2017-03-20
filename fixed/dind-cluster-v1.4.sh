@@ -720,7 +720,7 @@ function dind::clean {
   # dind::remove-images
   dind::remove-volumes
   if docker network inspect kubeadm-dind-net >&/dev/null; then
-    docker network remove kubeadm-dind-net
+    docker network rm kubeadm-dind-net
   fi
 }
 
