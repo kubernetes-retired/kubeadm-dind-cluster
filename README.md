@@ -73,6 +73,9 @@ $ ./dind-cluster-v1.5.sh clean
 ```
 
 Replace 1.5 with with 1.4 or 1.6 to use other Kubernetes versions.
+**Important note:** you need to do `./dind-cluster....sh clean` when
+you switch between Kubernetes versions (but no need to do this between
+rebuilds if you use `BUILD_HYPERKUBE=y` like described below).
 
 ## Using with Kubernetes source
 ```shell
