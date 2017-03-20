@@ -12,9 +12,7 @@ If you're an application developer, you may be better off with
 mature and less dependent on the local environment, but if you're
 feeling adventurous you may give `kubeadm-dind-cluster` a try, too. In
 particular you can run `kubeadm-dind-cluster` in CI environment such
-as Travis without having issues with nested virtualization. Also if
-you're a Mac user and you're running Docker on your machine anyway,
-you will not have to run another VM for Kubernetes.
+as Travis without having issues with nested virtualization.
 
 ## Requirements
 Docker 1.12+ is recommended. If you're not using one of the
