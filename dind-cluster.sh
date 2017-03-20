@@ -46,6 +46,7 @@ if [[ ! ${EMBEDDED_CONFIG:-} ]]; then
   source "${DIND_ROOT}/config.sh"
 fi
 
+CNI_PLUGIN="${CNI_PLUGIN:-bridge}"
 DIND_SUBNET="${DIND_SUBNET:-10.192.0.0}"
 dind_ip_base="$(echo "${DIND_SUBNET}" | sed 's/\.0$//')"
 DIND_IMAGE="${DIND_IMAGE:-}"
@@ -348,7 +349,7 @@ function dind::run {
     shift $#
   fi
   local -a opts=(--ip "${ip}" "$@")
-  local -a args
+  local -a args=("systemd.setenv=CNI_PLUGIN=${CNI_PLUGIN}")
 
   if [[ ! "${container_name}" ]]; then
     echo >&2 "Must specify container name"
@@ -362,8 +363,8 @@ function dind::run {
     opts+=(-p "$portforward")
   fi
 
-  if [[ "$netshift" ]]; then
-    args+=("systemd.setenv=DOCKER_NETWORK_OFFSET=0.0.${netshift}.0")
+  if [[ ${CNI_PLUGIN} = bridge && ${netshift} ]]; then
+    args+=("systemd.setenv=CNI_BRIDGE_NETWORK_OFFSET=0.0.${netshift}.0")
   fi
 
   opts+=(${sys_volume_args[@]+"${sys_volume_args[@]}"})
@@ -469,7 +470,7 @@ function dind::init {
   # FIXME: I tried using custom tokens with 'kubeadm ex token create' but join failed with:
   # 'failed to parse response as JWS object [square/go-jose: compact JWS format must have three parts]'
   # So we just pick the line from 'kubeadm init' output
-  kubeadm_join_flags="$(dind::kubeadm "${container_id}" init --skip-preflight-checks "$@" | grep '^ *kubeadm join' | sed 's/^ *kubeadm join //')"
+  kubeadm_join_flags="$(dind::kubeadm "${container_id}" init --pod-network-cidr=10.244.0.0/16 --skip-preflight-checks "$@" | grep '^ *kubeadm join' | sed 's/^ *kubeadm join //')"
   dind::configure-kubectl
   dind::deploy-dashboard
 }
@@ -531,12 +532,24 @@ function dind::component-ready {
   return 0
 }
 
+function dind::kill-failed-pods {
+  local pods
+  # workaround for https://github.com/kubernetes/kubernetes/issues/36482
+  if ! pods="$(kubectl get pod -n kube-system -o jsonpath='{ .items[?(@.status.phase == "Failed")].metadata.name }' 2>/dev/null)"; then
+    return
+  fi
+  for name in ${pods}; do
+    kubectl delete pod --now -n kube-system "${name}" >&/dev/null || true
+  done
+}
+
 function dind::wait-for-ready {
   dind::step "Waiting for kube-proxy and the nodes"
   local proxy_ready
   local nodes_ready
   local n=3
   while true; do
+    dind::kill-failed-pods
     if "${kubectl}" get nodes 2>/dev/null| grep -q NotReady; then
       nodes_ready=
     else
@@ -565,14 +578,10 @@ function dind::wait-for-ready {
 
   while ! dind::component-ready k8s-app=kube-dns || ! dind::component-ready app=kubernetes-dashboard; do
     echo -n "." >&2
+    dind::kill-failed-pods
     sleep 1
   done
   echo "[done]" >&2
-
-  "${kubectl}" get pods -n kube-system -l k8s-app=kube-discovery | (grep MatchNodeSelector || true) | awk '{print $1}' | while read name; do
-    dind::step "Killing off stale kube-discovery pod" "${name}"
-    "${kubectl}" delete pod --now -n kube-system "${name}"
-  done
 
   "${kubectl}" get nodes >&2
   dind::step "Access dashboard at:" "http://localhost:${APISERVER_PORT}/ui"
@@ -612,7 +621,32 @@ function dind::up {
   for pid in ${pids[*]}; do
     wait ${pid}
   done
+  case "${CNI_PLUGIN}" in
+    bridge)
+      ;;
+    flannel)
+      curl -sSL "https://github.com/coreos/flannel/blob/master/Documentation/kube-flannel.yml?raw=true" | "${kubectl}" create -f -
+      ;;
+    calico)
+      "${kubectl}" apply -f http://docs.projectcalico.org/v2.0/getting-started/kubernetes/installation/hosted/kubeadm/calico.yaml
+      ;;
+    weave)
+      # kubelet hangs for some reason when using Weave -- need to debug
+      echo "Sorry, Weave is not supported yet" >&2
+      # "${kubectl}" apply -f https://git.io/weave-kube
+      ;;
+    *)
+      echo "Unsupported CNI plugin '${CNI_PLUGIN}'" >&2
+      ;;
+  esac
   dind::accelerate-kube-dns
+  if [[ ${CNI_PLUGIN} != bridge ]]; then
+    # This is especially important in case of Calico -
+    # the cluster will not recover after snapshotting
+    # (at least not after restarting from the snapshot)
+    # if Calico installation is interrupted
+    dind::wait-for-ready
+  fi
 }
 
 function dind::snapshot_container {

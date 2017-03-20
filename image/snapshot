@@ -75,7 +75,9 @@ function snapshot::save {
     sed 's@^. /@@' |
     egrep -v '^(tmp|var/lib/kubelet|var/log|etc/mtab|run/)' |
     while read path; do
-      if [[ ! -d ${path} || ${path} =~ ^var/lib/etcd/.*/snap$ ]]; then
+      # FIXME: need to just add all the empty dirs to the list
+      # Non-empty dirs will be added automatically by tar
+      if [[ ! -d ${path} || ${path} =~ ^.*/etcd/.*/snap$ ]]; then
         echo "${path}"
       fi
     done |

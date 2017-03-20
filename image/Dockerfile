@@ -48,12 +48,12 @@ RUN apt-get -qq update && \
     DEBIAN_FRONTEND=noninteractive apt-get install bridge-utils net-tools iproute2 iputils-ping tcpdump ipcalc jq curl liblz4-tool -qqy && \
     apt-get -qq -y autoremove && \
     apt-get -qq clean && \
-    mkdir -p /etc/systemd/system/kubelet.service.d /etc/kubernetes/cni/net.d && \
+    mkdir -p /etc/systemd/system/kubelet.service.d /etc/cni/net.d && \
     rm -f /lib/systemd/system/multi-user.target.wants/getty.target /lib/systemd/system/sysinit.target.wants/systemd-udev* /lib/systemd/system/sockets.target.wants/systemd-udev* && \
     chmod +x /usr/local/bin/rundocker /usr/local/bin/dindnet /usr/local/bin/snapshot && \
-    mkdir -p /usr/lib/kubernetes/cni/bin && \
+    mkdir -p /opt/cni/bin && \
     curl -sSL --retry 5 https://storage.googleapis.com/kubernetes-release/network-plugins/cni-${ARCH}-${CNI_RELEASE}.tar.gz | \
-      tar -C /usr/lib/kubernetes/cni -xz && \
+      tar -C /opt/cni -xz && \
     mkdir -p /etc/systemd/system/docker.service.wants && \
     ln -s /lib/systemd/system/dindnet.service /etc/systemd/system/docker.service.wants/ && \
     ln -s /k8s/hyperkube /usr/bin/kubectl && \
