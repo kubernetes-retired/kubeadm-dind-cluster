@@ -21,6 +21,7 @@ set -o errtrace
 . build/buildconf.sh
 
 NOBUILD="${NOBUILD:-}"
+TEST_CASE="${TEST_CASE:-}"
 
 tempdir="$(mktemp -d)"
 trap "rm -rf '${tempdir}'" EXIT
@@ -47,45 +48,60 @@ function test-cluster {
   bash -x ./dind-cluster.sh clean
 }
 
-(
-  export KUBEADM_URL="${KUBEADM_URL_1_5}"
-  export KUBEADM_SHA1="${KUBEADM_SHA1_1_5}"
-  export HYPERKUBE_URL="${HYPERKUBE_URL_1_4}"
-  export HYPERKUBE_SHA1="${HYPERKUBE_SHA1_1_4}"
-  if [[ ${NOBUILD} ]]; then
-    export DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.4
-    docker pull "${DIND_IMAGE}"
-  else
-    export LOCAL_KUBECTL_VERSION=v1.4
-  fi
-  test-cluster
-)
+function test-case-1.4 {
+  (
+    export KUBEADM_URL="${KUBEADM_URL_1_5}"
+    export KUBEADM_SHA1="${KUBEADM_SHA1_1_5}"
+    export HYPERKUBE_URL="${HYPERKUBE_URL_1_4}"
+    export HYPERKUBE_SHA1="${HYPERKUBE_SHA1_1_4}"
+    if [[ ${NOBUILD} ]]; then
+      export DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.4
+      docker pull "${DIND_IMAGE}"
+    else
+      export LOCAL_KUBECTL_VERSION=v1.4
+    fi
+    test-cluster
+  )
+}
 
-(
-  export KUBEADM_URL="${KUBEADM_URL_1_5}"
-  export KUBEADM_SHA1="${KUBEADM_SHA1_1_5}"
-  export HYPERKUBE_URL="${HYPERKUBE_URL_1_5}"
-  export HYPERKUBE_SHA1="${HYPERKUBE_SHA1_1_5}"
-  if [[ ${NOBUILD} ]]; then
-    export DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.5
-    docker pull "${DIND_IMAGE}"
-  else
-    export LOCAL_KUBECTL_VERSION=v1.5
-  fi
-  test-cluster
-)
+function test-case-1.5 {
+  (
+    export KUBEADM_URL="${KUBEADM_URL_1_5}"
+    export KUBEADM_SHA1="${KUBEADM_SHA1_1_5}"
+    export HYPERKUBE_URL="${HYPERKUBE_URL_1_5}"
+    export HYPERKUBE_SHA1="${HYPERKUBE_SHA1_1_5}"
+    if [[ ${NOBUILD} ]]; then
+      export DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.5
+      docker pull "${DIND_IMAGE}"
+    else
+      export LOCAL_KUBECTL_VERSION=v1.5
+    fi
+    test-cluster
+  )
+}
 
-# 1.6 fails on Travis (kube-proxy fails to restart after snapshotting)
-export KUBEADM_URL="${KUBEADM_URL_1_6}"
-export KUBEADM_SHA1="${KUBEADM_SHA1_1_6}"
-export HYPERKUBE_URL="${HYPERKUBE_URL_1_6}"
-export HYPERKUBE_SHA1="${HYPERKUBE_SHA1_1_6}"
-if [[ ${NOBUILD} ]]; then
-    export DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.6
-    docker pull "${DIND_IMAGE}"
+function test-case-1.6 {
+  (
+    export KUBEADM_URL="${KUBEADM_URL_1_6}"
+    export KUBEADM_SHA1="${KUBEADM_SHA1_1_6}"
+    export HYPERKUBE_URL="${HYPERKUBE_URL_1_6}"
+    export HYPERKUBE_SHA1="${HYPERKUBE_SHA1_1_6}"
+    if [[ ${NOBUILD} ]]; then
+        export DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.6
+        docker pull "${DIND_IMAGE}"
+    else
+        export LOCAL_KUBECTL_VERSION=v1.6
+    fi
+    test-cluster
+  )
+}
+
+if [[ ! ${TEST_CASE} ]]; then
+  test-case-1.4
+  test-case-1.5
+  test-case-1.6
 else
-    export LOCAL_KUBECTL_VERSION=v1.6
+  "test-case-${TEST_CASE}"
 fi
-test-cluster
 
 echo "*** OK ***"
