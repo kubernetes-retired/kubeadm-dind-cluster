@@ -23,7 +23,7 @@ use `kubectl` 1.6.x with `hyperkube` 1.5.x).
 
 `kubeadm-dind-cluster` supports k8s versions 1.4.x (tested with
 1.4.9), 1.5.x (tested with 1.5.4) and 1.6.x (tested with
-1.6.0-beta.3).  1.6 branch currently has some stability issues because
+1.6.0-rc.1).  1.6 branch currently has some stability issues because
 of pod termination taking too long so your mileage may vary.
 
 **As of now, running `kubeadm-dind-cluster` on Docker with `btrfs`
