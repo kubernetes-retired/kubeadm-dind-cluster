@@ -34,8 +34,6 @@ tempdir="$(mktemp -d)"
 trap "rm -rf '${tempdir}'" EXIT
 export KUBECTL_DIR="${tempdir}"
 
-kubectl="${KUBECTL_DIR}/kubectl"
-
 if [[ ${NOBUILD} ]]; then
   bash -x "${DIND_ROOT}"/dind-cluster.sh clean
 else
@@ -43,6 +41,10 @@ else
 fi
 
 function test-cluster {
+  local kubectl="${KUBECTL_DIR}/kubectl"
+  if [[ ${BUILD_HYPERKUBE:-} ]]; then
+    kubectl="${PWD}/cluster/kubectl.sh"
+  fi
   if [[ ! ${NOBUILD} ]]; then
     (
       cd "${DIND_ROOT}"
