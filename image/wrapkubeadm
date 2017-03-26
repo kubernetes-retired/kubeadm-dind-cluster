@@ -229,22 +229,26 @@ function dind::num-apiserver-restarts {
   kubectl get pod kube-apiserver-kube-master -n kube-system -o 'jsonpath={.status.containerStatuses[0].restartCount}'
 }
 
+function dind::wait-for-apiserver {
+    local docker_ip="$(ip addr show docker0 | grep -w inet | awk '{ print $2; }' | sed 's@/.*@@')"
+    local url="http://${docker_ip}:8080/api"
+    local n=60
+    while true; do
+      if curl -s "${url}" >&/dev/null; then
+        break
+      fi
+      if ((--n == 0)); then
+        echo "Error: timed out waiting for apiserver to become available" >&2
+      fi
+      sleep 0.5
+    done
+}
+
 function dind::frob-cluster {
-  local num_apiserver_restarts=$(dind::num-apiserver-restarts)
   dind::frob-apiserver
   dind::frob-scheduler
   dind::frob-controller-manager
-  # make sure apiserver gets restarted
-  while true; do
-    local n
-    if ! n="$(dind::num-apiserver-restarts)"; then
-      continue
-    fi
-    if [[ ${n} -gt ${num_apiserver_restarts} ]]; then
-      break
-    fi
-    sleep 1
-  done
+  dind::wait-for-apiserver
   dind::frob-proxy
 }
 
