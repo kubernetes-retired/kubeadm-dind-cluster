@@ -12,7 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
- 
+
 set -o errexit
 set -o nounset
 set -o pipefail
@@ -180,19 +180,24 @@ function dind::check-image {
   fi
 }
 
+function dind::filter-make-output {
+  # these messages make output too long and make Travis CI choke
+  egrep -v --line-buffered 'I0326 .*(parse|conversion|defaulter|deepcopy)\.go:[0-9]+\]'
+}
+
 function dind::make-for-linux {
   local copy="$1"
   shift
   dind::step "Building binaries:" "$*"
   if [ -n "${KUBEADM_DIND_LOCAL:-}" ]; then
     dind::step "+ make WHAT=\"$*\""
-    make WHAT="$*"
+    make WHAT="$*" 2>&1 | dind::filter-make-output
   elif [ "${copy}" = "y" ]; then
     dind::step "+ ${build_tools_dir}/run.sh make WHAT=\"$*\""
-    "${build_tools_dir}/run.sh" make WHAT="$*"
+    "${build_tools_dir}/run.sh" make WHAT="$*" 2>&1 | dind::filter-make-output
   else
     dind::step "+ KUBE_RUN_COPY_OUTPUT=n ${build_tools_dir}/run.sh make WHAT=\"$*\""
-    KUBE_RUN_COPY_OUTPUT=n "${build_tools_dir}/run.sh" make WHAT="$*"
+    KUBE_RUN_COPY_OUTPUT=n "${build_tools_dir}/run.sh" make WHAT="$*" 2>&1 | dind::filter-make-output
   fi
 }
 
@@ -283,7 +288,7 @@ function dind::ensure-kubectl {
     if [ ! -f _output/local/bin/darwin/amd64/kubectl ]; then
       dind::step "Building kubectl"
       dind::step "+ make WHAT=cmd/kubectl"
-      make WHAT=cmd/kubectl
+      make WHAT=cmd/kubectl 2>&1 | dind::filter-make-output
     fi
   elif ! force_local=y dind::check-binary kubectl; then
     dind::make-for-linux y cmd/kubectl
