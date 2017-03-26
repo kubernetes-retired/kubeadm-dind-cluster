@@ -4,7 +4,11 @@ language: generic
 
 env:
   - TEST_CASE=1.4
+  - TEST_CASE=1.4-flannel
+  - TEST_CASE=1.4-calico
   - TEST_CASE=1.5
+  - TEST_CASE=1.5-flannel
+  - TEST_CASE=1.5-calico
   - TEST_CASE=1.6
   - TEST_CASE=src-1.6
   - TEST_CASE=src-master

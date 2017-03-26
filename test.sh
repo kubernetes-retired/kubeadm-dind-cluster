@@ -90,6 +90,20 @@ function test-case-1.4 {
   )
 }
 
+function test-case-1.4-flannel {
+  (
+    export CNI_PLUGIN=flannel
+    test-case-1.4
+  )
+}
+
+function test-case-1.4-calico {
+  (
+    export CNI_PLUGIN=calico
+    test-case-1.4
+  )
+}
+
 function test-case-1.5 {
   (
     export KUBEADM_URL="${KUBEADM_URL_1_5}"
@@ -103,6 +117,20 @@ function test-case-1.5 {
       export LOCAL_KUBECTL_VERSION=v1.5
     fi
     test-cluster
+  )
+}
+
+function test-case-1.5-flannel {
+  (
+    export CNI_PLUGIN=flannel
+    test-case-1.5
+  )
+}
+
+function test-case-1.5-calico {
+  (
+    export CNI_PLUGIN=calico
+    test-case-1.5
   )
 }
 
@@ -132,8 +160,13 @@ function test-case-src-master {
 
 if [[ ! ${TEST_CASE} ]]; then
   test-case-1.4
+  test-case-1.4-flannel
+  test-case-1.4-calico
   test-case-1.5
+  test-case-1.5-flannel
+  test-case-1.5-calico
   test-case-1.6
+  # TODO: fix flannel & calico on 1.6
   test-case-src-1.6
   test-case-src-master
 else
