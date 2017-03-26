@@ -18,7 +18,14 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 
-. build/buildconf.sh
+if [ $(uname) = Darwin ]; then
+  readlinkf(){ perl -MCwd -e 'print Cwd::abs_path shift' "$1";}
+else
+  readlinkf(){ readlink -f "$1"; }
+fi
+DIND_ROOT="$(cd $(dirname "$(readlinkf "${BASH_SOURCE}")"); pwd)"
+
+. "${DIND_ROOT}"/build/buildconf.sh
 
 NOBUILD="${NOBUILD:-}"
 TEST_CASE="${TEST_CASE:-}"
@@ -30,22 +37,39 @@ export KUBECTL_DIR="${tempdir}"
 kubectl="${KUBECTL_DIR}/kubectl"
 
 if [[ ${NOBUILD} ]]; then
-  bash -x ./dind-cluster.sh clean
+  bash -x "${DIND_ROOT}"/dind-cluster.sh clean
 else
   export DIND_IMAGE=mirantis/kubeadm-dind-cluster:local
 fi
 
 function test-cluster {
   if [[ ! ${NOBUILD} ]]; then
-    ./build/build-local.sh
+    (
+      cd "${DIND_ROOT}"
+      ./build/build-local.sh
+    )
   fi
-  bash -x ./dind-cluster.sh clean
-  time bash -x ./dind-cluster.sh up
+  bash -x "${DIND_ROOT}"/dind-cluster.sh clean
+  time bash -x "${DIND_ROOT}"/dind-cluster.sh up
   "${kubectl}" get pods -n kube-system | grep kube-dns
-  time bash -x ./dind-cluster.sh up
+  time bash -x "${DIND_ROOT}"/dind-cluster.sh up
   "${kubectl}" get pods -n kube-system | grep kube-dns
-  bash -x ./dind-cluster.sh down
-  bash -x ./dind-cluster.sh clean
+  bash -x "${DIND_ROOT}"/dind-cluster.sh down
+  bash -x "${DIND_ROOT}"/dind-cluster.sh clean
+}
+
+function test-cluster-src {
+  (
+    local version="${1:-}"
+    git clone https://github.com/kubernetes/kubernetes.git
+    cd kubernetes
+    if [[ ${version} ]]; then
+      git checkout "${version}"
+    fi
+    export BUILD_KUBEADM=y
+    export BUILD_HYPERKUBE=y
+    test-cluster
+  )
 }
 
 function test-case-1.4 {
@@ -96,12 +120,25 @@ function test-case-1.6 {
   )
 }
 
+function test-case-src-1.6 {
+  test-cluster-src release-1.6
+}
+
+function test-case-src-master {
+  test-cluster-src
+}
+
 if [[ ! ${TEST_CASE} ]]; then
   test-case-1.4
   test-case-1.5
   test-case-1.6
+  test-case-src-1.6
+  test-case-src-master
 else
   "test-case-${TEST_CASE}"
 fi
 
 echo "*** OK ***"
+
+# TODO: add source build of k8s 1.5 to the matrix
+# TODO: build k8s master daily using Travis cron feature
