@@ -625,7 +625,8 @@ function dind::up {
     bridge)
       ;;
     flannel)
-      curl -sSL "https://github.com/coreos/flannel/blob/master/Documentation/kube-flannel.yml?raw=true" | "${kubectl}" create -f -
+      # without --validate=false this will fail on older k8s versions
+      curl -sSL "https://github.com/coreos/flannel/blob/master/Documentation/kube-flannel.yml?raw=true" | "${kubectl}" create --validate=false -f -
       ;;
     calico)
       "${kubectl}" apply -f http://docs.projectcalico.org/v2.0/getting-started/kubernetes/installation/hosted/kubeadm/calico.yaml
