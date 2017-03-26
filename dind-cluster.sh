@@ -449,6 +449,11 @@ function dind::set-master-opts {
 function dind::deploy-dashboard {
   dind::step "Deploying k8s dashboard"
   "${kubectl}" create -f "${DASHBOARD_URL}"
+  if "${kubectl}" version --short >& /dev/null && ! kubectl version --short | grep -q 'Server Version: v1\.5\.'; then
+    # https://kubernetes-io-vnext-staging.netlify.com/docs/admin/authorization/rbac/#service-account-permissions
+    # Thanks @liggitt for the hint
+    "${kubectl}" create clusterrolebinding add-on-cluster-admin --clusterrole=cluster-admin --serviceaccount=kube-system:default
+  fi
 }
 
 function dind::init {
