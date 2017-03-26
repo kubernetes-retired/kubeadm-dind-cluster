@@ -235,9 +235,9 @@ function dind::ensure-downloaded-kubectl {
       kubectl_sha1_darwin=5e671ba792567574eea48be4eddd844ba2f07c27
       ;;
     v1.6)
-      full_kubectl_version=v1.6.0-beta.3
-      kubectl_sha1_linux=894ea988a92568fce3ed290bc4728171b45b11ef
-      kubectl_sha1_darwin=ce48630a490d6f3cd7298482e11eaf87f89b4e38
+      full_kubectl_version=v1.6.0-rc.1
+      kubectl_sha1_linux=ecbcbb3e60df9b8b2a35cd84e92d0b720a9cc217
+      kubectl_sha1_darwin=052d571227587b5bcc5323aaa2f41d8c24d7b7b5
       ;;
     "")
       return 0
@@ -262,9 +262,9 @@ function dind::ensure-downloaded-kubectl {
     return 0
   fi
 
-  if [[ ! -f "${link_target}" ]]; then
+  local path="${KUBECTL_DIR}/${link_target}"
+  if [[ ! -f "${path}" ]]; then
     mkdir -p "${KUBECTL_DIR}"
-    local path="${KUBECTL_DIR}/${link_target}"
     wget -O "${path}" "https://storage.googleapis.com/kubernetes-release/release/${full_kubectl_version}/bin/${kubectl_os}/amd64/kubectl"
     echo "${kubectl_sha1} ${path}" | sha1sum -c
     chmod +x "${path}"
@@ -449,6 +449,11 @@ function dind::set-master-opts {
 function dind::deploy-dashboard {
   dind::step "Deploying k8s dashboard"
   "${kubectl}" create -f "${DASHBOARD_URL}"
+  if "${kubectl}" version --short >& /dev/null && ! kubectl version --short | grep -q 'Server Version: v1\.5\.'; then
+    # https://kubernetes-io-vnext-staging.netlify.com/docs/admin/authorization/rbac/#service-account-permissions
+    # Thanks @liggitt for the hint
+    "${kubectl}" create clusterrolebinding add-on-cluster-admin --clusterrole=cluster-admin --serviceaccount=kube-system:default
+  fi
 }
 
 function dind::init {
