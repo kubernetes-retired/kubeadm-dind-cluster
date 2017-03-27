@@ -252,7 +252,26 @@ function dind::frob-cluster {
   dind::frob-proxy
 }
 
+function dind::fix-cgroups {
+  # Workaround for https://github.com/kubernetes/kubernetes/issues/43704
+  if ! egrep -q '^tmpfs\s+/sys/fs/cgroup\s+\S+\s+ro(,|\s|$)' /proc/mounts; then
+    return
+  fi
+  if ! /k8s/hyperkube kubelet --help 2>&1 | grep -q -- --enforce-node-allocatable; then
+    return
+  fi
+  mkdir -p /etc/systemd/system/kubelet.service.d
+  cat >/etc/systemd/system/kubelet.service.d/10-fixmac.conf <<EOF
+[Service]
+Environment="KUBELET_EXTRA_ARGS=--cgroups-per-qos=false --enforce-node-allocatable= --v=4"
+EOF
+  systemctl daemon-reload
+  systemctl restart kubelet
+}
+
 function dind::prepare-for-kubeadm {
+  dind::fix-cgroups
+
   start_services docker
   systemctl enable docker
 
