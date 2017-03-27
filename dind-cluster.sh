@@ -182,7 +182,7 @@ function dind::check-image {
 
 function dind::filter-make-output {
   # these messages make output too long and make Travis CI choke
-  egrep -v --line-buffered 'I0326 .*(parse|conversion|defaulter|deepcopy)\.go:[0-9]+\]'
+  egrep -v --line-buffered 'I[0-9][0-9][0-9][0-9] .*(parse|conversion|defaulter|deepcopy)\.go:[0-9]+\]'
 }
 
 function dind::make-for-linux {
