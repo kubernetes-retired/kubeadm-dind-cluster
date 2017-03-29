@@ -182,7 +182,7 @@ function dind::check-image {
 
 function dind::filter-make-output {
   # these messages make output too long and make Travis CI choke
-  egrep -v --line-buffered 'I0326 .*(parse|conversion|defaulter|deepcopy)\.go:[0-9]+\]'
+  egrep -v --line-buffered 'I[0-9][0-9][0-9][0-9] .*(parse|conversion|defaulter|deepcopy)\.go:[0-9]+\]'
 }
 
 function dind::make-for-linux {
@@ -454,7 +454,7 @@ function dind::set-master-opts {
 function dind::deploy-dashboard {
   dind::step "Deploying k8s dashboard"
   "${kubectl}" create -f "${DASHBOARD_URL}"
-  if "${kubectl}" version --short >& /dev/null && ! kubectl version --short | grep -q 'Server Version: v1\.5\.'; then
+  if "${kubectl}" version --short >& /dev/null && ! "${kubectl}" version --short | grep -q 'Server Version: v1\.5\.'; then
     # https://kubernetes-io-vnext-staging.netlify.com/docs/admin/authorization/rbac/#service-account-permissions
     # Thanks @liggitt for the hint
     "${kubectl}" create clusterrolebinding add-on-cluster-admin --clusterrole=cluster-admin --serviceaccount=kube-system:default
