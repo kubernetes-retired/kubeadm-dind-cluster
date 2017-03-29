@@ -270,8 +270,6 @@ EOF
 }
 
 function dind::prepare-for-kubeadm {
-  dind::fix-cgroups
-
   start_services docker
   systemctl enable docker
 
@@ -279,6 +277,8 @@ function dind::prepare-for-kubeadm {
     time lz4 -dc /save.tar.lz4 | docker load
   fi
   dind::ensure-binaries-and-hypokube
+
+  dind::fix-cgroups
 
   # enable kubelet right before starting kubeadm to avoid
   # longer delays between container restarts
