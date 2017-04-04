@@ -452,10 +452,24 @@ function dind::set-master-opts {
   fi
 }
 
+cached_use_rbac=
+function dind::use-rbac {
+  # we use rbac in case of k8s 1.6
+  if [[ ${cached_use_rbac} ]]; then
+    [[ ${cached_use_rbac} = 1 ]] && return 0 || return 1
+  fi
+  cached_use_rbac=0
+  if "${kubectl}" version --short >& /dev/null && ! "${kubectl}" version --short | grep -q 'Server Version: v1\.5\.'; then
+    cached_use_rbac=1
+    return 0
+  fi
+  return 1
+}
+
 function dind::deploy-dashboard {
   dind::step "Deploying k8s dashboard"
   "${kubectl}" create -f "${DASHBOARD_URL}"
-  if "${kubectl}" version --short >& /dev/null && ! "${kubectl}" version --short | grep -q 'Server Version: v1\.5\.'; then
+  if dind::use-rbac; then
     # https://kubernetes-io-vnext-staging.netlify.com/docs/admin/authorization/rbac/#service-account-permissions
     # Thanks @liggitt for the hint
     "${kubectl}" create clusterrolebinding add-on-cluster-admin --clusterrole=cluster-admin --serviceaccount=kube-system:default
@@ -625,8 +639,124 @@ function dind::up {
     bridge)
       ;;
     flannel)
+      if dind::use-rbac; then
+        curl -sSL "https://github.com/coreos/flannel/blob/master/Documentation/kube-flannel-rbac.yml?raw=true" | "${kubectl}" create -f -
+      fi
+      # FIXME: current kube-flannel yaml causes problems after cluster restart
+      # kube-dns and kubernetes-dashboard stay in "ContainerCreating" state.
+      # Flannel pods become 'Running' for a brief amount of time and then
+      # die while trying to contact apiserver.
+      # Following the advice from https://github.com/kubernetes/kubernetes/issues/39701 (comments)
+      # we hardcode apiserver host into flannel pod definition
+      # (KUBERNETES_SERVICE_HOST and KUBERNETES_SERVICE_PORT)
+      # We could use 'kubectl convert' + 'jq' but we don't want
+      # to require jq on the host, and doing this via docker is cumbersome,
+      # so for now we're embedding patched flannel yaml here.
+      # For some reason the problem happens only on 1.6.
+
+      # Uncomment if the issue is resolved on flannel side
+      # (and remove hardcoded yaml below):
+      # curl -sSL "https://github.com/coreos/flannel/blob/master/Documentation/kube-flannel.yml?raw=true" | "${kubectl}" create --validate=false -f -
+
       # without --validate=false this will fail on older k8s versions
-      curl -sSL "https://github.com/coreos/flannel/blob/master/Documentation/kube-flannel.yml?raw=true" | "${kubectl}" create --validate=false -f -
+      "${kubectl}" create --validate=false -f - <<EOF
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: flannel
+  namespace: kube-system
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: kube-flannel-cfg
+  namespace: kube-system
+  labels:
+    tier: node
+    app: flannel
+data:
+  cni-conf.json: |
+    {
+      "name": "cbr0",
+      "type": "flannel",
+      "delegate": {
+        "isDefaultGateway": true
+      }
+    }
+  net-conf.json: |
+    {
+      "Network": "10.244.0.0/16",
+      "Backend": {
+        "Type": "vxlan"
+      }
+    }
+---
+apiVersion: extensions/v1beta1
+kind: DaemonSet
+metadata:
+  name: kube-flannel-ds
+  namespace: kube-system
+  labels:
+    tier: node
+    app: flannel
+spec:
+  template:
+    metadata:
+      labels:
+        tier: node
+        app: flannel
+    spec:
+      hostNetwork: true
+      nodeSelector:
+        beta.kubernetes.io/arch: amd64
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        effect: NoSchedule
+      serviceAccountName: flannel
+      containers:
+      - name: kube-flannel
+        image: quay.io/coreos/flannel:v0.7.0-amd64
+        command: [ "/opt/bin/flanneld", "--ip-masq", "--kube-subnet-mgr" ]
+        securityContext:
+          privileged: true
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: KUBERNETES_SERVICE_HOST
+          value: "kube-master"
+        - name: KUBERNETES_SERVICE_PORT
+          value: "6443"
+        volumeMounts:
+        - name: run
+          mountPath: /run
+        - name: flannel-cfg
+          mountPath: /etc/kube-flannel/
+      - name: install-cni
+        image: quay.io/coreos/flannel:v0.7.0-amd64
+        command: [ "/bin/sh", "-c", "set -e -x; cp -f /etc/kube-flannel/cni-conf.json /etc/cni/net.d/10-flannel.conf; while true; do sleep 3600; done" ]
+        volumeMounts:
+        - name: cni
+          mountPath: /etc/cni/net.d
+        - name: flannel-cfg
+          mountPath: /etc/kube-flannel/
+      volumes:
+        - name: run
+          hostPath:
+            path: /run
+        - name: cni
+          hostPath:
+            path: /etc/cni/net.d
+        - name: flannel-cfg
+          configMap:
+            name: kube-flannel-cfg
+EOF
       ;;
     calico)
       "${kubectl}" apply -f http://docs.projectcalico.org/v2.0/getting-started/kubernetes/installation/hosted/kubeadm/calico.yaml

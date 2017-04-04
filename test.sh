@@ -29,6 +29,9 @@ DIND_ROOT="$(cd $(dirname "$(readlinkf "${BASH_SOURCE}")"); pwd)"
 
 NOBUILD="${NOBUILD:-}"
 TEST_CASE="${TEST_CASE:-}"
+# K8S_PR="${K8S_PR:-}"
+# TODO: remove this (kubeadm fix)
+K8S_PR=44031
 
 tempdir="$(mktemp -d)"
 trap "rm -rf '${tempdir}'" EXIT
@@ -65,6 +68,10 @@ function test-cluster-src {
     local version="${1:-}"
     git clone https://github.com/kubernetes/kubernetes.git
     cd kubernetes
+    if [[ ${K8S_PR} ]]; then
+      git fetch origin "pull/${K8S_PR}/head:testbranch"
+      git checkout testbranch
+    fi
     if [[ ${version} ]]; then
       git checkout "${version}"
     fi
@@ -158,6 +165,13 @@ function test-case-src-master {
   test-cluster-src
 }
 
+function test-case-src-master-flannel {
+  (
+    export CNI_PLUGIN=flannel
+    test-cluster-src
+  )
+}
+
 if [[ ! ${TEST_CASE} ]]; then
   test-case-1.4
   test-case-1.4-flannel
@@ -166,9 +180,11 @@ if [[ ! ${TEST_CASE} ]]; then
   test-case-1.5-flannel
   test-case-1.5-calico
   test-case-1.6
-  # TODO: fix flannel & calico on 1.6
   test-case-src-1.6
   test-case-src-master
+  test-case-src-master-flannel
+  # TODO: fix flannel & calico on 1.6 and calico on master
+  # TODO: weave
 else
   "test-case-${TEST_CASE}"
 fi

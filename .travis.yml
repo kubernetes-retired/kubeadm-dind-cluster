@@ -12,6 +12,7 @@ env:
   - TEST_CASE=1.6
   - TEST_CASE=src-1.6
   - TEST_CASE=src-master
+  - TEST_CASE=src-master-flannel
 
 before_install:
   - sudo apt-get -qq update
