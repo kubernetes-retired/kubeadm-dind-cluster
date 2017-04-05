@@ -68,12 +68,11 @@ function test-cluster-src {
     local version="${1:-}"
     git clone https://github.com/kubernetes/kubernetes.git
     cd kubernetes
-    if [[ ${K8S_PR} ]]; then
-      git fetch origin "pull/${K8S_PR}/head:testbranch"
-      git checkout testbranch
-    fi
     if [[ ${version} ]]; then
       git checkout "${version}"
+    elif [[ ${K8S_PR} ]]; then
+      git fetch origin "pull/${K8S_PR}/head:testbranch"
+      git checkout testbranch
     fi
     export BUILD_KUBEADM=y
     export BUILD_HYPERKUBE=y
