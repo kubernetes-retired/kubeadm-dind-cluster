@@ -641,25 +641,18 @@ function dind::up {
     flannel)
       if dind::use-rbac; then
         curl -sSL "https://github.com/coreos/flannel/blob/master/Documentation/kube-flannel-rbac.yml?raw=true" | "${kubectl}" create -f -
-      fi
-      # FIXME: current kube-flannel yaml causes problems after cluster restart
-      # kube-dns and kubernetes-dashboard stay in "ContainerCreating" state.
-      # Flannel pods become 'Running' for a brief amount of time and then
-      # die while trying to contact apiserver.
-      # Following the advice from https://github.com/kubernetes/kubernetes/issues/39701 (comments)
-      # we hardcode apiserver host into flannel pod definition
-      # (KUBERNETES_SERVICE_HOST and KUBERNETES_SERVICE_PORT)
-      # We could use 'kubectl convert' + 'jq' but we don't want
-      # to require jq on the host, and doing this via docker is cumbersome,
-      # so for now we're embedding patched flannel yaml here.
-      # For some reason the problem happens only on 1.6.
-
-      # Uncomment if the issue is resolved on flannel side
-      # (and remove hardcoded yaml below):
-      # curl -sSL "https://github.com/coreos/flannel/blob/master/Documentation/kube-flannel.yml?raw=true" | "${kubectl}" create --validate=false -f -
-
-      # without --validate=false this will fail on older k8s versions
-      "${kubectl}" create --validate=false -f - <<EOF
+        # FIXME: current kube-flannel yaml causes problems after cluster restart
+        # kube-dns and kubernetes-dashboard stay in "ContainerCreating" state.
+        # Flannel pods become 'Running' for a brief amount of time and then
+        # die while trying to contact apiserver.
+        # Following the advice from https://github.com/kubernetes/kubernetes/issues/39701 (comments)
+        # we hardcode apiserver host into flannel pod definition
+        # (KUBERNETES_SERVICE_HOST and KUBERNETES_SERVICE_PORT)
+        # We could use 'kubectl convert' + 'jq' but we don't want
+        # to require jq on the host, and doing this via docker is cumbersome,
+        # so for now we're embedding patched flannel yaml here.
+        # For some reason the problem happens only on 1.6.
+        "${kubectl}" create -f - <<EOF
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -757,6 +750,10 @@ spec:
           configMap:
             name: kube-flannel-cfg
 EOF
+      else
+        # without --validate=false this will fail on older k8s versions
+        curl -sSL "https://github.com/coreos/flannel/blob/master/Documentation/kube-flannel.yml?raw=true" | "${kubectl}" create --validate=false -f -
+      fi
       ;;
     calico)
       if dind::use-rbac; then
