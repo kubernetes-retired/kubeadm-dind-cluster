@@ -759,7 +759,11 @@ spec:
 EOF
       ;;
     calico)
-      "${kubectl}" apply -f http://docs.projectcalico.org/v2.0/getting-started/kubernetes/installation/hosted/kubeadm/calico.yaml
+      if dind::use-rbac; then
+        "${kubectl}" apply -f http://docs.projectcalico.org/v2.1/getting-started/kubernetes/installation/hosted/kubeadm/1.6/calico.yaml
+      else
+        "${kubectl}" apply -f http://docs.projectcalico.org/v2.0/getting-started/kubernetes/installation/hosted/kubeadm/calico.yaml
+      fi
       ;;
     weave)
       # kubelet hangs for some reason when using Weave -- need to debug
