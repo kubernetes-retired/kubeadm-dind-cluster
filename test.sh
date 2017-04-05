@@ -157,6 +157,20 @@ function test-case-1.6 {
   )
 }
 
+function test-case-1.6-flannel {
+  (
+    export CNI_PLUGIN=flannel
+    test-case-1.6
+  )
+}
+
+function test-case-1.6-calico {
+  (
+    export CNI_PLUGIN=calico
+    test-case-1.6
+  )
+}
+
 function test-case-src-1.6 {
   test-cluster-src release-1.6
 }
@@ -172,6 +186,13 @@ function test-case-src-master-flannel {
   )
 }
 
+function test-case-src-master-calico {
+  (
+    export CNI_PLUGIN=flannel
+    test-cluster-src
+  )
+}
+
 if [[ ! ${TEST_CASE} ]]; then
   test-case-1.4
   test-case-1.4-flannel
@@ -180,9 +201,12 @@ if [[ ! ${TEST_CASE} ]]; then
   test-case-1.5-flannel
   test-case-1.5-calico
   test-case-1.6
+  test-case-1.6-flannel
+  test-case-1.6-calico
   test-case-src-1.6
   test-case-src-master
   test-case-src-master-flannel
+  test-case-src-master-calico
   # TODO: fix flannel & calico on 1.6 and calico on master
   # TODO: weave
 else
