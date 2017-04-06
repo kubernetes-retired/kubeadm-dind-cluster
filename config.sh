@@ -22,12 +22,12 @@ DIND_IMAGE="${DIND_IMAGE:-mirantis/kubeadm-dind-cluster:v1.6}"
 # download kubectl on the host
 # Set automatically based on DIND image version tag
 # if image version tag is of the form vNNN.NNN
-# LOCAL_KUBECTL_VERSION="${LOCAL_KUBECTL_VERSION:-v1.5}"
+# LOCAL_KUBECTL_VERSION="${LOCAL_KUBECTL_VERSION:-v1.6}"
 
 # Set custom URL for Dashboard yaml file
 # DASHBOARD_URL="${DASHBOARD_URL:-https://rawgit.com/kubernetes/dashboard/bfab10151f012d1acc5dfb1979f3172e2400aa3c/src/deploy/kubernetes-dashboard.yaml}"
 
-# CNI plugin to use (bridge, flannel, calico). Defaults to 'bridge'
+# CNI plugin to use (bridge, flannel, calico, weave). Defaults to 'bridge'
 # Weave support is coming soon.
 # In case of 'bridge' plugin, additional hacks are employed to bridge
 # DIND containers together.

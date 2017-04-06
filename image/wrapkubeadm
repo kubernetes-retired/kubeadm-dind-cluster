@@ -289,6 +289,9 @@ function dind::prepare-for-kubeadm {
 if [[ ${1:-} = ensure-binaries ]]; then
   dind::ensure-binaries-and-hypokube
 else
+  # Weave depends on /etc/machine-id being unique
+  rm -f /etc/machine-id
+  systemd-machine-id-setup
   dind::prepare-for-kubeadm
 
   time KUBE_HYPERKUBE_IMAGE="${hypokube_final_image}" kubeadm "$@"

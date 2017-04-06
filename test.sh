@@ -110,6 +110,13 @@ function test-case-1.4-calico {
   )
 }
 
+function test-case-1.4-weave {
+  (
+    export CNI_PLUGIN=weave
+    test-case-1.4
+  )
+}
+
 function test-case-1.5 {
   (
     export KUBEADM_URL="${KUBEADM_URL_1_5}"
@@ -136,6 +143,14 @@ function test-case-1.5-flannel {
 function test-case-1.5-calico {
   (
     export CNI_PLUGIN=calico
+    test-case-1.5
+  )
+}
+
+
+function test-case-1.5-weave {
+  (
+    export CNI_PLUGIN=weave
     test-case-1.5
   )
 }
@@ -170,6 +185,13 @@ function test-case-1.6-calico {
   )
 }
 
+function test-case-1.6-weave {
+  (
+    export CNI_PLUGIN=weave
+    test-case-1.6
+  )
+}
+
 function test-case-src-1.6 {
   test-cluster-src release-1.6
 }
@@ -192,22 +214,31 @@ function test-case-src-master-calico {
   )
 }
 
+function test-case-src-master-weave {
+  (
+    export CNI_PLUGIN=weave
+    test-cluster-src
+  )
+}
+
 if [[ ! ${TEST_CASE} ]]; then
   test-case-1.4
   test-case-1.4-flannel
   test-case-1.4-calico
+  test-case-1.4-weave
   test-case-1.5
   test-case-1.5-flannel
   test-case-1.5-calico
+  test-case-1.5-weave
   test-case-1.6
   test-case-1.6-flannel
   test-case-1.6-calico
+  test-case-1.6-weave
   test-case-src-1.6
   test-case-src-master
   test-case-src-master-flannel
   test-case-src-master-calico
-  # TODO: fix flannel & calico on 1.6 and calico on master
-  # TODO: weave
+  test-case-src-master-weave
 else
   "test-case-${TEST_CASE}"
 fi

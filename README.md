@@ -125,7 +125,7 @@ invocations are much faster.
 You may edit `config.sh` to override default settings. See comments in
 [the file](config.sh) for more info. In particular, you can specify
 CNI plugin to use via `CNI_PLUGIN` variable (`bridge`, `flannel`,
-`calico` are currently supported, Weave support is being worked on).
+`calico`, `weave`).
 
 ## Remote Docker / GCE
 It's possible to build Kubernetes on a remote machine running Docker.

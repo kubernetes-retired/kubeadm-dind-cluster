@@ -763,9 +763,11 @@ EOF
       fi
       ;;
     weave)
-      # kubelet hangs for some reason when using Weave -- need to debug
-      echo "Sorry, Weave is not supported yet" >&2
-      # "${kubectl}" apply -f https://git.io/weave-kube
+      if dind::use-rbac; then
+        "${kubectl}" apply -f "https://github.com/weaveworks/weave/blob/master/prog/weave-kube/weave-daemonset-k8s-1.6.yaml?raw=true"
+      else
+        "${kubectl}" apply -f https://git.io/weave-kube
+      fi
       ;;
     *)
       echo "Unsupported CNI plugin '${CNI_PLUGIN}'" >&2
