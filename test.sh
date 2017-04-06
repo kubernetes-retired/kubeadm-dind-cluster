@@ -31,7 +31,7 @@ NOBUILD="${NOBUILD:-}"
 TEST_CASE="${TEST_CASE:-}"
 # K8S_PR="${K8S_PR:-}"
 # TODO: remove this (kubeadm fix)
-K8S_PR=44031
+K8S_PR=44143
 
 tempdir="$(mktemp -d)"
 trap "rm -rf '${tempdir}'" EXIT
