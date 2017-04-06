@@ -29,9 +29,9 @@ DIND_ROOT="$(cd $(dirname "$(readlinkf "${BASH_SOURCE}")"); pwd)"
 
 NOBUILD="${NOBUILD:-}"
 TEST_CASE="${TEST_CASE:-}"
-# K8S_PR="${K8S_PR:-}"
-# TODO: remove this (kubeadm fix)
-K8S_PR=44143
+# pin 'master' tests to a specific PR number
+# (e.g. K8S_PR=44143)
+K8S_PR="${K8S_PR:-}"
 
 tempdir="$(mktemp -d)"
 trap "rm -rf '${tempdir}'" EXIT
