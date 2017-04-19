@@ -311,7 +311,7 @@ function dind::ensure-binaries {
 
 function dind::ensure-network {
   if ! docker network inspect kubeadm-dind-net >&/dev/null; then
-    docker network create --subnet=10.192.0.0/16 kubeadm-dind-net >/dev/null
+    docker network create --subnet="${DIND_SUBNET}/16" kubeadm-dind-net >/dev/null
   fi
 }
 
