@@ -49,14 +49,14 @@ work.
 `kubeadm-dind-cluster` currently provides preconfigured scripts for
 Kubernetes 1.4, 1.5 and 1.6. This may be convenient for use with
 projects that extend or use Kubernetes. For example, you can start
-Kubernetes 1.5 like this:
+Kubernetes 1.6 like this:
 
 ```shell
-$ wget https://cdn.rawgit.com/Mirantis/kubeadm-dind-cluster/master/fixed/dind-cluster-v1.5.sh
-$ chmod +x dind-cluster-v1.5.sh
+$ wget https://cdn.rawgit.com/Mirantis/kubeadm-dind-cluster/master/fixed/dind-cluster-v1.6.sh
+$ chmod +x dind-cluster-v1.6.sh
 
 $ # start the cluster
-$ ./dind-cluster-v1.5.sh up
+$ ./dind-cluster-v1.6.sh up
 
 $ # add kubectl directory to PATH
 $ export PATH="$HOME/.kubeadm-dind-cluster:$PATH"
@@ -70,16 +70,16 @@ kube-node-2   Ready          34s
 $ # k8s dashboard available at http://localhost:8080/ui
 
 $ # restart the cluster, this should happen much quicker than initial startup
-$ ./dind-cluster-v1.5.sh up
+$ ./dind-cluster-v1.6.sh up
 
 $ # stop the cluster
-$ ./dind-cluster-v1.5.sh down
+$ ./dind-cluster-v1.6.sh down
 
 $ # remove DIND containers and volumes
-$ ./dind-cluster-v1.5.sh clean
+$ ./dind-cluster-v1.6.sh clean
 ```
 
-Replace 1.5 with with 1.4 or 1.6 to use other Kubernetes versions.
+Replace 1.6 with with 1.4 or 1.5 to use other Kubernetes versions.
 **Important note:** you need to do `./dind-cluster....sh clean` when
 you switch between Kubernetes versions (but no need to do this between
 rebuilds if you use `BUILD_HYPERKUBE=y` like described below).
