@@ -151,9 +151,11 @@ function dind::yq {
   # 'kubectl convert' via stdin, you'll get a List object because
   # multiple input objects are implied
   tmp="$(mktemp tmp-XXXXXXXXXX.json)"
-  kubectl convert -f "${path}" --local -o json 2>/dev/null |
+  # We set KUBECONFIG here because as of current k8s master kubectl convert --local
+  # requires k8s access. This should be fixed by # https://github.com/kubernetes/kubernetes/pull/45920
+  KUBECONFIG=/etc/kubernetes/admin.conf kubectl convert -f "${path}" --local -o json 2>/dev/null |
     jq "${filter}" > "${tmp}"
-  kubectl convert -f "${tmp}" --local -o yaml 2>/dev/null >"${path}"
+  KUBECONFIG=/etc/kubernetes/admin.conf kubectl convert -f "${tmp}" --local -o yaml 2>/dev/null >"${path}"
   rm -f "$(tempfile)"
 }
 
