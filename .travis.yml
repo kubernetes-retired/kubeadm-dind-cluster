@@ -12,14 +12,14 @@ env:
   - TEST_CASE=1.5-calico
   - TEST_CASE=1.5-weave
   - TEST_CASE=1.6
-  - TEST_CASE=1.6-flannel
+  # - TEST_CASE=1.6-flannel
   - TEST_CASE=1.6-calico
-  - TEST_CASE=1.6-weave
+  # - TEST_CASE=1.6-weave
   - TEST_CASE=src-1.6
   - TEST_CASE=src-master
-  - TEST_CASE=src-master-flannel
-  - TEST_CASE=src-master-calico
-  - TEST_CASE=src-master-weave
+  # - TEST_CASE=src-master-flannel
+  # - TEST_CASE=src-master-calico
+  # - TEST_CASE=src-master-weave
 
 before_install:
   - sudo apt-get -qq update
