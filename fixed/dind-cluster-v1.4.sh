@@ -186,6 +186,52 @@ function dind::filter-make-output {
   egrep -v --line-buffered 'I[0-9][0-9][0-9][0-9] .*(parse|conversion|defaulter|deepcopy)\.go:[0-9]+\]'
 }
 
+function dind::run-build-command {
+    # this is like build/run.sh, but it doesn't rsync back the binaries,
+    # only the generated files.
+    local cmd=("$@")
+    (
+        # The following is taken from build/run.sh and build/common.sh
+        # of Kubernetes source tree. It differs in
+        # --filter='+ /_output/dockerized/bin/**'
+        # being removed from rsync
+        . ${build_tools_dir}/common.sh
+        kube::build::verify_prereqs
+        kube::build::build_image
+        kube::build::run_build_command "$@"
+
+        kube::log::status "Syncing out of container"
+
+        kube::build::start_rsyncd_container
+
+        local rsync_extra=""
+        if (( ${KUBE_VERBOSE} >= 6 )); then
+            rsync_extra="-iv"
+        fi
+
+        # The filter syntax for rsync is a little obscure. It filters on files and
+        # directories.  If you don't go in to a directory you won't find any files
+        # there.  Rules are evaluated in order.  The last two rules are a little
+        # magic. '+ */' says to go in to every directory and '- /**' says to ignore
+        # any file or directory that isn't already specifically allowed.
+        #
+        # We are looking to copy out all of the built binaries along with various
+        # generated files.
+        kube::build::rsync \
+            --filter='- /vendor/' \
+            --filter='- /_temp/' \
+            --filter='+ zz_generated.*' \
+            --filter='+ generated.proto' \
+            --filter='+ *.pb.go' \
+            --filter='+ types.go' \
+            --filter='+ */' \
+            --filter='- /**' \
+            "rsync://k8s@${KUBE_RSYNC_ADDR}/k8s/" "${KUBE_ROOT}"
+
+        kube::build::stop_rsyncd_container
+    )
+}
+
 function dind::make-for-linux {
   local copy="$1"
   shift
@@ -197,8 +243,8 @@ function dind::make-for-linux {
     dind::step "+ ${build_tools_dir}/run.sh make WHAT=\"$*\""
     "${build_tools_dir}/run.sh" make WHAT="$*" 2>&1 | dind::filter-make-output
   else
-    dind::step "+ KUBE_RUN_COPY_OUTPUT=n ${build_tools_dir}/run.sh make WHAT=\"$*\""
-    KUBE_RUN_COPY_OUTPUT=n "${build_tools_dir}/run.sh" make WHAT="$*" 2>&1 | dind::filter-make-output
+    dind::step "+ [using the build container] make WHAT=\"$*\""
+    dind::run-build-command make WHAT="$*" 2>&1 | dind::filter-make-output
   fi
 }
 
