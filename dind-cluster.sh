@@ -817,7 +817,7 @@ function dind::do-run-e2e {
     test_args="--report-dir=/report ${test_args}"
     e2e_volume_opts=(-v "${E2E_REPORT_DIR}:/report")
   fi
-  dind::ensure-binaries cmd/kubectl test/e2e/e2e.test vendor/github.com/onsi/ginkgo/ginkgo
+  dind::make-for-linux n cmd/kubectl test/e2e/e2e.test vendor/github.com/onsi/ginkgo/ginkgo
   dind::step "Running e2e tests with args:" "${test_args}"
   dind::set-build-volume-args
   if [ -t 1 ] ; then
