@@ -317,7 +317,7 @@ function dind::ensure-downloaded-kubectl {
   local path="${KUBECTL_DIR}/${link_target}"
   if [[ ! -f "${path}" ]]; then
     mkdir -p "${KUBECTL_DIR}"
-    wget -O "${path}" "https://storage.googleapis.com/kubernetes-release/release/${full_kubectl_version}/bin/${kubectl_os}/amd64/kubectl"
+    curl -o "${path}" "https://storage.googleapis.com/kubernetes-release/release/${full_kubectl_version}/bin/${kubectl_os}/amd64/kubectl"
     echo "${kubectl_sha1} ${path}" | sha1sum -c
     chmod +x "${path}"
   fi
