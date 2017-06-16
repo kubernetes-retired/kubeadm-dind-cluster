@@ -57,6 +57,7 @@ NUM_NODES=${NUM_NODES:-2}
 LOCAL_KUBECTL_VERSION=${LOCAL_KUBECTL_VERSION:-}
 KUBECTL_DIR="${KUBECTL_DIR:-${HOME}/.kubeadm-dind-cluster}"
 DASHBOARD_URL="${DASHBOARD_URL:-https://rawgit.com/kubernetes/dashboard/bfab10151f012d1acc5dfb1979f3172e2400aa3c/src/deploy/kubernetes-dashboard.yaml}"
+SKIP_SNAPSHOT="${SKIP_SNAPSHOT:-}"
 E2E_REPORT_DIR="${E2E_REPORT_DIR:-}"
 
 if [[ ! ${LOCAL_KUBECTL_VERSION:-} && ${DIND_IMAGE:-} =~ :(v[0-9]+\.[0-9]+)$ ]]; then
@@ -904,7 +905,10 @@ case "${1:-}" in
 
     dind::prepare-sys-mounts
     dind::ensure-kubectl
-    if ! dind::check-for-snapshot; then
+    if [[ ${SKIP_SNAPSHOT} ]]; then
+      force_make_binaries=y dind::up
+      dind::wait-for-ready
+    elif ! dind::check-for-snapshot; then
       force_make_binaries=y dind::up
       dind::snapshot
     else
@@ -914,7 +918,10 @@ case "${1:-}" in
   reup)
     dind::prepare-sys-mounts
     dind::ensure-kubectl
-    if ! dind::check-for-snapshot; then
+    if [[ ${SKIP_SNAPSHOT} ]]; then
+      force_make_binaries=y dind::up
+      dind::wait-for-ready
+    elif ! dind::check-for-snapshot; then
       force_make_binaries=y dind::up
       dind::snapshot
     else

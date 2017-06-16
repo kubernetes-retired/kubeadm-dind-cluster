@@ -33,3 +33,8 @@ DIND_IMAGE="${DIND_IMAGE:-mirantis/kubeadm-dind-cluster:v1.6}"
 # In case of 'bridge' plugin, additional hacks are employed to bridge
 # DIND containers together.
 CNI_PLUGIN="${CNI_PLUGIN:-bridge}"
+
+# Set SKIP_SNAPSHOT to non-empty string to skip making the snapshot.
+# This may be useful for CI environment where the cluster is never
+# restarted after it's created.
+# SKIP_SNAPSHOT=y
