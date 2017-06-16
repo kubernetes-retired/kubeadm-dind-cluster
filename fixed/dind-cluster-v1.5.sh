@@ -57,6 +57,7 @@ NUM_NODES=${NUM_NODES:-2}
 LOCAL_KUBECTL_VERSION=${LOCAL_KUBECTL_VERSION:-}
 KUBECTL_DIR="${KUBECTL_DIR:-${HOME}/.kubeadm-dind-cluster}"
 DASHBOARD_URL="${DASHBOARD_URL:-https://rawgit.com/kubernetes/dashboard/bfab10151f012d1acc5dfb1979f3172e2400aa3c/src/deploy/kubernetes-dashboard.yaml}"
+SKIP_SNAPSHOT="${SKIP_SNAPSHOT:-}"
 E2E_REPORT_DIR="${E2E_REPORT_DIR:-}"
 
 if [[ ! ${LOCAL_KUBECTL_VERSION:-} && ${DIND_IMAGE:-} =~ :(v[0-9]+\.[0-9]+)$ ]]; then
@@ -678,9 +679,14 @@ function dind::up {
     )&
     pids[${n}]=$!
   done
-  for pid in ${pids[*]}; do
-    wait ${pid}
-  done
+  if ((NUM_NODES > 0)); then
+    for pid in ${pids[*]}; do
+      wait ${pid}
+    done
+  else
+    # FIXME: this may fail depending on k8s/kubeadm version
+    "${kubectl}" taint nodes kube-master node-role.kubernetes.io/master- || true
+  fi
   case "${CNI_PLUGIN}" in
     bridge)
       ;;
@@ -817,7 +823,7 @@ function dind::do-run-e2e {
     test_args="--report-dir=/report ${test_args}"
     e2e_volume_opts=(-v "${E2E_REPORT_DIR}:/report")
   fi
-  dind::ensure-binaries cmd/kubectl test/e2e/e2e.test vendor/github.com/onsi/ginkgo/ginkgo
+  dind::make-for-linux n cmd/kubectl test/e2e/e2e.test vendor/github.com/onsi/ginkgo/ginkgo
   dind::step "Running e2e tests with args:" "${test_args}"
   dind::set-build-volume-args
   if [ -t 1 ] ; then
@@ -899,7 +905,10 @@ case "${1:-}" in
 
     dind::prepare-sys-mounts
     dind::ensure-kubectl
-    if ! dind::check-for-snapshot; then
+    if [[ ${SKIP_SNAPSHOT} ]]; then
+      force_make_binaries=y dind::up
+      dind::wait-for-ready
+    elif ! dind::check-for-snapshot; then
       force_make_binaries=y dind::up
       dind::snapshot
     else
@@ -909,7 +918,10 @@ case "${1:-}" in
   reup)
     dind::prepare-sys-mounts
     dind::ensure-kubectl
-    if ! dind::check-for-snapshot; then
+    if [[ ${SKIP_SNAPSHOT} ]]; then
+      force_make_binaries=y dind::up
+      dind::wait-for-ready
+    elif ! dind::check-for-snapshot; then
       force_make_binaries=y dind::up
       dind::snapshot
     else
