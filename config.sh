@@ -4,7 +4,9 @@ DIND_SUBNET=10.192.0.0
 # Apiserver port
 APISERVER_PORT=${APISERVER_PORT:-8080}
 
-# Number of nodes
+# Number of nodes. 0 nodes means just one master node.
+# In case of NUM_NODES=0 'node-role.kubernetes.io/master' taint is removed
+# from the master node.
 NUM_NODES=${NUM_NODES:-2}
 
 # Use non-dockerized build

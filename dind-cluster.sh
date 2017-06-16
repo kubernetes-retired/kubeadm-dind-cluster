@@ -678,9 +678,14 @@ function dind::up {
     )&
     pids[${n}]=$!
   done
-  for pid in ${pids[*]}; do
-    wait ${pid}
-  done
+  if ((NUM_NODES > 0)); then
+    for pid in ${pids[*]}; do
+      wait ${pid}
+    done
+  else
+    # FIXME: this may fail depending on k8s/kubeadm version
+    "${kubectl}" taint nodes kube-master node-role.kubernetes.io/master- || true
+  fi
   case "${CNI_PLUGIN}" in
     bridge)
       ;;
