@@ -36,7 +36,7 @@ fi
 # In case of moby linux, -v will not work so we can't
 # mount /lib/modules and /boot
 is_moby_linux=
-if docker info|grep -q '^Kernel Version: .*-moby$'; then
+if docker info|grep -s '^Kernel Version: .*-moby$' > /dev/null 2>&1; then
     is_moby_linux=1
 fi
 
