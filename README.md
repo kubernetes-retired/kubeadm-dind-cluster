@@ -41,6 +41,10 @@ installation is necessary even if you're building Kubernetes from
 source. If you want you can overridde this behavior by setting
 `KUBEADM_DIND_LOCAL` to a non-empty value in [config.sh](config.sh).
 
+### Mac OS X considerations
+
+Ensure to have `md5sha1sum` installed. If not existing can be installed via `brew install md5sha1sum`.
+
 When building Kubernetes from source on Mac OS X, it should be
 possible to build `kubectl` locally, i.e. `make WHAT=cmd/kubectl` must
 work.
