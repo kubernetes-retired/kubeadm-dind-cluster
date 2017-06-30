@@ -706,17 +706,17 @@ function dind::up {
       ;;
     calico)
       if dind::use-rbac; then
-        "${kubectl}" apply -f http://docs.projectcalico.org/v2.2/getting-started/kubernetes/installation/hosted/kubeadm/1.6/calico.yaml
+        "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/kubeadm/1.6/calico.yaml
       else
-        "${kubectl}" apply -f http://docs.projectcalico.org/v2.2/getting-started/kubernetes/installation/hosted/kubeadm/1.5/calico.yaml
+        "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/kubeadm/1.5/calico.yaml
       fi
       ;;
     calico-kdd)
       if dind::use-rbac; then
-        "${kubectl}" apply -f http://docs.projectcalico.org/v2.2/getting-started/kubernetes/installation/hosted/kubernetes-datastore/calico-networking/1.6/calico.yaml
-        "${kubectl}" apply -f http://docs.projectcalico.org/v2.2/getting-started/kubernetes/installation/hosted/rbac.yaml
+        "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/kubernetes-datastore/calico-networking/1.6/calico.yaml
+        "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/rbac.yaml
       else
-        "${kubectl}" apply -f http://docs.projectcalico.org/v2.2/getting-started/kubernetes/installation/hosted/kubernetes-datastore/calico-networking/1.5/calico.yaml
+        "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/kubernetes-datastore/calico-networking/1.5/calico.yaml
       fi
       ;;
     weave)
