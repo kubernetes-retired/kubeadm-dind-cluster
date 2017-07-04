@@ -156,7 +156,7 @@ function dind::yq {
   KUBECONFIG=/etc/kubernetes/admin.conf kubectl convert -f "${path}" --local -o json 2>/dev/null |
     jq "${filter}" > "${tmp}"
   KUBECONFIG=/etc/kubernetes/admin.conf kubectl convert -f "${tmp}" --local -o yaml 2>/dev/null >"${path}"
-  rm -f "$(tempfile)"
+  rm -f "${tmp}"
 }
 
 function dind::jq {
