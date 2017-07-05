@@ -21,10 +21,8 @@ necessary to have `kubectl` executable in your path matching the
 version of k8s binaries you're using (i.e. for example don't try to
 use `kubectl` 1.6.x with `hyperkube` 1.5.x).
 
-`kubeadm-dind-cluster` supports k8s versions 1.4.x (tested with
-1.4.9), 1.5.x (tested with 1.5.4) and 1.6.x (tested with
-1.6.1).  1.6 branch currently has some stability issues because
-of pod termination taking too long so your mileage may vary.
+`kubeadm-dind-cluster` supports k8s versions 1.5.x (tested with 1.5.4),
+1.6.x (tested with 1.6.6) and 1.7 (tested with 1.7.7).
 
 **As of now, running `kubeadm-dind-cluster` on Docker with `btrfs`
 storage driver is not supported.**
@@ -51,16 +49,16 @@ work.
 
 ## Using preconfigured scripts
 `kubeadm-dind-cluster` currently provides preconfigured scripts for
-Kubernetes 1.4, 1.5 and 1.6. This may be convenient for use with
+Kubernetes 1.5, 1.6 and 1.7. This may be convenient for use with
 projects that extend or use Kubernetes. For example, you can start
-Kubernetes 1.6 like this:
+Kubernetes 1.7 like this:
 
 ```shell
-$ wget https://cdn.rawgit.com/Mirantis/kubeadm-dind-cluster/master/fixed/dind-cluster-v1.6.sh
-$ chmod +x dind-cluster-v1.6.sh
+$ wget https://cdn.rawgit.com/Mirantis/kubeadm-dind-cluster/master/fixed/dind-cluster-v1.7.sh
+$ chmod +x dind-cluster-v1.7.sh
 
 $ # start the cluster
-$ ./dind-cluster-v1.6.sh up
+$ ./dind-cluster-v1.7.sh up
 
 $ # add kubectl directory to PATH
 $ export PATH="$HOME/.kubeadm-dind-cluster:$PATH"
@@ -74,16 +72,16 @@ kube-node-2   Ready          34s
 $ # k8s dashboard available at http://localhost:8080/ui
 
 $ # restart the cluster, this should happen much quicker than initial startup
-$ ./dind-cluster-v1.6.sh up
+$ ./dind-cluster-v1.7.sh up
 
 $ # stop the cluster
-$ ./dind-cluster-v1.6.sh down
+$ ./dind-cluster-v1.7.sh down
 
 $ # remove DIND containers and volumes
-$ ./dind-cluster-v1.6.sh clean
+$ ./dind-cluster-v1.7.sh clean
 ```
 
-Replace 1.6 with with 1.4 or 1.5 to use other Kubernetes versions.
+Replace 1.7 with 1.5 or 1.6 to use other Kubernetes versions.
 **Important note:** you need to do `./dind-cluster....sh clean` when
 you switch between Kubernetes versions (but no need to do this between
 rebuilds if you use `BUILD_HYPERKUBE=y` like described below).

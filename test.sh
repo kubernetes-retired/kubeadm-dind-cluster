@@ -80,51 +80,6 @@ function test-cluster-src {
   )
 }
 
-function test-case-1.4 {
-  (
-    export KUBEADM_URL="${KUBEADM_URL_1_5}"
-    export KUBEADM_SHA1="${KUBEADM_SHA1_1_5}"
-    export HYPERKUBE_URL="${HYPERKUBE_URL_1_4}"
-    export HYPERKUBE_SHA1="${HYPERKUBE_SHA1_1_4}"
-    if [[ ${NOBUILD} ]]; then
-      export DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.4
-      docker pull "${DIND_IMAGE}"
-    else
-      export LOCAL_KUBECTL_VERSION=v1.4
-    fi
-    test-cluster
-  )
-}
-
-function test-case-1.4-flannel {
-  (
-    export CNI_PLUGIN=flannel
-    test-case-1.4
-  )
-}
-
-function test-case-1.4-calico {
-  (
-    export CNI_PLUGIN=calico
-    test-case-1.4
-  )
-}
-
-function test-case-1.4-calico-kdd {
-  (
-    export CNI_PLUGIN=calico-kdd
-    POD_NETWORK_CIDR="192.168.0.0/16"
-    test-case-1.4
-  )
-}
-
-function test-case-1.4-weave {
-  (
-    export CNI_PLUGIN=weave
-    test-case-1.4
-  )
-}
-
 function test-case-1.5 {
   (
     export KUBEADM_URL="${KUBEADM_URL_1_5}"
@@ -215,8 +170,53 @@ function test-case-1.6-weave {
   )
 }
 
-function test-case-src-1.6 {
-  test-cluster-src release-1.6
+function test-case-1.7 {
+  (
+    export KUBEADM_URL="${KUBEADM_URL_1_7}"
+    export KUBEADM_SHA1="${KUBEADM_SHA1_1_7}"
+    export HYPERKUBE_URL="${HYPERKUBE_URL_1_7}"
+    export HYPERKUBE_SHA1="${HYPERKUBE_SHA1_1_7}"
+    if [[ ${NOBUILD} ]]; then
+        export DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.7
+        docker pull "${DIND_IMAGE}"
+    else
+        export LOCAL_KUBECTL_VERSION=v1.7
+    fi
+    test-cluster
+  )
+}
+
+function test-case-1.7-flannel {
+  (
+    export CNI_PLUGIN=flannel
+    test-case-1.7
+  )
+}
+
+function test-case-1.7-calico {
+  (
+    export CNI_PLUGIN=calico
+    test-case-1.7
+  )
+}
+
+function test-case-1.7-calico-kdd {
+  (
+    export CNI_PLUGIN=calico-kdd
+    POD_NETWORK_CIDR="192.168.0.0/16"
+    test-case-1.7
+  )
+}
+
+function test-case-1.7-weave {
+  (
+    export CNI_PLUGIN=weave
+    test-case-1.7
+  )
+}
+
+function test-case-src-1.7 {
+  test-cluster-src release-1.7
 }
 
 function test-case-src-master {
@@ -253,22 +253,21 @@ function test-case-src-master-weave {
 }
 
 if [[ ! ${TEST_CASE} ]]; then
-  test-case-1.4
-  test-case-1.4-flannel
-  test-case-1.4-calico
-  test-case-1.4-calico-kdd
-  test-case-1.4-weave
   test-case-1.5
   test-case-1.5-flannel
   test-case-1.5-calico
   test-case-1.5-calico-kdd
   test-case-1.5-weave
   test-case-1.6
-  # test-case-1.6-flannel
+  test-case-1.6-flannel
   test-case-1.6-calico
   test-case-1.6-calico-kdd
-  # test-case-1.6-weave
-  test-case-src-1.6
+  test-case-1.6-weave
+  test-case-1.7-flannel
+  test-case-1.7-calico
+  test-case-1.7-calico-kdd
+  test-case-1.7-weave
+  test-case-src-1.7
   test-case-src-master
   # test-case-src-master-flannel
   # test-case-src-master-calico

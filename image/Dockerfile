@@ -18,7 +18,7 @@ FROM gcr.io/kubeadm/ci-xenial-systemd:base-master-6f6ae74260bfa1b6d97251e6e01914
 
 LABEL mirantis.kubeadm_dind_cluster=1
 
-ARG CNI_RELEASE=07a8a28637e97b22eb8dfe710eeae1344f69d16e
+ARG CNI_RELEASE=0799f5732f2a11b329d9e3d51b9c8f2e3759f2ff
 
 ENV ARCH amd64
 
