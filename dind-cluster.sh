@@ -532,13 +532,7 @@ function dind::init {
   # FIXME: I tried using custom tokens with 'kubeadm ex token create' but join failed with:
   # 'failed to parse response as JWS object [square/go-jose: compact JWS format must have three parts]'
   # So we just pick the line from 'kubeadm init' output
-  local kube_version_flag=""
-  if [[ ${BUILD_KUBEADM} ]]; then
-    # FIXME: this is temporary fix for kubeadm trying to get a non-existent release URL.
-    # It doesn't change the fact that we're deploying custom-built k8s version
-    kube_version_flag="--kubernetes-version=stable-1.6"
-  fi
-  kubeadm_join_flags="$(dind::kubeadm "${container_id}" init --pod-network-cidr="${POD_NETWORK_CIDR}" --skip-preflight-checks ${kube_version_flag} "$@" | grep '^ *kubeadm join' | sed 's/^ *kubeadm join //')"
+  kubeadm_join_flags="$(dind::kubeadm "${container_id}" init --pod-network-cidr="${POD_NETWORK_CIDR}" --skip-preflight-checks "$@" | grep '^ *kubeadm join' | sed 's/^ *kubeadm join //')"
   dind::configure-kubectl
   dind::deploy-dashboard
 }
