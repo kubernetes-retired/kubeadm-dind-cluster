@@ -25,7 +25,7 @@ function snapshot::prepare {
     # Possibly related: https://github.com/kubernetes/kubernetes/issues/42685
     kubectl scale deployment --replicas=0 -n kube-system kube-dns
     kubectl scale deployment --replicas=0 -n kube-system kubernetes-dashboard
-    local n=40
+    local n=60
     while kubectl get pods -n kube-system -o name | egrep -q '^pods*/(kube-dns-|kubernetes-dashboard-)'; do
       if ((--n == 0)); then
         echo "WARNING: controller manager glitch: dns & dashboard won't stop; pods may 'blink' for some time after restore" >&2
