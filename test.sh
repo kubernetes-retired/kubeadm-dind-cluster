@@ -110,6 +110,14 @@ function test-case-1.4-calico {
   )
 }
 
+function test-case-1.4-calico-kdd {
+  (
+    export CNI_PLUGIN=calico-kdd
+    POD_NETWORK_CIDR="192.168.0.0/16"
+    test-case-1.4
+  )
+}
+
 function test-case-1.4-weave {
   (
     export CNI_PLUGIN=weave
@@ -147,6 +155,13 @@ function test-case-1.5-calico {
   )
 }
 
+function test-case-1.5-calico-kdd {
+  (
+    export CNI_PLUGIN=calico-kdd
+    POD_NETWORK_CIDR="192.168.0.0/16"
+    test-case-1.5
+  )
+}
 
 function test-case-1.5-weave {
   (
@@ -185,6 +200,14 @@ function test-case-1.6-calico {
   )
 }
 
+function test-case-1.6-calico-kdd {
+  (
+    export CNI_PLUGIN=calico-kdd
+    POD_NETWORK_CIDR="192.168.0.0/16"
+    test-case-1.6
+  )
+}
+
 function test-case-1.6-weave {
   (
     export CNI_PLUGIN=weave
@@ -209,7 +232,15 @@ function test-case-src-master-flannel {
 
 function test-case-src-master-calico {
   (
-    export CNI_PLUGIN=flannel
+    export CNI_PLUGIN=calico
+    test-cluster-src
+  )
+}
+
+function test-case-src-master-calico-kdd {
+  (
+    export CNI_PLUGIN=calico-kdd
+    POD_NETWORK_CIDR="192.168.0.0/16"
     test-cluster-src
   )
 }
@@ -225,20 +256,24 @@ if [[ ! ${TEST_CASE} ]]; then
   test-case-1.4
   test-case-1.4-flannel
   test-case-1.4-calico
+  test-case-1.4-calico-kdd
   test-case-1.4-weave
   test-case-1.5
   test-case-1.5-flannel
   test-case-1.5-calico
+  test-case-1.5-calico-kdd
   test-case-1.5-weave
   test-case-1.6
-  test-case-1.6-flannel
+  # test-case-1.6-flannel
   test-case-1.6-calico
-  test-case-1.6-weave
+  test-case-1.6-calico-kdd
+  # test-case-1.6-weave
   test-case-src-1.6
   test-case-src-master
-  test-case-src-master-flannel
-  test-case-src-master-calico
-  test-case-src-master-weave
+  # test-case-src-master-flannel
+  # test-case-src-master-calico
+  # test-case-src-calico-kdd
+  # test-case-src-master-weave
 else
   "test-case-${TEST_CASE}"
 fi

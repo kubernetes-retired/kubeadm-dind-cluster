@@ -48,6 +48,7 @@ fi
 
 CNI_PLUGIN="${CNI_PLUGIN:-bridge}"
 DIND_SUBNET="${DIND_SUBNET:-10.192.0.0}"
+POD_NETWORK_CIDR="${POD_NETWORK_CIDR:-10.244.0.0/16}"
 dind_ip_base="$(echo "${DIND_SUBNET}" | sed 's/\.0$//')"
 DIND_IMAGE="${DIND_IMAGE:-}"
 BUILD_KUBEADM="${BUILD_KUBEADM:-}"
@@ -537,7 +538,7 @@ function dind::init {
     # It doesn't change the fact that we're deploying custom-built k8s version
     kube_version_flag="--kubernetes-version=stable-1.6"
   fi
-  kubeadm_join_flags="$(dind::kubeadm "${container_id}" init --pod-network-cidr=10.244.0.0/16 --skip-preflight-checks ${kube_version_flag} "$@" | grep '^ *kubeadm join' | sed 's/^ *kubeadm join //')"
+  kubeadm_join_flags="$(dind::kubeadm "${container_id}" init --pod-network-cidr="${POD_NETWORK_CIDR}" --skip-preflight-checks ${kube_version_flag} "$@" | grep '^ *kubeadm join' | sed 's/^ *kubeadm join //')"
   dind::configure-kubectl
   dind::deploy-dashboard
 }
@@ -705,9 +706,17 @@ function dind::up {
       ;;
     calico)
       if dind::use-rbac; then
-        "${kubectl}" apply -f http://docs.projectcalico.org/v2.1/getting-started/kubernetes/installation/hosted/kubeadm/1.6/calico.yaml
+        "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/kubeadm/1.6/calico.yaml
       else
-        "${kubectl}" apply -f http://docs.projectcalico.org/v2.0/getting-started/kubernetes/installation/hosted/kubeadm/calico.yaml
+        "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/kubeadm/1.5/calico.yaml
+      fi
+      ;;
+    calico-kdd)
+      if dind::use-rbac; then
+        "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/kubernetes-datastore/calico-networking/1.6/calico.yaml
+        "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/rbac.yaml
+      else
+        "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/kubernetes-datastore/calico-networking/1.5/calico.yaml
       fi
       ;;
     weave)
