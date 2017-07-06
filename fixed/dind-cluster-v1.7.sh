@@ -40,7 +40,7 @@ if docker info|grep -s '^Kernel Version: .*-moby$' > /dev/null 2>&1; then
     is_moby_linux=1
 fi
 
-EMBEDDED_CONFIG=y;DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.4
+EMBEDDED_CONFIG=y;DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.7
 
 if [[ ! ${EMBEDDED_CONFIG:-} ]]; then
   source "${DIND_ROOT}/config.sh"
@@ -48,6 +48,7 @@ fi
 
 CNI_PLUGIN="${CNI_PLUGIN:-bridge}"
 DIND_SUBNET="${DIND_SUBNET:-10.192.0.0}"
+POD_NETWORK_CIDR="${POD_NETWORK_CIDR:-10.244.0.0/16}"
 dind_ip_base="$(echo "${DIND_SUBNET}" | sed 's/\.0$//')"
 DIND_IMAGE="${DIND_IMAGE:-}"
 BUILD_KUBEADM="${BUILD_KUBEADM:-}"
@@ -277,20 +278,20 @@ function dind::ensure-downloaded-kubectl {
   local full_kubectl_version
 
   case "${LOCAL_KUBECTL_VERSION}" in
-    v1.4)
-      full_kubectl_version=v1.4.9
-      kubectl_sha1_linux=5726e8f17d56a5efeb2a644d8e7e2fdd8da8b8fd
-      kubectl_sha1_darwin=630fb3e0f4f442178cde0264d4b399291226eb2b
-      ;;
     v1.5)
       full_kubectl_version=v1.5.4
       kubectl_sha1_linux=15d8430dc52b1f3772b88bc6a236c8fa58e07c0d
       kubectl_sha1_darwin=5e671ba792567574eea48be4eddd844ba2f07c27
       ;;
     v1.6)
-      full_kubectl_version=v1.6.1
-      kubectl_sha1_linux=65d27d731fbd25aa6beb6049691d58c5f09848c0
-      kubectl_sha1_darwin=f12a74544a19d3480466cc6046e18cb7c04591e1
+      full_kubectl_version=v1.6.6
+      kubectl_sha1_linux=41153558717f3206d37f5bf34232a303ae4dade1
+      kubectl_sha1_darwin=9795098e7340764b96a83e50676886d29e792033
+      ;;
+    v1.7)
+      full_kubectl_version=v1.7.0
+      kubectl_sha1_linux=c92ec52c02ec10a1ab54132d3cc99ad6f68c530e
+      kubectl_sha1_darwin=2e2708b873accafb1be8f328008e3d41a6a32c08
       ;;
     "")
       return 0
@@ -531,13 +532,7 @@ function dind::init {
   # FIXME: I tried using custom tokens with 'kubeadm ex token create' but join failed with:
   # 'failed to parse response as JWS object [square/go-jose: compact JWS format must have three parts]'
   # So we just pick the line from 'kubeadm init' output
-  local kube_version_flag=""
-  if [[ ${BUILD_KUBEADM} ]]; then
-    # FIXME: this is temporary fix for kubeadm trying to get a non-existent release URL.
-    # It doesn't change the fact that we're deploying custom-built k8s version
-    kube_version_flag="--kubernetes-version=stable-1.6"
-  fi
-  kubeadm_join_flags="$(dind::kubeadm "${container_id}" init --pod-network-cidr=10.244.0.0/16 --skip-preflight-checks ${kube_version_flag} "$@" | grep '^ *kubeadm join' | sed 's/^ *kubeadm join //')"
+  kubeadm_join_flags="$(dind::kubeadm "${container_id}" init --pod-network-cidr="${POD_NETWORK_CIDR}" --skip-preflight-checks "$@" | grep '^ *kubeadm join' | sed 's/^ *kubeadm join //')"
   dind::configure-kubectl
   dind::deploy-dashboard
 }
@@ -580,10 +575,8 @@ function dind::accelerate-kube-dns {
   dind::step "Patching kube-dns deployment to make it start faster"
   # Could do this on the host, too, but we don't want to require jq here
   # TODO: do this in wrapkubeadm
-  # 'kubectl version --short' is a quick check for kubectl 1.4
-  # which doesn't support 'kubectl apply --force'
   docker exec kube-master /bin/bash -c \
-         "kubectl get deployment kube-dns -n kube-system -o json | jq '.spec.template.spec.containers[0].readinessProbe.initialDelaySeconds = 3|.spec.template.spec.containers[0].readinessProbe.periodSeconds = 3' | if kubectl version --short >&/dev/null; then kubectl apply --force -f -; else kubectl apply -f -; fi"
+         "kubectl get deployment kube-dns -n kube-system -o json | jq '.spec.template.spec.containers[0].readinessProbe.initialDelaySeconds = 3|.spec.template.spec.containers[0].readinessProbe.periodSeconds = 3' | kubectl apply --force -f -"
 }
 
 function dind::component-ready {
@@ -730,7 +723,7 @@ function dind::up {
       ;;
   esac
   dind::accelerate-kube-dns
-  if [[ ${CNI_PLUGIN} != bridge ]]; then
+  if [[ ${CNI_PLUGIN} != bridge || ${SKIP_SNAPSHOT} ]]; then
     # This is especially important in case of Calico -
     # the cluster will not recover after snapshotting
     # (at least not after restarting from the snapshot)
@@ -921,7 +914,6 @@ case "${1:-}" in
     dind::ensure-kubectl
     if [[ ${SKIP_SNAPSHOT} ]]; then
       force_make_binaries=y dind::up
-      dind::wait-for-ready
     elif ! dind::check-for-snapshot; then
       force_make_binaries=y dind::up
       dind::snapshot
@@ -934,7 +926,6 @@ case "${1:-}" in
     dind::ensure-kubectl
     if [[ ${SKIP_SNAPSHOT} ]]; then
       force_make_binaries=y dind::up
-      dind::wait-for-ready
     elif ! dind::check-for-snapshot; then
       force_make_binaries=y dind::up
       dind::snapshot

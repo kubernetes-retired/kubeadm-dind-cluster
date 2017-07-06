@@ -23,6 +23,8 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update -y \
     && DEBIAN_FRONTEND=noninteractive apt-get autoremove -y \
     && DEBIAN_FRONTEND=noninteractive apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* # CACHEBUST
 
+# /usr/bin/kube-* links are for k8s master (pre-1.8)
+
 RUN ln -s /hyperkube /apiserver \
  && ln -s /hyperkube /controller-manager \
  && ln -s /hyperkube /federation-apiserver \
@@ -31,4 +33,7 @@ RUN ln -s /hyperkube /apiserver \
  && ln -s /hyperkube /kubelet \
  && ln -s /hyperkube /proxy \
  && ln -s /hyperkube /usr/local/bin/kube-proxy \
- && ln -s /hyperkube /scheduler
+ && ln -s /hyperkube /scheduler \
+ && ln -s /hyperkube /usr/bin/kube-apiserver \
+ && ln -s /hyperkube /usr/bin/kube-controller-manager \
+ && ln -s /hyperkube /usr/bin/kube-scheduler
