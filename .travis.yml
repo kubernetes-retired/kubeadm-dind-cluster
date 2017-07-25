@@ -1,23 +1,24 @@
+dist: precise
 sudo: required
 services: docker
 language: generic
 
 env:
-  - TEST_CASE=1.5
-  - TEST_CASE=1.5-flannel
-  - TEST_CASE=1.5-calico
-  - TEST_CASE=1.5-calico-kdd
-  - TEST_CASE=1.5-weave
-  - TEST_CASE=1.6
-  - TEST_CASE=1.6-flannel
-  - TEST_CASE=1.6-calico
-  - TEST_CASE=1.6-calico-kdd
-  - TEST_CASE=1.6-weave
-  - TEST_CASE=1.7
-  - TEST_CASE=1.7-flannel
-  - TEST_CASE=1.7-calico
-  - TEST_CASE=1.7-calico-kdd
-  - TEST_CASE=1.7-weave
+  # - TEST_CASE=1.5
+  # - TEST_CASE=1.5-flannel
+  # - TEST_CASE=1.5-calico
+  # - TEST_CASE=1.5-calico-kdd
+  # - TEST_CASE=1.5-weave
+  # - TEST_CASE=1.6
+  # - TEST_CASE=1.6-flannel
+  # - TEST_CASE=1.6-calico
+  # - TEST_CASE=1.6-calico-kdd
+  # - TEST_CASE=1.6-weave
+  # - TEST_CASE=1.7
+  # - TEST_CASE=1.7-flannel
+  # - TEST_CASE=1.7-calico
+  # - TEST_CASE=1.7-calico-kdd
+  # - TEST_CASE=1.7-weave
   - TEST_CASE=src-1.7
   - TEST_CASE=src-master
   # - TEST_CASE=src-master-flannel
