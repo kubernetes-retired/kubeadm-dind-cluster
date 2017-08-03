@@ -66,7 +66,9 @@ function test-cluster {
 function test-cluster-src {
   (
     local version="${1:-}"
-    git clone https://github.com/kubernetes/kubernetes.git
+    if [[ ! -d "kubernetes" ]]; then
+       git clone https://github.com/kubernetes/kubernetes.git
+    fi
     cd kubernetes
     if [[ ${version} ]]; then
       git checkout "${version}"
@@ -220,7 +222,7 @@ function test-case-src-1.7 {
 }
 
 function test-case-src-master {
-  test-cluster-src
+  test-cluster-src master
 }
 
 function test-case-src-master-flannel {
