@@ -8,9 +8,10 @@ Environment="KUBELET_FEATURE_ARGS= --feature-gates=DynamicKubeletConfig=true"
 Environment="KUBELET_SYSTEM_PODS_ARGS=--pod-manifest-path=/etc/kubernetes/manifests --allow-privileged=true"
 Environment="KUBELET_NETWORK_ARGS=--network-plugin=cni --cni-conf-dir=/etc/cni/net.d --cni-bin-dir=/opt/cni/bin"
 Environment="KUBELET_DNS_ARGS=--cluster-dns=10.96.0.10 --cluster-domain=cluster.local"
+Environment="KUBELET_EVICTION_ARGS=--eviction-hard='memory.available<100Mi,nodefs.available<100Mi,nodefs.inodesFree<1000'"
 Environment="KUBELET_EXTRA_ARGS=--v=4"
 ExecStart=
-ExecStart=/k8s/hyperkube kubelet $KUBELET_KUBECONFIG_ARGS $KUBELET_FEATURE_ARGS $KUBELET_SYSTEM_PODS_ARGS $KUBELET_NETWORK_ARGS $KUBELET_DNS_ARGS $KUBELET_EXTRA_ARGS
+ExecStart=/k8s/hyperkube kubelet $KUBELET_KUBECONFIG_ARGS $KUBELET_FEATURE_ARGS $KUBELET_SYSTEM_PODS_ARGS $KUBELET_NETWORK_ARGS $KUBELET_DNS_ARGS $KUBELET_EVICTION_ARGS $KUBELET_EXTRA_ARGS
 Restart=always
 StartLimitInterval=0
 RestartSec=10
