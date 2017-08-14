@@ -248,21 +248,31 @@ function dind::frob-cluster {
   dind::frob-proxy
 }
 
+function dind::maybe-use-bootstrap-kubeconfig {
+  # New behavior to be used after https://github.com/kubernetes/kubernetes/pull/49681
+  # Don't use --bootstrap-kubeconfig for k8s 1.7 though
+  if ! /k8s/hyperkube kubelet --help 2>&1 | grep -q -- --bootstrap-kubeconfig || /k8s/hyperkube kubelet --version | grep -q 'v1\.7\.'; then
+    return 1
+  fi
+  cat >/etc/systemd/system/kubelet.service.d/20-bootstrap-kubeconfig.conf <<EOF
+[Service]
+Environment="KUBELET_KUBECONFIG_ARGS=--bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf --kubeconfig=/etc/kubernetes/kubelet.conf"
+EOF
+}
+
 function dind::fix-cgroups {
   # Workaround for https://github.com/kubernetes/kubernetes/issues/43704
   if ! egrep -q '^tmpfs\s+/sys/fs/cgroup\s+\S+\s+ro(,|\s|$)' /proc/mounts; then
-    return
+    return 1
   fi
   if ! /k8s/hyperkube kubelet --help 2>&1 | grep -q -- --enforce-node-allocatable; then
-    return
+    return 1
   fi
   mkdir -p /etc/systemd/system/kubelet.service.d
   cat >/etc/systemd/system/kubelet.service.d/10-fixmac.conf <<EOF
 [Service]
 Environment="KUBELET_EXTRA_ARGS=--cgroups-per-qos=false --enforce-node-allocatable= --v=4"
 EOF
-  systemctl daemon-reload
-  systemctl restart kubelet
 }
 
 function dind::prepare-for-kubeadm {
@@ -274,7 +284,9 @@ function dind::prepare-for-kubeadm {
   fi
   dind::ensure-binaries-and-hypokube
 
-  dind::fix-cgroups
+  if dind::maybe-use-bootstrap-kubeconfig || dind::fix-cgroups; then
+    systemctl daemon-reload
+  fi
 
   # enable kubelet right before starting kubeadm to avoid
   # longer delays between container restarts

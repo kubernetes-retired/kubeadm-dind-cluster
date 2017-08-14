@@ -26,7 +26,7 @@ ENV ARCH amd64
 # (e.g. accept systemd.setenv args, etc.)
 ENV container docker
 
-RUN mkdir -p /hypokube /etc/systemd/system/docker.service.d
+RUN mkdir -p /hypokube /etc/systemd/system/docker.service.d /var/lib/kubelet
 
 COPY hypokube.dkr /hypokube/
 COPY kubelet.service /lib/systemd/system/
