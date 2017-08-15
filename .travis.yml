@@ -1,6 +1,6 @@
 sudo: required
 services: docker
-language: generic
+language: minimal
 
 env:
   - TEST_CASE=1.5
