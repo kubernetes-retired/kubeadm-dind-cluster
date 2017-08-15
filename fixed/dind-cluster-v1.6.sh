@@ -284,14 +284,14 @@ function dind::ensure-downloaded-kubectl {
       kubectl_sha1_darwin=5e671ba792567574eea48be4eddd844ba2f07c27
       ;;
     v1.6)
-      full_kubectl_version=v1.6.6
-      kubectl_sha1_linux=41153558717f3206d37f5bf34232a303ae4dade1
-      kubectl_sha1_darwin=9795098e7340764b96a83e50676886d29e792033
+      full_kubectl_version=v1.6.8
+      kubectl_sha1_linux=28efa3bb5f7363f67d1907aeadae718cab03a6a3
+      kubectl_sha1_darwin=22508c8593b0d3c2d78860bd2f60106c376ee226
       ;;
     v1.7)
-      full_kubectl_version=v1.7.0
-      kubectl_sha1_linux=c92ec52c02ec10a1ab54132d3cc99ad6f68c530e
-      kubectl_sha1_darwin=2e2708b873accafb1be8f328008e3d41a6a32c08
+      full_kubectl_version=v1.7.3
+      kubectl_sha1_linux=14266c30ad018a493c69ffd161aa3dbf14b09577
+      kubectl_sha1_darwin=ee427bf58dac24a00273f0daa4e894027934f624
       ;;
     "")
       return 0
@@ -852,7 +852,7 @@ function dind::do-run-e2e {
          bash -c "cluster/kubectl.sh config set-cluster dind --server='http://localhost:${APISERVER_PORT}' --insecure-skip-tls-verify=true &&
          cluster/kubectl.sh config set-context dind --cluster=dind &&
          cluster/kubectl.sh config use-context dind &&
-         go run hack/e2e.go --v --test --test_args='${test_args}'"
+         go run hack/e2e.go --v --test -check_version_skew=false --test_args='${test_args}'"
 }
 
 function dind::clean {
