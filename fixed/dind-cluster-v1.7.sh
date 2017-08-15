@@ -852,7 +852,7 @@ function dind::do-run-e2e {
          bash -c "cluster/kubectl.sh config set-cluster dind --server='http://localhost:${APISERVER_PORT}' --insecure-skip-tls-verify=true &&
          cluster/kubectl.sh config set-context dind --cluster=dind &&
          cluster/kubectl.sh config use-context dind &&
-         go run hack/e2e.go --v --test -check_version_skew=false --test_args='${test_args}'"
+         go run hack/e2e.go -- --v --test --check-version-skew=false --test_args='${test_args}'"
 }
 
 function dind::clean {
