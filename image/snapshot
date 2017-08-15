@@ -82,11 +82,18 @@ function snapshot::save {
       fi
     done |
     tar -C / -cf /dind/snapshot.tar -T -
+  if [[ -f /var/run/kubernetes/kubelet-client.key ]]; then
+    tar -C / -cf /dind/var-run-kubernetes.tar var/run/kubernetes
+  fi
+
   systemctl start kubelet docker
 }
 
 function snapshot::restore {
   tar -C / -xf /dind/snapshot.tar
+  if [[ -f /dind/var-run-kubernetes.tar ]]; then
+    tar -C / -xf /dind/var-run-kubernetes.tar
+  fi
   if [[ ${1:-} = "-u" ]]; then
     wrapkubeadm ensure-binaries
   fi
