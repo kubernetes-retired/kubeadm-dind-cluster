@@ -91,6 +91,14 @@ else
   kubectl=kubectl
 fi
 
+function dind::retry {
+  # based on retry function in hack/jenkins/ scripts in k8s source
+  for i in {1..10}; do
+    "$@" && return 0 || sleep ${i}
+  done
+  "$@"
+}
+
 busybox_image="busybox:1.26.2"
 e2e_base_image="golang:1.7.1"
 sys_volume_args=()
@@ -610,7 +618,7 @@ function dind::wait-for-ready {
   local n=3
   while true; do
     dind::kill-failed-pods
-    if "${kubectl}" get nodes 2>/dev/null| grep -q NotReady; then
+    if "${kubectl}" get nodes 2>/dev/null | grep -q NotReady; then
       nodes_ready=
     else
       nodes_ready=y
@@ -633,8 +641,9 @@ function dind::wait-for-ready {
   done
 
   dind::step "Bringing up kube-dns and kubernetes-dashboard"
-  "${kubectl}" scale deployment --replicas=1 -n kube-system kube-dns
-  "${kubectl}" scale deployment --replicas=1 -n kube-system kubernetes-dashboard
+  # on Travis 'scale' sometimes fails with 'error: Scaling the resource failed with: etcdserver: request timed out; Current resource version 442' here
+  dind::retry "${kubectl}" scale deployment --replicas=1 -n kube-system kube-dns
+  dind::retry "${kubectl}" scale deployment --replicas=1 -n kube-system kubernetes-dashboard
 
   while ! dind::component-ready k8s-app=kube-dns || ! dind::component-ready app=kubernetes-dashboard; do
     echo -n "." >&2

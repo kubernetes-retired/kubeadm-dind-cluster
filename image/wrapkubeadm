@@ -62,6 +62,14 @@ if [[ -f /dind-sys/sys.tar ]]; then
   tar -C / -xf /dind-sys/sys.tar
 fi
 
+function dind::retry {
+  # based on retry function in hack/jenkins/ scripts in k8s source
+  for i in {1..10}; do
+    "$@" && return 0 || sleep ${i}
+  done
+  "$@"
+}
+
 function dind::get-binary-from-build-data-container {
   local filename="$1"
   local src_path="${build_src_dir}/_output/dockerized/bin/${platform}/${filename}"
@@ -198,6 +206,11 @@ function dind::frob-proxy {
   #
   # Recipe by @errordeveloper:
   # https://github.com/kubernetes/kubernetes/pull/34522#issuecomment-253248985
+
+  # sometimes this fails with 'the server doesn't have a resource type "daemonsets"'
+  # if done too early
+  dind::retry kubectl -n kube-system get ds -l k8s-app=kube-proxy -o name >/dev/null
+
   kubectl -n kube-system get ds -l k8s-app=kube-proxy -o json |
     jq "$(dind::join-filters "${proxy_mount_binaries}" "$(dind::proxy-cidr-and-no-conntrack)")" |
     kubectl apply --force -f -
@@ -308,6 +321,12 @@ function dind::prepare-for-kubeadm {
   systemctl enable kubelet
 }
 
+function dind::do-kubeadm {
+  if ! time KUBE_HYPERKUBE_IMAGE="${hypokube_final_image}" kubeadm "$@"; then
+    kubeadm reset || true
+  fi
+}
+
 if [[ ${1:-} = ensure-binaries ]]; then
   dind::ensure-binaries-and-hypokube
 else
@@ -316,7 +335,7 @@ else
   systemd-machine-id-setup
   dind::prepare-for-kubeadm
 
-  time KUBE_HYPERKUBE_IMAGE="${hypokube_final_image}" kubeadm "$@"
+  dind::retry dind::do-kubeadm "$@"
 
   if [[ ${is_master} ]]; then
     dind::frob-cluster
