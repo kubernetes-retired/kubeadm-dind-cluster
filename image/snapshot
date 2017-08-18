@@ -50,8 +50,7 @@ function snapshot::prepare {
     while kubectl get pod kube-controller-manager-kube-master -n kube-system -o name 2>/dev/null | grep -q pods*/; do
       if ((--n == 0)); then
         echo "WARNING: kubelet glitch: kube-controller-manager won't stop; pods may 'blink' for some time after restore" >&2
-        systemctl stop kubelet docker
-        return
+        break
       fi
       sleep 0.3
     done
@@ -62,8 +61,7 @@ function snapshot::prepare {
     while kubectl get pod -n kube-system -o name -l k8s-app=kube-proxy | grep -q '^pods*/'; do
       if ((--n == 0)); then
         echo "WARNING: cluster glitch: proxy pods aren't removed; pods may 'blink' for some time after restore" >&2
-        systemctl stop kubelet docker
-        return
+        break
       fi
       sleep 0.3
     done

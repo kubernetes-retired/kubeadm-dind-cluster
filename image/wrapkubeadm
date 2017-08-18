@@ -18,6 +18,7 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 
+
 HYPERKUBE_SOURCE="${HYPERKUBE_SOURCE:-keep://}"
 KUBEADM_SOURCE="${KUBEADM_SOURCE:-keep://}"
 
@@ -294,7 +295,6 @@ function dind::set-kubelet-extra-args {
 [Service]
 Environment="KUBELET_EXTRA_ARGS=${kubelet_extra_args[@]} --v=4"
 EOF
-    systemctl daemon-reload
   fi
 }
 
@@ -307,7 +307,12 @@ function dind::prepare-for-kubeadm {
   fi
   dind::ensure-binaries-and-hypokube
 
+  # Ensure that DNS drop-in is created
+  systemctl start dindnet
+
   dind::set-kubelet-extra-args
+
+  systemctl daemon-reload
 
   # enable kubelet right before starting kubeadm to avoid
   # longer delays between container restarts

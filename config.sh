@@ -1,6 +1,3 @@
-# DIND subnet (/16 is always used)
-DIND_SUBNET=10.192.0.0
-
 # Apiserver port
 APISERVER_PORT=${APISERVER_PORT:-8080}
 

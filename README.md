@@ -123,6 +123,94 @@ The first `dind/dind-cluster.sh up` invocation can be slow because it
 needs to build the base image and Kubernetes binaries. Subsequent
 invocations are much faster.
 
+## IPv6 Mode (experimental)
+To run Kubernetes in IPv6 only mode, the following steps can be performed
+in a Kubernetes source setup. First, build a new kubeadm-dind-cluster
+image, from the DinD area:
+
+```shell
+$ cd ~/dind
+
+$ build/build-local.sh
+$ export DIND_IMAGE=mirantis/kubeadm-dind-cluster:local
+```
+
+Next, clone a Kubernetes repo from master branch:
+
+```shell
+$ git clone https://github.com/kubernetes/kubernetes.git
+$ cd kubernetes
+```
+
+As of Oct. 23rd, 2017, the following IPv6 PRs are in-flight, and should
+be cherry picked and added to the repo:
+
+```
+PR #47621 "Updates RangeSize error message and tests for IPv6"
+PR #48551 "Add IPv6 support to iptables proxier"
+PR #50929 "Add kubeadm config for setting kube-proxy bind address"
+PR #50478 "Fix kube-proxy to use proper iptables commands for IPv6"
+PR #52028 "Add required family flag for conntrack IPv6 operation"
+PR #52033 "Removed the IPv6 prefix size limit for cluster-cidr"
+```
+
+These can be obtained with:
+```
+git fetch origin pull/53569/head:pr53569
+git cherry-pick `git log --abbrev-commit pr53569 --oneline --abbrev-commit -n 1 | cut -f 1 -d" "`
+
+git fetch origin pull/52748/head:pr52748
+git cherry-pick `git log --abbrev-commit pr52748 --oneline --abbrev-commit -n 1 | cut -f 1 -d" "`
+
+git fetch origin pull/53384/head:pr53384
+git cherry-pick `git log --abbrev-commit pr53384 --oneline --abbrev-commit -n 1 | cut -f 1 -d" "`
+```
+
+Had conflict on above and needed to resolve.
+
+```
+git fetch origin pull/53389/head:pr53389
+git cherry-pick `git log --abbrev-commit pr53389 --oneline --abbrev-commit -n 1 | cut -f 1 -d" "`
+
+git fetch origin pull/53531/head:pr53531
+git cherry-pick `git log --abbrev-commit pr53531 --oneline --abbrev-commit -n 1 | cut -f 1 -d" "``
+
+git fetch origin pull/53555/head:pr53555
+git cherry-pick `git log --abbrev-commit pr53555 --oneline --abbrev-commit -n 1 | cut -f 1 -d" "`
+```
+
+A temporory commit is needed to prevent kube-proxy from setting
+conntack values on a system that allows more than four times more
+conntrack connections than hashsize. You can get this at:
+
+https://github.com/pmichali/kubernetes/commit/d76164d919f292915ebaf69d8a3c357f40457bd7
+
+Another temporary commit is needed to use a new version of kube-dns
+with IPv6 support. You can get this at:
+
+https://github.com/leblancd/kubernetes/commit/318c75b688e224e6dd0926eb671d9358f0aeb812
+
+Lastly, set up environment variables for building and IPv6 mode and
+then bring up the cluster:
+
+```shell
+$ export BUILD_KUBEADM=y
+$ export BUILD_HYPERKUBE=y
+$ export IP_MODE=ipv6
+
+$ ../dind-cluster.sh up
+```
+
+Note: there are additional customizations that you can make for IPv6,
+to set the prefix used for DNS64, subnet prefix to use for DinD, and
+the service subnet CIDR:
+
+```shell
+export DNS64_PREFIX=fd00:77:64:ff9b::
+export DIND_SUBNET=fd00:77::
+export SERVICE_CIDR=fd00:77:30::/110
+```
+
 ## Configuration
 You may edit `config.sh` to override default settings. See comments in
 [the file](config.sh) for more info. In particular, you can specify
