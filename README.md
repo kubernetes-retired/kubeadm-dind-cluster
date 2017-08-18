@@ -123,6 +123,105 @@ The first `dind/dind-cluster.sh up` invocation can be slow because it
 needs to build the base image and Kubernetes binaries. Subsequent
 invocations are much faster.
 
+## IPv6 Mode (experimental)
+To run Kubernetes in IPv6 only mode, the following steps can be performed
+in a Kubernetes source setup. First, build a new kubeadm-dind-cluster
+image, from the DinD area:
+
+```shell
+$ cd ~/dind
+
+$ build/build-local.sh
+$ export DIND_IMAGE=mirantis/kubeadm-dind-cluster:local
+```
+
+Next, clone a Kubernetes repo from master branch:
+
+```shell
+$ git clone https://github.com/kubernetes/kubernetes.git
+$ cd kubernetes
+```
+
+As of Oct. 23rd, 2017, the following IPv6 PRs are in-flight, and should
+be cherry picked and added to the repo:
+
+```
+PR #53484 "Adds Support for Configurable Kubeadm Probes."
+PR #45551 "Adds Support for Node Resource IPv6 Addressing"
+PR #53148 "ip6tables should be set in the noop plugin"
+PR #52180 "Updating kubenet for CNI with IPv6"
+PR #45792 "Updating NewCIDRSet return a value"
+PR #50929 "Add kubeadm config for setting kube-proxy bind address"
+PR #53555 "Add IPv6 and negative UT test cases for proxier's deleteEndpointConnections"
+PR #52748 "Add brackets around IPv6 addrs in e2e test IP:port endpoints"
+PR #54639 "Updates kube-dns in kubeadm to 1.14.7"
+PR #54437 "Adds support for v4/v6 loopback dns bind address."
+```
+
+These can be obtained with doing cherry picks from the PR commits:
+```
+git fetch origin pull/53484/head:pr53484
+git log --abbrev-commit pr53484 --oneline --abbrev-commit -n 1 | cut -f 1 -d" "
+
+git fetch origin pull/45551/head:pr45551
+git log --abbrev-commit pr45551 --oneline --abbrev-commit -n 1 | cut -f 1 -d" "
+
+git fetch origin pull/53184/head:pr53184
+git log --abbrev-commit pr53184 --oneline --abbrev-commit -n 1 | cut -f 1 -d" "
+
+git fetch origin pull/52180/head:pr52180
+git log --abbrev-commit pr52180 --oneline --abbrev-commit -n 1 | cut -f 1 -d" "
+
+git fetch origin pull/45792/head:pr45792
+git log --abbrev-commit pr45792 --oneline --abbrev-commit -n 1 | cut -f 1 -d" "
+```
+
+Had conflict on above and needed to resolve.
+
+```
+git fetch origin pull/50929/head:pr50929
+git log --abbrev-commit pr50929 --oneline --abbrev-commit -n 1 | cut -f 1 -d" "
+
+git fetch origin pull/53555/head:pr53555
+git log --abbrev-commit pr53555 --oneline --abbrev-commit -n 1 | cut -f 1 -d" "
+
+git fetch origin pull/52748/head:pr52748
+git log --abbrev-commit pr52748 --oneline --abbrev-commit -n 1 | cut -f 1 -d" "
+
+git fetch origin pull/54639/head:pr54639
+git log --abbrev-commit pr54639 --oneline --abbrev-commit -n 1 | cut -f 1 -d" "
+
+git fetch origin pull/54437/head:pr54437
+git log --abbrev-commit pr54437 --oneline --abbrev-commit -n 1 | cut -f 1 -d" "
+```
+
+If you have a host that allows four times more conntrack connection (max) than
+hashsize, You'll need this temporary patch (until issue 50787 is fixed and DinD is
+modified to customize the kubelet config file):
+
+https://github.com/pmichali/kubernetes/commit/d76164d919f292915ebaf69d8a3c357f40457bd7
+
+Lastly, set up environment variables for building and IPv6 mode and
+then bring up the cluster:
+
+```shell
+$ export BUILD_KUBEADM=y
+$ export BUILD_HYPERKUBE=y
+$ export IP_MODE=ipv6
+
+$ ../dind-cluster.sh up
+```
+
+Note: there are additional customizations that you can make for IPv6,
+to set the prefix used for DNS64, subnet prefix to use for DinD, and
+the service subnet CIDR:
+
+```shell
+export DNS64_PREFIX=fd00:77:64:ff9b::
+export DIND_SUBNET=fd00:77::
+export SERVICE_CIDR=fd00:77:30::/110
+```
+
 ## Configuration
 You may edit `config.sh` to override default settings. See comments in
 [the file](config.sh) for more info. In particular, you can specify
