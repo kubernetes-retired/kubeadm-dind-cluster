@@ -60,6 +60,7 @@ KUBECTL_DIR="${KUBECTL_DIR:-${HOME}/.kubeadm-dind-cluster}"
 DASHBOARD_URL="${DASHBOARD_URL:-https://rawgit.com/kubernetes/dashboard/bfab10151f012d1acc5dfb1979f3172e2400aa3c/src/deploy/kubernetes-dashboard.yaml}"
 SKIP_SNAPSHOT="${SKIP_SNAPSHOT:-}"
 E2E_REPORT_DIR="${E2E_REPORT_DIR:-}"
+DIND_NO_PARALLEL_E2E="${DIND_NO_PARALLEL_E2E:-}"
 
 if [[ ! ${LOCAL_KUBECTL_VERSION:-} && ${DIND_IMAGE:-} =~ :(v[0-9]+\.[0-9]+)$ ]]; then
   LOCAL_KUBECTL_VERSION="${BASH_REMATCH[1]}"
@@ -881,7 +882,11 @@ function dind::run-e2e {
   else
     focus="\[Conformance\]"
   fi
-  dind::do-run-e2e y "${focus}" "${skip}"
+  local parallel=y
+  if [[ ${DIND_NO_PARALLEL_E2E} ]]; then
+    parallel=
+  fi
+  dind::do-run-e2e "${parallel}" "${focus}" "${skip}"
 }
 
 function dind::run-e2e-serial {

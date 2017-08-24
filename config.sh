@@ -43,3 +43,7 @@ CNI_PLUGIN="${CNI_PLUGIN:-bridge}"
 # This may be useful for CI environment where the cluster is never
 # restarted after it's created.
 # SKIP_SNAPSHOT=y
+
+# Disable parallel running of e2e tests. Use this if you use a resource
+# constrained machine for e2e tests and get some flakes.
+# DIND_NO_PARALLEL_E2E=y
