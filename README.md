@@ -22,7 +22,7 @@ version of k8s binaries you're using (i.e. for example don't try to
 use `kubectl` 1.6.x with `hyperkube` 1.5.x).
 
 `kubeadm-dind-cluster` supports k8s versions 1.5.x (tested with 1.5.4),
-1.6.x (tested with 1.6.6) and 1.7 (tested with 1.7.7).
+1.6.x (tested with 1.6.6) and 1.7 (tested with 1.7.3).
 
 **As of now, running `kubeadm-dind-cluster` on Docker with `btrfs`
 storage driver is not supported.**
