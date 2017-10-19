@@ -73,11 +73,11 @@ function snapshot::save {
   # the scripts expects output the output of 'docker diff' as input
   grep -v '^D ' |
     sed 's@^. /@@' |
-    egrep -v '^(tmp|var/lib/kubelet|var/log|etc/mtab|run/)' |
+    egrep -v '^(tmp|var/log|etc/mtab|run/)' |
     while read path; do
-      # FIXME: need to just add all the empty dirs to the list
-      # Non-empty dirs will be added automatically by tar
-      if [[ ! -d ${path} || ${path} =~ ^.*/etcd/.*/snap$ ]]; then
+      # Here we only add dirs if they're empty, as non-empty dirs will
+      # be added automatically by tar
+      if [[ ! -d ${path} || -h ${path} || ! $(ls -A "${path}") ]]; then
         echo "${path}"
       fi
     done |
