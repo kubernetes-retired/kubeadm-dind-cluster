@@ -40,7 +40,7 @@ if docker info|grep -s '^Kernel Version: .*-moby$' > /dev/null 2>&1; then
     is_moby_linux=1
 fi
 
-EMBEDDED_CONFIG=y;DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.5
+EMBEDDED_CONFIG=y;DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.8
 
 if [[ ! ${EMBEDDED_CONFIG:-} ]]; then
   source "${DIND_ROOT}/config.sh"
@@ -287,20 +287,20 @@ function dind::ensure-downloaded-kubectl {
   local full_kubectl_version
 
   case "${LOCAL_KUBECTL_VERSION}" in
-    v1.5)
-      full_kubectl_version=v1.5.4
-      kubectl_sha1_linux=15d8430dc52b1f3772b88bc6a236c8fa58e07c0d
-      kubectl_sha1_darwin=5e671ba792567574eea48be4eddd844ba2f07c27
-      ;;
     v1.6)
-      full_kubectl_version=v1.6.8
-      kubectl_sha1_linux=28efa3bb5f7363f67d1907aeadae718cab03a6a3
-      kubectl_sha1_darwin=22508c8593b0d3c2d78860bd2f60106c376ee226
+      full_kubectl_version=v1.6.9
+      kubectl_sha1_linux=5a26d1ad9712ff7117e24dc5408bf3a816489758
+      kubectl_sha1_darwin=ddf88f8c8b0a97ed3f599920f2f2de2cc3efb599
       ;;
     v1.7)
-      full_kubectl_version=v1.7.3
-      kubectl_sha1_linux=14266c30ad018a493c69ffd161aa3dbf14b09577
-      kubectl_sha1_darwin=ee427bf58dac24a00273f0daa4e894027934f624
+      full_kubectl_version=v1.7.8
+      kubectl_sha1_linux=0c3a28ac6551ee340b838e406f32fafe3124a5d5
+      kubectl_sha1_darwin=6049f0353dc37313a16775374ace23439594a7ca
+      ;;
+    v1.8)
+      full_kubectl_version=v1.8.1
+      kubectl_sha1_linux=e3e5d59be033ea6b46cfb65d6f8a0861e5c6322a
+      kubectl_sha1_darwin=c0f49bafa683740541d28f7fd0a0b00147f1d159
       ;;
     "")
       return 0
@@ -730,9 +730,6 @@ function dind::up {
     bridge)
       ;;
     flannel)
-      if dind::use-rbac; then
-        curl -sSL "https://github.com/coreos/flannel/blob/master/Documentation/kube-flannel-rbac.yml?raw=true" | "${kubectl}" create -f -
-      fi
       # without --validate=false this will fail on older k8s versions
       curl -sSL "https://github.com/coreos/flannel/blob/master/Documentation/kube-flannel.yml?raw=true" | "${kubectl}" create --validate=false -f -
       ;;

@@ -3,11 +3,6 @@ services: docker
 language: minimal
 
 env:
-  - TEST_CASE=1.5
-  - TEST_CASE=1.5-flannel
-  - TEST_CASE=1.5-calico
-  - TEST_CASE=1.5-calico-kdd
-  - TEST_CASE=1.5-weave
   - TEST_CASE=1.6
   # XXX: find out what's wrong with 1.6 + flannel
   # - TEST_CASE=1.6-flannel
@@ -19,7 +14,12 @@ env:
   - TEST_CASE=1.7-calico
   - TEST_CASE=1.7-calico-kdd
   - TEST_CASE=1.7-weave
-  - TEST_CASE=src-1.7
+  - TEST_CASE=1.8
+  - TEST_CASE=1.8-flannel
+  - TEST_CASE=1.8-calico
+  - TEST_CASE=1.8-calico-kdd
+  - TEST_CASE=1.8-weave
+  - TEST_CASE=src-1.8
   - TEST_CASE=src-master
   # The following tests often don't pass because CNI
   # implementations often aren't up-to-date for k8s master
