@@ -44,8 +44,6 @@ apiserver_insecure_bind_address='.spec.containers[0].command|=map(select(startsw
 # Make apiserver accept insecure connections on port 8080
 # TODO: don't use insecure port
 apiserver_insecure_bind_port='.spec.containers[0].command|=map(select(startswith("--insecure-port=")|not))+["--insecure-port=8080"]'
-# Enable streaming proxy redirects, needed for CRI in k8s 1.5
-apiserver_streaming_proxy_redirects='.spec.containers[0].command|=.+["--feature-gates=StreamingProxyRedirects=true"]'
 # Update kube-proxy CIDR, enable --masquerade-all and disable conntrack (see dind::frob-proxy below)
 function dind::proxy-cidr-and-no-conntrack {
   cluster_cidr="$(ip addr show docker0 | grep -w inet | awk '{ print $2; }')"
@@ -219,10 +217,6 @@ function dind::frob-proxy {
 
 function dind::frob-apiserver {
   local -a filters=("${mount_binaries}" "${apiserver_insecure_bind_address}" "${apiserver_insecure_bind_port}")
-  # StreamingProxyRedirects is needed for CRI (it's enabled in 1.6+ by default)
-  if kubectl version --short 2>/dev/null|grep -q 'Server.*: v1\.5\.'; then
-    filters+=("${apiserver_streaming_proxy_redirects}")
-  fi
   dind::frob-file "${apiserver_static_pod}" "${filters[@]}"
 }
 

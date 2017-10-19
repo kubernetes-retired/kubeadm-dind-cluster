@@ -509,28 +509,12 @@ function dind::set-master-opts {
   fi
 }
 
-cached_use_rbac=
-function dind::use-rbac {
-  # we use rbac in case of k8s 1.6
-  if [[ ${cached_use_rbac} ]]; then
-    [[ ${cached_use_rbac} = 1 ]] && return 0 || return 1
-  fi
-  cached_use_rbac=0
-  if "${kubectl}" version --short >& /dev/null && ! "${kubectl}" version --short | grep -q 'Server Version: v1\.5\.'; then
-    cached_use_rbac=1
-    return 0
-  fi
-  return 1
-}
-
 function dind::deploy-dashboard {
   dind::step "Deploying k8s dashboard"
   "${kubectl}" create -f "${DASHBOARD_URL}"
-  if dind::use-rbac; then
-    # https://kubernetes-io-vnext-staging.netlify.com/docs/admin/authorization/rbac/#service-account-permissions
-    # Thanks @liggitt for the hint
-    "${kubectl}" create clusterrolebinding add-on-cluster-admin --clusterrole=cluster-admin --serviceaccount=kube-system:default
-  fi
+  # https://kubernetes-io-vnext-staging.netlify.com/docs/admin/authorization/rbac/#service-account-permissions
+  # Thanks @liggitt for the hint
+  "${kubectl}" create clusterrolebinding add-on-cluster-admin --clusterrole=cluster-admin --serviceaccount=kube-system:default
 }
 
 function dind::at-least-kubeadm-1-8 {
@@ -734,26 +718,14 @@ function dind::up {
       curl -sSL "https://github.com/coreos/flannel/blob/master/Documentation/kube-flannel.yml?raw=true" | "${kubectl}" create --validate=false -f -
       ;;
     calico)
-      if dind::use-rbac; then
-        "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/kubeadm/1.6/calico.yaml
-      else
-        "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/kubeadm/1.5/calico.yaml
-      fi
+      "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/kubeadm/1.6/calico.yaml
       ;;
     calico-kdd)
-      if dind::use-rbac; then
-        "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/kubernetes-datastore/calico-networking/1.6/calico.yaml
-        "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/rbac.yaml
-      else
-        "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/kubernetes-datastore/calico-networking/1.5/calico.yaml
-      fi
+      "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/kubernetes-datastore/calico-networking/1.6/calico.yaml
+      "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/rbac.yaml
       ;;
     weave)
-      if dind::use-rbac; then
-        "${kubectl}" apply -f "https://github.com/weaveworks/weave/blob/master/prog/weave-kube/weave-daemonset-k8s-1.6.yaml?raw=true"
-      else
-        "${kubectl}" apply -f https://git.io/weave-kube
-      fi
+      "${kubectl}" apply -f "https://github.com/weaveworks/weave/blob/master/prog/weave-kube/weave-daemonset-k8s-1.6.yaml?raw=true"
       ;;
     *)
       echo "Unsupported CNI plugin '${CNI_PLUGIN}'" >&2
