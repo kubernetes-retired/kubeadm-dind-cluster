@@ -267,8 +267,7 @@ if [[ ! ${TEST_CASE} ]]; then
   test-case-1.8
   test-case-1.8-flannel
   test-case-1.8-calico
-  # FIXME: calico-kdd currently fails on 1.8
-  # test-case-1.8-calico-kdd
+  test-case-1.8-calico-kdd
   test-case-1.8-weave
   test-case-src-1.8
   test-case-src-master

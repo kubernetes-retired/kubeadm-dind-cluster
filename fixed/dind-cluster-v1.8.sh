@@ -46,9 +46,13 @@ if [[ ! ${EMBEDDED_CONFIG:-} ]]; then
   source "${DIND_ROOT}/config.sh"
 fi
 
+DEFAULT_POD_NETWORK_CIDR="10.244.0.0/16"
+if [[ CNI_PLUGIN = "calico" || CNI_PLUGIN = "calico-kdd" ]]; then
+  DEFAULT_POD_NETWORK_CIDR="192.168.0.0/16"
+fi
 CNI_PLUGIN="${CNI_PLUGIN:-bridge}"
 DIND_SUBNET="${DIND_SUBNET:-10.192.0.0}"
-POD_NETWORK_CIDR="${POD_NETWORK_CIDR:-10.244.0.0/16}"
+POD_NETWORK_CIDR="${POD_NETWORK_CIDR:-${DEFAULT_POD_NETWORK_CIDR}}"
 dind_ip_base="$(echo "${DIND_SUBNET}" | sed 's/\.0$//')"
 DIND_IMAGE="${DIND_IMAGE:-}"
 BUILD_KUBEADM="${BUILD_KUBEADM:-}"
@@ -509,28 +513,20 @@ function dind::set-master-opts {
   fi
 }
 
-cached_use_rbac=
-function dind::use-rbac {
-  # we use rbac in case of k8s 1.6
-  if [[ ${cached_use_rbac} ]]; then
-    [[ ${cached_use_rbac} = 1 ]] && return 0 || return 1
+cached_k8s_version=
+function dind::k8s-version {
+  if [[ ! ${cached_k8s_version} ]]; then
+    cached_k8s_version="$("${kubectl}" version --short | grep 'Server Version' | sed 's/.*: v\|\.[0-9]*$//g')"
   fi
-  cached_use_rbac=0
-  if "${kubectl}" version --short >& /dev/null && ! "${kubectl}" version --short | grep -q 'Server Version: v1\.5\.'; then
-    cached_use_rbac=1
-    return 0
-  fi
-  return 1
+  echo "${cached_k8s_version}"
 }
 
 function dind::deploy-dashboard {
   dind::step "Deploying k8s dashboard"
   "${kubectl}" create -f "${DASHBOARD_URL}"
-  if dind::use-rbac; then
-    # https://kubernetes-io-vnext-staging.netlify.com/docs/admin/authorization/rbac/#service-account-permissions
-    # Thanks @liggitt for the hint
-    "${kubectl}" create clusterrolebinding add-on-cluster-admin --clusterrole=cluster-admin --serviceaccount=kube-system:default
-  fi
+  # https://kubernetes-io-vnext-staging.netlify.com/docs/admin/authorization/rbac/#service-account-permissions
+  # Thanks @liggitt for the hint
+  "${kubectl}" create clusterrolebinding add-on-cluster-admin --clusterrole=cluster-admin --serviceaccount=kube-system:default
 }
 
 function dind::at-least-kubeadm-1-8 {
@@ -734,26 +730,23 @@ function dind::up {
       curl -sSL "https://github.com/coreos/flannel/blob/master/Documentation/kube-flannel.yml?raw=true" | "${kubectl}" create --validate=false -f -
       ;;
     calico)
-      if dind::use-rbac; then
+      if [[ $(dind::k8s-version) = 1.6 ]]; then
         "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/kubeadm/1.6/calico.yaml
       else
-        "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/kubeadm/1.5/calico.yaml
+        "${kubectl}" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/kubeadm/1.6/calico.yaml
       fi
       ;;
     calico-kdd)
-      if dind::use-rbac; then
-        "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/kubernetes-datastore/calico-networking/1.6/calico.yaml
+      if [[ $(dind::k8s-version) = 1.6 ]]; then
         "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/rbac.yaml
+        "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/kubernetes-datastore/calico-networking/1.6/calico.yaml
       else
-        "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/kubernetes-datastore/calico-networking/1.5/calico.yaml
+        "${kubectl}" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/rbac-kdd.yaml
+        "${kubectl}" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/kubernetes-datastore/calico-networking/1.7/calico.yaml
       fi
       ;;
     weave)
-      if dind::use-rbac; then
-        "${kubectl}" apply -f "https://github.com/weaveworks/weave/blob/master/prog/weave-kube/weave-daemonset-k8s-1.6.yaml?raw=true"
-      else
-        "${kubectl}" apply -f https://git.io/weave-kube
-      fi
+      "${kubectl}" apply -f "https://github.com/weaveworks/weave/blob/master/prog/weave-kube/weave-daemonset-k8s-1.6.yaml?raw=true"
       ;;
     *)
       echo "Unsupported CNI plugin '${CNI_PLUGIN}'" >&2
