@@ -37,6 +37,9 @@ tempdir="$(mktemp -d)"
 trap "rm -rf '${tempdir}'" EXIT
 export KUBECTL_DIR="${tempdir}"
 
+# FIXME: 192.168.0.0/16 causes problems with Travis(?)
+export POD_NETWORK_CIDR="10.244.0.0/16"
+
 if [[ ${NOBUILD} ]]; then
   bash -x "${DIND_ROOT}"/dind-cluster.sh clean
 else
