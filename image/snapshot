@@ -18,13 +18,21 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 
+function snapshot::retry {
+  # based on retry function in hack/jenkins/ scripts in k8s source
+  for i in {1..10}; do
+    "$@" && return 0 || sleep ${i}
+  done
+  "$@"
+}
+
 function snapshot::prepare {
   if [[ -f /etc/kubernetes/manifests/kube-controller-manager.json || -f /etc/kubernetes/manifests/kube-controller-manager.yaml ]]; then
     # remove kube-dns and kube-dashboard pods to avoid 'blinking'
     # FIXME: when using k8s 1.6 kube-dns pods stay in 'Terminating' state
     # Possibly related: https://github.com/kubernetes/kubernetes/issues/42685
-    kubectl scale deployment --replicas=0 -n kube-system kube-dns
-    kubectl scale deployment --replicas=0 -n kube-system kubernetes-dashboard
+    snapshot::retry kubectl scale deployment --replicas=0 -n kube-system kube-dns
+    snapshot::retry kubectl scale deployment --replicas=0 -n kube-system kubernetes-dashboard
     local n=60
     while kubectl get pods -n kube-system -o name | egrep -q '^pods*/(kube-dns-|kubernetes-dashboard-)'; do
       if ((--n == 0)); then
@@ -42,24 +50,22 @@ function snapshot::prepare {
     while kubectl get pod kube-controller-manager-kube-master -n kube-system -o name 2>/dev/null | grep -q pods*/; do
       if ((--n == 0)); then
         echo "WARNING: kubelet glitch: kube-controller-manager won't stop; pods may 'blink' for some time after restore" >&2
-        systemctl stop kubelet docker
-        return
+        break
       fi
       sleep 0.3
     done
 
     # delete proxy pods so they don't "blink" after cluster restart
-    kubectl delete pod --now -l k8s-app=kube-proxy -n kube-system 2>/dev/null
+    snapshot::retry kubectl delete pod --now -l k8s-app=kube-proxy -n kube-system 2>/dev/null
     n=40
     while kubectl get pod -n kube-system -o name -l k8s-app=kube-proxy | grep -q '^pods*/'; do
       if ((--n == 0)); then
         echo "WARNING: cluster glitch: proxy pods aren't removed; pods may 'blink' for some time after restore" >&2
-        systemctl stop kubelet docker
-        return
+        break
       fi
       sleep 0.3
     done
-    kubectl get pods -n kube-system
+    snapshot::retry kubectl get pods -n kube-system
     systemctl stop kubelet docker
     # now it's safe to put back the manifest
     mv /manifests.bak/* /etc/kubernetes/manifests/

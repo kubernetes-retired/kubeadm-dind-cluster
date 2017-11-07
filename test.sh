@@ -257,6 +257,10 @@ function test-case-src-master-weave {
   )
 }
 
+function test-case-src-working-area {
+  test-cluster-src
+}
+
 if [[ ! ${TEST_CASE} ]]; then
   test-case-1.6
   test-case-1.6-flannel

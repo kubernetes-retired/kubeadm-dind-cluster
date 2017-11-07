@@ -27,4 +27,13 @@ if grep -q '[[:blank:]]overlay[[:blank:]]*' /proc/filesystems; then
     storage_opts="--storage-driver=overlay2 --storage-opt overlay2.override_kernel_check=true"
 fi
 
+# FIXME: this fix really concerns kubelet, so perhaps it should go
+# into another place
+# Kubelet will try to contact GCE metadata server on startup if
+# it detects a GCE VM and this breaks kdc on Travis
+if [[ $(cat /sys/class/dmi/id/product_name) =~ Google ]]; then
+    echo "KDC" >/dmi_product_name
+    mount --bind /dmi_product_name /sys/class/dmi/id/product_name
+fi
+
 exec /usr/bin/dockerd -H fd:// ${storage_opts} -g /dind/docker "$@"
