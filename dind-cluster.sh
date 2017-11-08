@@ -659,7 +659,7 @@ function dind::deploy-dashboard {
 function dind::at-least-kubeadm-1-8 {
   # kubeadm 1.6 and below doesn't support 'version -o short' and will
   # thus produce an empty string
-  local ver="$(docker exec kube-master kubeadm version -o short 2>/dev/null|sed 's/[^0-9]*\.[0-9]*$//')"
+  local ver="$(docker exec kube-master kubeadm version -o short 2>/dev/null|sed 's/^\(v[0-9]*\.[0-9]*\).*$/\1/')"
   if [[ ! ${ver} || ${ver} = v1.7 ]]; then
     return 1
   fi
