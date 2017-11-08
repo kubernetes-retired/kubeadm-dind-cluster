@@ -42,6 +42,7 @@ fi
 
 EMBEDDED_CONFIG=y;DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.7
 
+IP_MODE="${IP_MODE:-ipv4}"  # ipv4, ipv6, (future) dualstack
 if [[ ! ${EMBEDDED_CONFIG:-} ]]; then
   source "${DIND_ROOT}/config.sh"
 fi
@@ -51,9 +52,42 @@ if [[ CNI_PLUGIN = "calico" || CNI_PLUGIN = "calico-kdd" ]]; then
   DEFAULT_POD_NETWORK_CIDR="192.168.0.0/16"
 fi
 CNI_PLUGIN="${CNI_PLUGIN:-bridge}"
-DIND_SUBNET="${DIND_SUBNET:-10.192.0.0}"
 POD_NETWORK_CIDR="${POD_NETWORK_CIDR:-${DEFAULT_POD_NETWORK_CIDR}}"
-dind_ip_base="$(echo "${DIND_SUBNET}" | sed 's/\.0$//')"
+ETCD_HOST="${ETCD_HOST:-127.0.0.1}"
+GCE_HOSTED="${GCE_HOSTED:-false}"
+if [[ ${IP_MODE} = "ipv6" ]]; then
+    dind_ip_base="${DIND_SUBNET}"
+    ETCD_HOST="::1"
+    KUBE_RSYNC_ADDR="${KUBE_RSYNC_ADDR:-::1}"
+    SERVICE_CIDR="${SERVICE_CIDR:-fd00:10:30::/110}"
+    DIND_SUBNET_SIZE="${DIND_SUBNET_SIZE:-64}"
+    REMOTE_DNS64_V4SERVER="${REMOTE_DNS64_V4SERVER:-8.8.8.8}"
+    LOCAL_NAT64_SERVER="${DIND_SUBNET}200"
+    DNS64_PREFIX="${DNS64_PREFIX:-fd00:10:64:ff9b::}"
+    DNS64_PREFIX_SIZE="${DNS64_PREFIX_SIZE:-96}"
+    DNS64_PREFIX_CIDR="${DNS64_PREFIX}/${DNS64_PREFIX_SIZE}"
+    dns_server="${dind_ip_base}100"
+    # Create a /64 prefix so that created /80 pod net is inside the /64 DinD network
+    POD_NET_PREFIX="$(echo $DIND_SUBNET | sed 's/::$//')"
+    num_colons="$(grep -o ":" <<< "${POD_NET_PREFIX}" | wc -l)"
+    while [ $num_colons -lt 3 ]; do
+	POD_NET_PREFIX+=":0"
+	let num_colons+=1
+    done
+else
+    dind_ip_base="$(echo "${DIND_SUBNET}" | sed 's/0$//')"
+    KUBE_RSYNC_ADDR="${KUBE_RSYNC_ADDR:-127.0.0.1}"
+    SERVICE_CIDR="${SERVICE_CIDR:-10.96.0.0/12}"
+    DIND_SUBNET_SIZE="${DIND_SUBNET_SIZE:-16}"
+    dns_server="${REMOTE_DNS64_V4SERVER:-8.8.8.8}"
+fi
+dns_prefix="$(echo ${SERVICE_CIDR} | sed 's,/.*,,')"
+if [[ ${IP_MODE} != "ipv6" ]]; then
+    dns_prefix="$(echo ${dns_prefix} | sed 's/0$//')"
+fi
+kube_master_ip="${dind_ip_base}2"
+DNS_SVC_IP="${dns_prefix}10"
+
 DIND_IMAGE="${DIND_IMAGE:-}"
 BUILD_KUBEADM="${BUILD_KUBEADM:-}"
 BUILD_HYPERKUBE="${BUILD_HYPERKUBE:-}"
@@ -117,7 +151,7 @@ function dind::set-build-volume-args {
   if [ -n "${KUBEADM_DIND_LOCAL:-}" ]; then
     build_volume_args=(-v "$PWD:/go/src/k8s.io/kubernetes")
   else
-    build_container_name="$(KUBE_ROOT=$PWD &&
+    build_container_name="$(KUBE_ROOT=${PWD} ETCD_HOST=${ETCD_HOST} &&
                             . ${build_tools_dir}/common.sh &&
                             kube::build::verify_prereqs >&2 &&
                             echo "${KUBE_DATA_CONTAINER_NAME:-${KUBE_BUILD_DATA_CONTAINER_NAME}}")"
@@ -372,7 +406,12 @@ function dind::ensure-binaries {
 
 function dind::ensure-network {
   if ! docker network inspect kubeadm-dind-net >&/dev/null; then
-    docker network create --subnet="${DIND_SUBNET}/16" kubeadm-dind-net >/dev/null
+    local v6settings=""
+    if [[ ${IP_MODE} = "ipv6" ]]; then
+      # Need second network for NAT64
+      v6settings="--subnet=172.18.0.0/16 --ipv6"
+    fi
+    docker network create ${v6settings} --subnet="${DIND_SUBNET}/${DIND_SUBNET_SIZE}" --gateway="${dind_ip_base}1" kubeadm-dind-net >/dev/null
   fi
 }
 
@@ -394,6 +433,66 @@ function dind::ensure-volume {
   dind::create-volume "${name}"
 }
 
+function dind::ensure-dns {
+    if [[ ${IP_MODE} = "ipv6" ]]; then
+        if ! docker inspect bind9 >&/dev/null; then
+	    local bind9_path=/tmp/bind9
+	    rm -rf ${bind9_path}
+	    mkdir -p ${bind9_path}/conf ${bind9_path}/cache
+	    cat >${bind9_path}/conf/named.conf <<BIND9_EOF
+options {
+    directory "/var/bind";
+    allow-query { any; };
+    forwarders {
+        ${DNS64_PREFIX}${REMOTE_DNS64_V4SERVER};
+    };
+    auth-nxdomain no;    # conform to RFC1035
+    listen-on-v6 { any; };
+    dns64 ${DNS64_PREFIX_CIDR} {
+        exclude { any; };
+    };
+};
+BIND9_EOF
+	    if [[ "${GCE_HOSTED}" = true ]]; then
+		# TODO: Have bind9 create config file, and pass in variables via Env vars.
+		docker-machine scp ${bind9_path}/conf/named.conf k8s-dind:bind9-named.conf
+		docker-machine ssh k8s-dind sudo rm -rf ${bind-path}
+		docker-machine ssh k8s-dind sudo mkdir -p ${bind9_path}/conf ${bind9_path}/cache
+		docker-machine ssh k8s-dind sudo cp /home/docker-user/bind9-named.conf ${bind9_path}/conf/named.conf
+	    fi
+	    docker run -d --name bind9 --hostname bind9 --net kubeadm-dind-net --label mirantis.kubeadm_dind_cluster \
+		   --sysctl net.ipv6.conf.all.disable_ipv6=0 --sysctl net.ipv6.conf.all.forwarding=1 \
+		   --privileged=true --ip6 $dns_server --dns $dns_server \
+		   -v ${bind9_path}/conf/named.conf:/etc/bind/named.conf \
+		   resystit/bind9:latest >/dev/null
+	    ipv4_addr="$(docker exec bind9 ip addr list eth0 | grep "inet" | awk '$1 == "inet" {print $2}')"
+	    docker exec bind9 ip addr del ${ipv4_addr} dev eth0
+	    docker exec bind9 ip -6 route add ${DNS64_PREFIX_CIDR} via ${LOCAL_NAT64_SERVER}
+        fi
+    fi
+}
+
+function dind::ensure-nat {
+    if [[  ${IP_MODE} = "ipv6" ]]; then
+        if ! docker ps | grep tayga >&/dev/null; then
+            docker run -d --name tayga --hostname tayga --net kubeadm-dind-net --label mirantis.kubeadm_dind_cluster \
+		   --sysctl net.ipv6.conf.all.disable_ipv6=0 --sysctl net.ipv6.conf.all.forwarding=1 \
+		   --privileged=true --ip 172.18.0.200 --ip6 ${LOCAL_NAT64_SERVER} --dns ${REMOTE_DNS64_V4SERVER} --dns ${dns_server} \
+		   -e TAYGA_CONF_PREFIX=${DNS64_PREFIX_CIDR} -e TAYGA_CONF_IPV4_ADDR=172.18.0.200 \
+		   danehans/tayga:latest >/dev/null
+	    # TODO Way to add route w/o sudo? Need to check/create, as "clean" may remove route
+	    local route="$(ip route | egrep "^172.18.0.128/25")"
+	    if [[ -z "${route}" ]]; then
+		if [[ "${GCE_HOSTED}" = true ]]; then
+		    docker-machine ssh k8s-dind sudo ip route add 172.18.0.128/25 via 172.18.0.200
+		else
+		    sudo ip route add 172.18.0.128/25 via 172.18.0.200
+		fi
+	    fi
+	fi
+    fi
+}
+
 function dind::run {
   local reuse_volume=
   if [[ $1 = -r ]]; then
@@ -409,9 +508,22 @@ function dind::run {
   else
     shift $#
   fi
-  local -a opts=(--ip "${ip}" "$@")
+  local ip_arg="--ip"
+  if [[ ${IP_MODE} = "ipv6" ]]; then
+      ip_arg="--ip6"
+  fi
+  local -a opts=("${ip_arg}" "${ip}" "$@")
   local -a args=("systemd.setenv=CNI_PLUGIN=${CNI_PLUGIN}")
-
+  args+=("systemd.setenv=IP_MODE=${IP_MODE}")
+  if [[ ${IP_MODE} = "ipv6" ]]; then
+      opts+=(--sysctl net.ipv6.conf.all.disable_ipv6=0)
+      opts+=(--sysctl net.ipv6.conf.all.forwarding=1)
+      opts+=(--dns ${dns_server})
+      args+=("systemd.setenv=DNS64_PREFIX_CIDR=${DNS64_PREFIX_CIDR}")
+      args+=("systemd.setenv=LOCAL_NAT64_SERVER=${LOCAL_NAT64_SERVER}")
+      args+=("systemd.setenv=POD_NET_PREFIX=${POD_NET_PREFIX}")
+  fi
+  args+=("systemd.setenv=DNS_SVC_IP=${DNS_SVC_IP}")
   if [[ ! "${container_name}" ]]; then
     echo >&2 "Must specify container name"
     exit 1
@@ -439,6 +551,8 @@ function dind::run {
   volume_name="kubeadm-dind-${container_name}"
   dind::ensure-network
   dind::ensure-volume ${reuse_volume} "${volume_name}"
+  dind::ensure-nat
+  dind::ensure-dns
 
   # TODO: create named volume for binaries and mount it to /k8s
   # in case of the source build
@@ -483,7 +597,18 @@ function dind::kubeadm {
 
 function dind::configure-kubectl {
   dind::step "Setting cluster config"
-  "${kubectl}" config set-cluster dind --server="http://localhost:${APISERVER_PORT}" --insecure-skip-tls-verify=true
+  local host="${dind_ip_base}2"
+  if [[ ${IP_MODE} = "ipv6" ]]; then
+      host="[${host}]"
+  fi
+  if [[ "${GCE_HOSTED}" = true ]]; then
+    if [[ "${IP_MODE}" = "ipv4" ]]; then
+      host="localhost"
+    else
+      host="[::1]"
+    fi
+  fi
+  "${kubectl}" config set-cluster dind --server="http://${host}:${APISERVER_PORT}" --insecure-skip-tls-verify=true
   "${kubectl}" config set-context dind --cluster=dind
   "${kubectl}" config use-context dind
 }
@@ -541,9 +666,11 @@ function dind::at-least-kubeadm-1-8 {
 function dind::init {
   local -a opts
   dind::set-master-opts
-  local master_ip="${dind_ip_base}.2"
-  local container_id=$(dind::run kube-master "${master_ip}" 1 127.0.0.1:${APISERVER_PORT}:8080 ${master_opts[@]+"${master_opts[@]}"})
-  local -a init_args
+  local local_host="127.0.0.1"
+  if [[ ${IP_MODE} = "ipv6" ]]; then
+      local_host="[::1]"
+  fi
+  local container_id=$(dind::run kube-master "${kube_master_ip}" 1 ${local_host}:${APISERVER_PORT}:8080 ${master_opts[@]+"${master_opts[@]}"})
   # FIXME: I tried using custom tokens with 'kubeadm ex token create' but join failed with:
   # 'failed to parse response as JWS object [square/go-jose: compact JWS format must have three parts]'
   # So we just pick the line from 'kubeadm init' output
@@ -553,14 +680,29 @@ function dind::init {
     # insecure-bind-address and insecure-bind-port are also overridden by patching
     # apiserver static pod, but someday when k-d-c will only support
     # kubeadm 1.8+ we'll be able to remove that patching
+    local pod_net_cidr=""
+    # TODO: May want to specify each of the plugins that require --pod-network-cidr
+    if [[ ${CNI_PLUGIN} != "bridge" ]]; then
+      pod_net_cidr="podSubnet: \"${POD_NETWORK_CIDR}\""$'\n'"  "
+    fi
+    local bind_address="0.0.0.0"
+    if [[ ${IP_MODE} = "ipv6" ]]; then
+	bind_address="::"
+    fi
     docker exec -i kube-master /bin/sh -c "cat >/etc/kubeadm.conf" <<EOF
 apiVersion: kubeadm.k8s.io/v1alpha1
-kind: MasterConfiguration
 unifiedControlPlaneImage: mirantis/hypokube:final
+kind: MasterConfiguration
+api:
+  advertiseAddress: "${kube_master_ip}"
+kubeProxy:
+  bindAddress: "${bind_address}"
 networking:
-  podSubnet: "${POD_NETWORK_CIDR}"
+  ${pod_net_cidr}serviceSubnet: "${SERVICE_CIDR}"
+tokenTTL: 0s
+nodeName: kube-master
 apiServerExtraArgs:
-  insecure-bind-address: "0.0.0.0"
+  insecure-bind-address: "${bind_address}"
   insecure-port: "8080"
 EOF
     init_args=(--config /etc/kubeadm.conf)
@@ -582,7 +724,7 @@ function dind::create-node-container {
   # kube-node-1 hostname, if there are two nodes, we should pick
   # kube-node-2 and so on
   local next_node_index=${1:-$(docker ps -q --filter=label=mirantis.kubeadm_dind_cluster | wc -l | sed 's/^ *//g')}
-  local node_ip="${dind_ip_base}.$((next_node_index + 2))"
+  local node_ip="${dind_ip_base}$((next_node_index + 2))"
   local -a opts
   if [[ ${BUILD_KUBEADM} || ${BUILD_HYPERKUBE} ]]; then
     opts+=(-v dind-k8s-binaries:/k8s)
@@ -603,7 +745,7 @@ function dind::join {
 }
 
 function dind::escape-e2e-name {
-    sed 's/[]\$*.^|()[]/\\&/g; s/\s\+/\\s+/g' <<< "$1" | tr -d '\n'
+    sed 's/[]\$*.^()[]/\\&/g; s/\s\+/\\s+/g' <<< "$1" | tr -d '\n'
 }
 
 function dind::accelerate-kube-dns {
@@ -680,13 +822,16 @@ function dind::wait-for-ready {
   echo "[done]" >&2
 
   "${kubectl}" get nodes >&2
-  dind::step "Access dashboard at:" "http://localhost:${APISERVER_PORT}/ui"
+  local_host="localhost"
+  if [[ ${IP_MODE} = "ipv6" ]]; then
+      local_host="[::1]"
+  fi
+  dind::step "Access dashboard at:" "http://${local_host}:${APISERVER_PORT}/ui"
 }
 
 function dind::up {
   dind::down
   dind::init
-  local master_ip="$(docker inspect --format="{{.NetworkSettings.IPAddress}}" kube-master)"
   # pre-create node containers sequentially so they get predictable IPs
   local -a node_containers
   for ((n=1; n <= NUM_NODES; n++)); do
@@ -784,7 +929,6 @@ function dind::restore_container {
 }
 
 function dind::restore {
-  local master_ip="${dind_ip_base}.2"
   dind::down
   dind::step "Restoring master container"
   dind::set-master-opts
@@ -792,7 +936,11 @@ function dind::restore {
     (
       if [[ n -eq 0 ]]; then
         dind::step "Restoring master container"
-        dind::restore_container "$(dind::run -r kube-master "${master_ip}" 1 127.0.0.1:${APISERVER_PORT}:8080 ${master_opts[@]+"${master_opts[@]}"})"
+        local local_host="127.0.0.1"
+        if [[ ${IP_MODE} = "ipv6" ]]; then
+          local_host="[::1]"
+        fi
+        dind::restore_container "$(dind::run -r kube-master "${kube_master_ip}" 1 ${local_host}:${APISERVER_PORT}:8080 ${master_opts[@]+"${master_opts[@]}"})"
         dind::step "Master container restored"
       else
         dind::step "Restoring node container:" ${n}
@@ -846,8 +994,12 @@ function dind::do-run-e2e {
   local parallel="${1:-}"
   local focus="${2:-}"
   local skip="${3:-}"
+  local host="${kube_master_ip}"
+  if [[ "${IP_MODE}" = "ipv6" ]]; then
+      host="[$host]"
+  fi
   dind::need-source
-  local test_args="--host=http://localhost:${APISERVER_PORT}"
+  local test_args="--host=http://${host}:${APISERVER_PORT}"
   local -a e2e_volume_opts=()
   local term=
   if [[ ${focus} ]]; then
@@ -865,21 +1017,21 @@ function dind::do-run-e2e {
   dind::set-build-volume-args
   if [ -t 1 ] ; then
     term="-it"
-    test_args="--ginkgo.noColor ${test_args}"
+    test_args="--ginkgo.noColor --num-nodes=2 ${test_args}"
   fi
   docker run \
          --rm ${term} \
          --net=host \
          "${build_volume_args[@]}" \
          -e KUBERNETES_PROVIDER=dind \
-         -e KUBE_MASTER_IP=http://localhost:${APISERVER_PORT} \
+         -e KUBE_MASTER_IP=http://${host}:${APISERVER_PORT} \
          -e KUBE_MASTER=local \
          -e KUBERNETES_CONFORMANCE_TEST=y \
          -e GINKGO_PARALLEL=${parallel} \
          ${e2e_volume_opts[@]+"${e2e_volume_opts[@]}"} \
          -w /go/src/k8s.io/kubernetes \
          "${e2e_base_image}" \
-         bash -c "cluster/kubectl.sh config set-cluster dind --server='http://localhost:${APISERVER_PORT}' --insecure-skip-tls-verify=true &&
+         bash -c "cluster/kubectl.sh config set-cluster dind --server='http://${host}:${APISERVER_PORT}' --insecure-skip-tls-verify=true &&
          cluster/kubectl.sh config set-context dind --cluster=dind &&
          cluster/kubectl.sh config use-context dind &&
          go run hack/e2e.go -- --v --test --check-version-skew=false --test_args='${test_args}'"
@@ -896,7 +1048,8 @@ function dind::clean {
 
 function dind::run-e2e {
   local focus="${1:-}"
-  local skip="${2:-\[Serial\]}"
+  local skip="${2:-[Serial]}"
+  skip="$(dind::escape-e2e-name "${skip}")"
   if [[ "$focus" ]]; then
     focus="$(dind::escape-e2e-name "${focus}")"
   else
@@ -912,6 +1065,7 @@ function dind::run-e2e {
 function dind::run-e2e-serial {
   local focus="${1:-}"
   local skip="${2:-}"
+  skip="$(dind::escape-e2e-name "${skip}")"
   dind::need-source
   if [[ "$focus" ]]; then
     focus="$(dind::escape-e2e-name "${focus}")"
