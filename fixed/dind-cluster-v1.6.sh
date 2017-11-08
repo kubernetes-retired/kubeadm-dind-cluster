@@ -56,6 +56,7 @@ POD_NETWORK_CIDR="${POD_NETWORK_CIDR:-${DEFAULT_POD_NETWORK_CIDR}}"
 ETCD_HOST="${ETCD_HOST:-127.0.0.1}"
 GCE_HOSTED="${GCE_HOSTED:-false}"
 if [[ ${IP_MODE} = "ipv6" ]]; then
+    DIND_SUBNET="${DIND_SUBNET:-fd00:10::}"
     dind_ip_base="${DIND_SUBNET}"
     ETCD_HOST="::1"
     KUBE_RSYNC_ADDR="${KUBE_RSYNC_ADDR:-::1}"
@@ -75,6 +76,7 @@ if [[ ${IP_MODE} = "ipv6" ]]; then
 	let num_colons+=1
     done
 else
+    DIND_SUBNET="${DIND_SUBNET:-10.192.0.0}"
     dind_ip_base="$(echo "${DIND_SUBNET}" | sed 's/0$//')"
     KUBE_RSYNC_ADDR="${KUBE_RSYNC_ADDR:-127.0.0.1}"
     SERVICE_CIDR="${SERVICE_CIDR:-10.96.0.0/12}"
