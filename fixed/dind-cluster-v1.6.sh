@@ -603,7 +603,7 @@ function dind::configure-kubectl {
   if [[ ${IP_MODE} = "ipv6" ]]; then
       host="[${host}]"
   fi
-  if [[ "${GCE_HOSTED}" = true ]]; then
+  if [[ "${GCE_HOSTED}" = true || ${DOCKER_HOST:-} =~ ^tcp: ]]; then
     if [[ "${IP_MODE}" = "ipv4" ]]; then
       host="localhost"
     else
@@ -659,7 +659,7 @@ function dind::deploy-dashboard {
 function dind::at-least-kubeadm-1-8 {
   # kubeadm 1.6 and below doesn't support 'version -o short' and will
   # thus produce an empty string
-  local ver="$(docker exec kube-master kubeadm version -o short 2>/dev/null|sed 's/[^0-9]*\.[0-9]*$//')"
+  local ver="$(docker exec kube-master kubeadm version -o short 2>/dev/null|sed 's/^\(v[0-9]*\.[0-9]*\).*$/\1/')"
   if [[ ! ${ver} || ${ver} = v1.7 ]]; then
     return 1
   fi
@@ -998,7 +998,14 @@ function dind::do-run-e2e {
   local skip="${3:-}"
   local host="${kube_master_ip}"
   if [[ "${IP_MODE}" = "ipv6" ]]; then
-      host="[$host]"
+    host="[$host]"
+  fi
+  if [[ "${GCE_HOSTED}" = true || ${DOCKER_HOST:-} =~ ^tcp: ]]; then
+    if [[ "${IP_MODE}" = "ipv4" ]]; then
+      host="localhost"
+    else
+      host="[::1]"
+    fi
   fi
   dind::need-source
   local test_args="--host=http://${host}:${APISERVER_PORT}"
