@@ -603,7 +603,7 @@ function dind::configure-kubectl {
   if [[ ${IP_MODE} = "ipv6" ]]; then
       host="[${host}]"
   fi
-  if [[ "${GCE_HOSTED}" = true ]]; then
+  if [[ "${GCE_HOSTED}" = true || ${DOCKER_HOST:-} =~ ^tcp: ]]; then
     if [[ "${IP_MODE}" = "ipv4" ]]; then
       host="localhost"
     else
@@ -998,7 +998,14 @@ function dind::do-run-e2e {
   local skip="${3:-}"
   local host="${kube_master_ip}"
   if [[ "${IP_MODE}" = "ipv6" ]]; then
-      host="[$host]"
+    host="[$host]"
+  fi
+  if [[ "${GCE_HOSTED}" = true || ${DOCKER_HOST:-} =~ ^tcp: ]]; then
+    if [[ "${IP_MODE}" = "ipv4" ]]; then
+      host="localhost"
+    else
+      host="[::1]"
+    fi
   fi
   dind::need-source
   local test_args="--host=http://${host}:${APISERVER_PORT}"
