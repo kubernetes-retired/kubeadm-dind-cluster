@@ -113,13 +113,15 @@ function dind::setup-config-file {
   fi
   echo "Using ${HOST_MIN} .. ${HOST_MAX} for docker containers"
   CONFIG_FILE="/etc/cni/net.d/cni.conf"
+  # XXX: hairpin mode for CNI bridge breaks Virtlet networking,
+  # to be investigated & fixed.
+  # For now only enabling it for IPv6.
   cat >${CONFIG_FILE} <<CFG_PREFIX_EOF
 {
     "cniVersion": "0.3.0",
     "name": "dindnet",
     "type": "bridge",
     "bridge": "dind0",
-    "hairpinMode": true,
     "ipam": {
         "type": "host-local",
         "subnet": "${NETWORK}/${NETWORK_SIZE}",
@@ -136,7 +138,8 @@ CFG_IPV6_EOF
   cat >>${CONFIG_FILE} <<CFG_SUFFIX_EOF
             { "dst": "${DEFAULT_ROUTE}" }
         ]
-    }
+    },
+    "hairpinMode": true
 }
 CFG_SUFFIX_EOF
   echo "Config file created: ${CONFIG_FILE}"
