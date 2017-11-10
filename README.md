@@ -146,7 +146,6 @@ As of Oct. 23rd, 2017, the following IPv6 PRs are in-flight, and should
 be cherry picked and added to the repo:
 
 ```
-PR #53484 "Adds Support for Configurable Kubeadm Probes."
 PR #45551 "Adds Support for Node Resource IPv6 Addressing"
 PR #53148 "ip6tables should be set in the noop plugin"
 PR #52180 "Updating kubenet for CNI with IPv6"
@@ -154,15 +153,10 @@ PR #45792 "Updating NewCIDRSet return a value"
 PR #50929 "Add kubeadm config for setting kube-proxy bind address"
 PR #53555 "Add IPv6 and negative UT test cases for proxier's deleteEndpointConnections"
 PR #52748 "Add brackets around IPv6 addrs in e2e test IP:port endpoints"
-PR #54639 "Updates kube-dns in kubeadm to 1.14.7"
-PR #54437 "Adds support for v4/v6 loopback dns bind address."
 ```
 
 These can be obtained with doing cherry picks from the PR commits:
 ```
-git fetch origin pull/53484/head:pr53484
-git log --abbrev-commit pr53484 --oneline --abbrev-commit -n 1 | cut -f 1 -d" "
-
 git fetch origin pull/45551/head:pr45551
 git log --abbrev-commit pr45551 --oneline --abbrev-commit -n 1 | cut -f 1 -d" "
 
@@ -187,12 +181,6 @@ git log --abbrev-commit pr53555 --oneline --abbrev-commit -n 1 | cut -f 1 -d" "
 
 git fetch origin pull/52748/head:pr52748
 git log --abbrev-commit pr52748 --oneline --abbrev-commit -n 1 | cut -f 1 -d" "
-
-git fetch origin pull/54639/head:pr54639
-git log --abbrev-commit pr54639 --oneline --abbrev-commit -n 1 | cut -f 1 -d" "
-
-git fetch origin pull/54437/head:pr54437
-git log --abbrev-commit pr54437 --oneline --abbrev-commit -n 1 | cut -f 1 -d" "
 ```
 
 If you have a host that allows four times more conntrack connection (max) than
