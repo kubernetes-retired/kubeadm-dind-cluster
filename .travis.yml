@@ -20,7 +20,9 @@ env:
   - TEST_CASE=1.8-calico-kdd
   - TEST_CASE=1.8-weave
   - TEST_CASE=src-1.8
+    TWAIT=1
   - TEST_CASE=src-master
+    TWAIT=1
   # The following tests often don't pass because CNI
   # implementations often aren't up-to-date for k8s master
   # - TEST_CASE=src-master-flannel
@@ -33,4 +35,5 @@ before_install:
   - sudo apt-get install -y liblz4-tool
 
 script:
-  - travis_wait 35 ./test.sh
+  # building k8s may cause Travis to time out w/o output
+  - if [ -n "${TWAIT:-}" ]; then travis_wait 35 ./test.sh; else ./test.sh; fi
