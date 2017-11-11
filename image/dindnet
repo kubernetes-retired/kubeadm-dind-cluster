@@ -131,6 +131,7 @@ function dind::setup-config-file {
         "routes": [
 CFG_PREFIX_EOF
   if [[ "${IP_MODE}" = "ipv6" ]]; then
+      HAIRPIN=',"hairpinMode": true'
       cat >>${CONFIG_FILE} <<CFG_IPV6_EOF
             { "dst": "${DNS64_PREFIX_CIDR}", "gw": "${LOCAL_NAT64_SERVER}"},
 CFG_IPV6_EOF
@@ -138,8 +139,7 @@ CFG_IPV6_EOF
   cat >>${CONFIG_FILE} <<CFG_SUFFIX_EOF
             { "dst": "${DEFAULT_ROUTE}" }
         ]
-    },
-    "hairpinMode": true
+    }${HAIRPIN:-}
 }
 CFG_SUFFIX_EOF
   echo "Config file created: ${CONFIG_FILE}"
