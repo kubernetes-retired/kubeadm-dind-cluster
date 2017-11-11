@@ -787,6 +787,7 @@ function dind::wait-for-ready {
   local proxy_ready
   local nodes_ready
   local n=3
+  local ntries=200
   while true; do
     dind::kill-failed-pods
     if "${kubectl}" get nodes 2>/dev/null | grep -q NotReady; then
@@ -807,6 +808,10 @@ function dind::wait-for-ready {
     else
       n=3
     fi
+    if ((--ntries == 0)); then
+      echo "Error waiting for kube-proxy and the nodes" >&2
+      exit 1
+    fi
     echo -n "." >&2
     sleep 1
   done
@@ -816,7 +821,12 @@ function dind::wait-for-ready {
   dind::retry "${kubectl}" scale deployment --replicas=1 -n kube-system kube-dns
   dind::retry "${kubectl}" scale deployment --replicas=1 -n kube-system kubernetes-dashboard
 
+  ntries=200
   while ! dind::component-ready k8s-app=kube-dns || ! dind::component-ready app=kubernetes-dashboard; do
+    if ((--ntries == 0)); then
+      echo "Error bringing up kube-dns and kubernetes-dashboard" >&2
+      exit 1
+    fi
     echo -n "." >&2
     dind::kill-failed-pods
     sleep 1
