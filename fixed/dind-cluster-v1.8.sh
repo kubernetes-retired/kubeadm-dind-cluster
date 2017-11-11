@@ -713,7 +713,6 @@ EOF
   fi
   kubeadm_join_flags="$(dind::kubeadm "${container_id}" init "${init_args[@]}" --skip-preflight-checks "$@" | grep '^ *kubeadm join' | sed 's/^ *kubeadm join //')"
   dind::configure-kubectl
-  dind::deploy-dashboard
 }
 
 function dind::create-node-container {
@@ -910,6 +909,7 @@ function dind::up {
       echo "Unsupported CNI plugin '${CNI_PLUGIN}'" >&2
       ;;
   esac
+  dind::deploy-dashboard
   dind::accelerate-kube-dns
   if [[ ${CNI_PLUGIN} != bridge || ${SKIP_SNAPSHOT} ]]; then
     # This is especially important in case of Calico -
@@ -1116,7 +1116,7 @@ function dind::dump {
   echo "*** Dumping cluster state ***"
   for node in $(docker ps --format '{{.Names}}' --filter label=mirantis.kubeadm_dind_cluster); do
     for service in kubelet.service dindnet.service criproxy.service dockershim.service; do
-      if docker exec "${node}" systemctl status "${service}" >&/dev/null; then
+      if docker exec "${node}" systemctl is-enabled "${service}" >&/dev/null; then
         echo "@@@ service-${node}-${service}.log @@@"
         docker exec "${node}" systemctl status "${service}"
         docker exec "${node}" journalctl -xe -n all -u "${service}"
