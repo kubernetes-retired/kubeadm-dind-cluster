@@ -322,7 +322,13 @@ function dind::prepare-for-kubeadm {
 
 function dind::do-kubeadm {
   if ! time KUBE_HYPERKUBE_IMAGE="${hypokube_final_image}" kubeadm "$@"; then
+    echo "*** 'kubeadm $*' failed, doing kubeadm reset ***" >&2
+    cp -av /etc/cni /etc/cni.bak
     kubeadm reset || true
+    rm -rf /etc/cni
+    mv /etc/cni.bak /etc/cni
+    systemctl restart kubelet
+    return 1
   fi
 }
 
