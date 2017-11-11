@@ -1100,6 +1100,66 @@ function dind::step {
   fi
 }
 
+function dind::dump {
+  set +e
+  echo "*** Dumping cluster state ***"
+  for node in $(docker ps --format '{{.Names}}' --filter label=mirantis.kubeadm_dind_cluster); do
+    for service in kubelet.service dindnet.service criproxy.service dockershim.service; do
+      if docker exec "${node}" systemctl status "${service}" >&/dev/null; then
+        echo "@@@ service-${node}-${service}.log @@@"
+        docker exec "${node}" systemctl status "${service}"
+        docker exec "${node}" journalctl -xe -n all -u "${service}"
+      fi
+    done
+    echo "@@@ psaux-${node}.txt @@@"
+    docker exec "${node}" ps auxww
+    echo "@@@ dockerps-a-${node}.txt @@@"
+    docker exec "${node}" docker ps -a
+    echo "@@@ ip-a-${node}.txt @@@"
+    docker exec "${node}" ip a
+    echo "@@@ ip-r-${node}.txt @@@"
+    docker exec "${node}" ip r
+  done
+  docker exec kube-master kubectl get pods --all-namespaces \
+          -o go-template='{{range $x := .items}}{{range $x.spec.containers}}{{$x.spec.nodeName}}{{" "}}{{$x.metadata.namespace}}{{" "}}{{$x.metadata.name}}{{" "}}{{.name}}{{"\n"}}{{end}}{{end}}' |
+    while read node ns pod container; do
+      echo "@@@ pod-${node}-${ns}-${pod}--${container}.log @@@"
+      docker exec kube-master kubectl logs -n "${ns}" -c "${container}" "${pod}"
+    done
+  echo "@@@ kubectl-all.txt @@@"
+  docker exec kube-master kubectl get all --all-namespaces -o wide
+  echo "@@@ describe-all.txt @@@"
+  docker exec kube-master kubectl describe all --all-namespaces
+  echo "@@@ nodes.txt @@@"
+  docker exec kube-master kubectl get nodes -o wide
+}
+
+function dind::dump64 {
+  echo "%%% start-base64 %%%"
+  dind::dump | docker exec -i kube-master /bin/sh -c "lzma | base64 -w 100"
+  echo "%%% end-base64 %%%"
+}
+
+function dind::split-dump {
+  mkdir -p cluster-dump
+  cd cluster-dump
+  awk '!/^@@@ .* @@@$/{print >out}; /^@@@ .* @@@$/{out=$2}' out=/dev/null
+  ls -l
+}
+
+function dind::split-dump64 {
+  decode_opt=-d
+  if base64 --help | grep -q '^ *-D'; then
+    # Mac OS X
+    decode_opt=-D
+  fi
+  sed -n '/^%%% start-base64 %%%$/,/^%%% end-base64 %%%$/p' |
+    sed '1d;$d' |
+    base64 "${decode_opt}" |
+    lzma -dc |
+    dind::split-dump
+}
+
 case "${1:-}" in
   up)
     if [[ ! ( ${DIND_IMAGE} =~ local ) ]]; then
@@ -1170,6 +1230,18 @@ case "${1:-}" in
     shift
     dind::run-e2e-serial "$@"
     ;;
+  dump)
+    dind::dump
+    ;;
+  dump64)
+    dind::dump64
+    ;;
+  split-dump)
+    dind::split-dump
+    ;;
+  split-dump64)
+    dind::split-dump64
+    ;;
   *)
     echo "usage:" >&2
     echo "  $0 up" >&2
@@ -1181,6 +1253,10 @@ case "${1:-}" in
     echo "  $0 clean"
     echo "  $0 e2e [test-name-substring]" >&2
     echo "  $0 e2e-serial [test-name-substring]" >&2
+    echo "  $0 dump" >&2
+    echo "  $0 dump64" >&2
+    echo "  $0 split-dump" >&2
+    echo "  $0 split-dump64" >&2
     exit 1
     ;;
 esac

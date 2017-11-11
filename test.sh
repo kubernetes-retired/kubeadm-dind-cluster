@@ -34,8 +34,19 @@ TEST_CASE="${TEST_CASE:-}"
 K8S_PR="${K8S_PR:-}"
 
 tempdir="$(mktemp -d)"
-trap "rm -rf '${tempdir}'" EXIT
 export KUBECTL_DIR="${tempdir}"
+
+function cleanup {
+  if [[ ${TRAVIS:-} && $? -ne 0 ]]; then
+    # Use temp file to avoid mixing error messages from the script
+    # with base64 content
+    export PATH="${KUBECTL_DIR}:${PATH}"
+    "${DIND_ROOT}"/dind-cluster.sh dump64 >"${tempdir}/dump"
+    cat "${tempdir}/dump"
+  fi
+  rm -rf '${tempdir}'
+}
+trap cleanup EXIT
 
 # FIXME: 192.168.0.0/16 causes problems with Travis(?)
 export POD_NETWORK_CIDR="10.244.0.0/16"
