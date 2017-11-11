@@ -650,10 +650,10 @@ function dind::k8s-version {
 
 function dind::deploy-dashboard {
   dind::step "Deploying k8s dashboard"
-  "${kubectl}" create -f "${DASHBOARD_URL}"
+  dind::retry "${kubectl}" apply -f "${DASHBOARD_URL}"
   # https://kubernetes-io-vnext-staging.netlify.com/docs/admin/authorization/rbac/#service-account-permissions
   # Thanks @liggitt for the hint
-  "${kubectl}" create clusterrolebinding add-on-cluster-admin --clusterrole=cluster-admin --serviceaccount=kube-system:default
+  dind::retry "${kubectl}" create clusterrolebinding add-on-cluster-admin --clusterrole=cluster-admin --serviceaccount=kube-system:default
 }
 
 function dind::at-least-kubeadm-1-8 {
@@ -787,6 +787,7 @@ function dind::wait-for-ready {
   local proxy_ready
   local nodes_ready
   local n=3
+  local ntries=200
   while true; do
     dind::kill-failed-pods
     if "${kubectl}" get nodes 2>/dev/null | grep -q NotReady; then
@@ -807,6 +808,10 @@ function dind::wait-for-ready {
     else
       n=3
     fi
+    if ((--ntries == 0)); then
+      echo "Error waiting for kube-proxy and the nodes" >&2
+      exit 1
+    fi
     echo -n "." >&2
     sleep 1
   done
@@ -816,14 +821,19 @@ function dind::wait-for-ready {
   dind::retry "${kubectl}" scale deployment --replicas=1 -n kube-system kube-dns
   dind::retry "${kubectl}" scale deployment --replicas=1 -n kube-system kubernetes-dashboard
 
+  ntries=200
   while ! dind::component-ready k8s-app=kube-dns || ! dind::component-ready app=kubernetes-dashboard; do
+    if ((--ntries == 0)); then
+      echo "Error bringing up kube-dns and kubernetes-dashboard" >&2
+      exit 1
+    fi
     echo -n "." >&2
     dind::kill-failed-pods
     sleep 1
   done
   echo "[done]" >&2
 
-  "${kubectl}" get nodes >&2
+  dind::retry "${kubectl}" get nodes >&2
   local_host="localhost"
   if [[ ${IP_MODE} = "ipv6" ]]; then
       local_host="[::1]"
@@ -867,6 +877,7 @@ function dind::up {
     done
   else
     # FIXME: this may fail depending on k8s/kubeadm version
+    # FIXME: check for taint & retry if it's there
     "${kubectl}" taint nodes kube-master node-role.kubernetes.io/master- || true
   fi
   case "${CNI_PLUGIN}" in
@@ -874,26 +885,26 @@ function dind::up {
       ;;
     flannel)
       # without --validate=false this will fail on older k8s versions
-      curl -sSL "https://github.com/coreos/flannel/blob/master/Documentation/kube-flannel.yml?raw=true" | "${kubectl}" create --validate=false -f -
+      dind::retry "${kubectl}" create --validate=false -f "https://github.com/coreos/flannel/blob/master/Documentation/kube-flannel.yml?raw=true"
       ;;
     calico)
       if [[ $(dind::k8s-version) = 1.6 ]]; then
-        "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/kubeadm/1.6/calico.yaml
+        dind::retry "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/kubeadm/1.6/calico.yaml
       else
-        "${kubectl}" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/kubeadm/1.6/calico.yaml
+        dind::retry "${kubectl}" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/kubeadm/1.6/calico.yaml
       fi
       ;;
     calico-kdd)
       if [[ $(dind::k8s-version) = 1.6 ]]; then
-        "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/rbac.yaml
-        "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/kubernetes-datastore/calico-networking/1.6/calico.yaml
+        dind::retry "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/rbac.yaml
+        dind::retry "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/kubernetes-datastore/calico-networking/1.6/calico.yaml
       else
-        "${kubectl}" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/rbac-kdd.yaml
-        "${kubectl}" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/kubernetes-datastore/calico-networking/1.7/calico.yaml
+        dind::retry "${kubectl}" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/rbac-kdd.yaml
+        dind::retry "${kubectl}" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/kubernetes-datastore/calico-networking/1.7/calico.yaml
       fi
       ;;
     weave)
-      "${kubectl}" apply -f "https://github.com/weaveworks/weave/blob/master/prog/weave-kube/weave-daemonset-k8s-1.6.yaml?raw=true"
+      dind::retry "${kubectl}" apply -f "https://github.com/weaveworks/weave/blob/master/prog/weave-kube/weave-daemonset-k8s-1.6.yaml?raw=true"
       ;;
     *)
       echo "Unsupported CNI plugin '${CNI_PLUGIN}'" >&2
@@ -1100,6 +1111,66 @@ function dind::step {
   fi
 }
 
+function dind::dump {
+  set +e
+  echo "*** Dumping cluster state ***"
+  for node in $(docker ps --format '{{.Names}}' --filter label=mirantis.kubeadm_dind_cluster); do
+    for service in kubelet.service dindnet.service criproxy.service dockershim.service; do
+      if docker exec "${node}" systemctl status "${service}" >&/dev/null; then
+        echo "@@@ service-${node}-${service}.log @@@"
+        docker exec "${node}" systemctl status "${service}"
+        docker exec "${node}" journalctl -xe -n all -u "${service}"
+      fi
+    done
+    echo "@@@ psaux-${node}.txt @@@"
+    docker exec "${node}" ps auxww
+    echo "@@@ dockerps-a-${node}.txt @@@"
+    docker exec "${node}" docker ps -a
+    echo "@@@ ip-a-${node}.txt @@@"
+    docker exec "${node}" ip a
+    echo "@@@ ip-r-${node}.txt @@@"
+    docker exec "${node}" ip r
+  done
+  docker exec kube-master kubectl get pods --all-namespaces \
+          -o go-template='{{range $x := .items}}{{range $x.spec.containers}}{{$x.spec.nodeName}}{{" "}}{{$x.metadata.namespace}}{{" "}}{{$x.metadata.name}}{{" "}}{{.name}}{{"\n"}}{{end}}{{end}}' |
+    while read node ns pod container; do
+      echo "@@@ pod-${node}-${ns}-${pod}--${container}.log @@@"
+      docker exec kube-master kubectl logs -n "${ns}" -c "${container}" "${pod}"
+    done
+  echo "@@@ kubectl-all.txt @@@"
+  docker exec kube-master kubectl get all --all-namespaces -o wide
+  echo "@@@ describe-all.txt @@@"
+  docker exec kube-master kubectl describe all --all-namespaces
+  echo "@@@ nodes.txt @@@"
+  docker exec kube-master kubectl get nodes -o wide
+}
+
+function dind::dump64 {
+  echo "%%% start-base64 %%%"
+  dind::dump | docker exec -i kube-master /bin/sh -c "lzma | base64 -w 100"
+  echo "%%% end-base64 %%%"
+}
+
+function dind::split-dump {
+  mkdir -p cluster-dump
+  cd cluster-dump
+  awk '!/^@@@ .* @@@$/{print >out}; /^@@@ .* @@@$/{out=$2}' out=/dev/null
+  ls -l
+}
+
+function dind::split-dump64 {
+  decode_opt=-d
+  if base64 --help | grep -q '^ *-D'; then
+    # Mac OS X
+    decode_opt=-D
+  fi
+  sed -n '/^%%% start-base64 %%%$/,/^%%% end-base64 %%%$/p' |
+    sed '1d;$d' |
+    base64 "${decode_opt}" |
+    lzma -dc |
+    dind::split-dump
+}
+
 case "${1:-}" in
   up)
     if [[ ! ( ${DIND_IMAGE} =~ local ) ]]; then
@@ -1170,6 +1241,18 @@ case "${1:-}" in
     shift
     dind::run-e2e-serial "$@"
     ;;
+  dump)
+    dind::dump
+    ;;
+  dump64)
+    dind::dump64
+    ;;
+  split-dump)
+    dind::split-dump
+    ;;
+  split-dump64)
+    dind::split-dump64
+    ;;
   *)
     echo "usage:" >&2
     echo "  $0 up" >&2
@@ -1181,6 +1264,10 @@ case "${1:-}" in
     echo "  $0 clean"
     echo "  $0 e2e [test-name-substring]" >&2
     echo "  $0 e2e-serial [test-name-substring]" >&2
+    echo "  $0 dump" >&2
+    echo "  $0 dump64" >&2
+    echo "  $0 split-dump" >&2
+    echo "  $0 split-dump64" >&2
     exit 1
     ;;
 esac
