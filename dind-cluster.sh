@@ -1116,7 +1116,7 @@ function dind::dump {
   echo "*** Dumping cluster state ***"
   for node in $(docker ps --format '{{.Names}}' --filter label=mirantis.kubeadm_dind_cluster); do
     for service in kubelet.service dindnet.service criproxy.service dockershim.service; do
-      if docker exec "${node}" systemctl status "${service}" >&/dev/null; then
+      if docker exec "${node}" systemctl is-enabled "${service}" >&/dev/null; then
         echo "@@@ service-${node}-${service}.log @@@"
         docker exec "${node}" systemctl status "${service}"
         docker exec "${node}" journalctl -xe -n all -u "${service}"
