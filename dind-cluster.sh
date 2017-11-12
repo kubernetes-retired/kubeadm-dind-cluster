@@ -713,7 +713,6 @@ EOF
   fi
   kubeadm_join_flags="$(dind::kubeadm "${container_id}" init "${init_args[@]}" --skip-preflight-checks "$@" | grep '^ *kubeadm join' | sed 's/^ *kubeadm join //')"
   dind::configure-kubectl
-  dind::deploy-dashboard
 }
 
 function dind::create-node-container {
@@ -910,6 +909,7 @@ function dind::up {
       echo "Unsupported CNI plugin '${CNI_PLUGIN}'" >&2
       ;;
   esac
+  dind::deploy-dashboard
   dind::accelerate-kube-dns
   if [[ ${CNI_PLUGIN} != bridge || ${SKIP_SNAPSHOT} ]]; then
     # This is especially important in case of Calico -
