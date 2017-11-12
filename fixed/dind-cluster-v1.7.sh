@@ -648,12 +648,22 @@ function dind::k8s-version {
   echo "${cached_k8s_version}"
 }
 
+function dind::ensure-dashboard-clusterrolebinding {
+  # 'create' may cause etcd timeout, yet create the clusterrolebinding.
+  # So use 'apply' to actually create it
+  "${kubectl}" create clusterrolebinding add-on-cluster-admin \
+               --clusterrole=cluster-admin \
+               --serviceaccount=kube-system:default \
+               -o json --dry-run |
+    "${kubectl}" apply -f -
+}
+
 function dind::deploy-dashboard {
   dind::step "Deploying k8s dashboard"
   dind::retry "${kubectl}" apply -f "${DASHBOARD_URL}"
   # https://kubernetes-io-vnext-staging.netlify.com/docs/admin/authorization/rbac/#service-account-permissions
   # Thanks @liggitt for the hint
-  dind::retry "${kubectl}" create clusterrolebinding add-on-cluster-admin --clusterrole=cluster-admin --serviceaccount=kube-system:default
+  dind::retry dind::ensure-dashboard-clusterrolebinding
 }
 
 function dind::at-least-kubeadm-1-8 {
@@ -884,7 +894,7 @@ function dind::up {
       ;;
     flannel)
       # without --validate=false this will fail on older k8s versions
-      dind::retry "${kubectl}" create --validate=false -f "https://github.com/coreos/flannel/blob/master/Documentation/kube-flannel.yml?raw=true"
+      dind::retry "${kubectl}" apply --validate=false -f "https://github.com/coreos/flannel/blob/master/Documentation/kube-flannel.yml?raw=true"
       ;;
     calico)
       if [[ $(dind::k8s-version) = 1.6 ]]; then
