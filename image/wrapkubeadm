@@ -256,7 +256,7 @@ function dind::frob-cluster {
   dind::frob-proxy
 }
 
-kubelet_extra_args=()
+kubelet_dind_args=()
 
 function dind::maybe-use-bootstrap-kubeconfig {
   # New behavior to be used after https://github.com/kubernetes/kubernetes/pull/49681
@@ -264,7 +264,7 @@ function dind::maybe-use-bootstrap-kubeconfig {
   if ! /k8s/hyperkube kubelet --help 2>&1 | grep -q -- --bootstrap-kubeconfig || /k8s/hyperkube kubelet --version | grep -q 'v1\.7\.'; then
     return
   fi
-  kubelet_extra_args+=(--bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf)
+  kubelet_dind_args+=(--bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf)
 }
 
 function dind::fix-cgroups {
@@ -275,26 +275,22 @@ function dind::fix-cgroups {
   if ! /k8s/hyperkube kubelet --help 2>&1 | grep -q -- --enforce-node-allocatable; then
     return
   fi
-  kubelet_extra_args+=(--cgroups-per-qos=false --enforce-node-allocatable=)
+  kubelet_dind_args+=(--cgroups-per-qos=false --enforce-node-allocatable=)
 }
 
 function dind::maybe-enable-swap {
   if ! /k8s/hyperkube kubelet --help 2>&1 | grep -q -- --fail-swap-on; then
     return
   fi
-  kubelet_extra_args+=("--fail-swap-on=false")
+  kubelet_dind_args+=("--fail-swap-on=false")
 }
 
-function dind::set-kubelet-extra-args {
+function dind::set-kubelet-dind-args {
   dind::maybe-use-bootstrap-kubeconfig
   dind::fix-cgroups
   dind::maybe-enable-swap
-  if [[ ${#kubelet_extra_args[@]} -gt 0 ]]; then
-    mkdir -p /etc/systemd/system/kubelet.service.d
-    cat >/etc/systemd/system/kubelet.service.d/10-extra-args.conf <<EOF
-[Service]
-Environment="KUBELET_EXTRA_ARGS=${kubelet_extra_args[@]} --v=4"
-EOF
+  if [[ ${#kubelet_dind_args[@]} -gt 0 ]]; then
+    sed -i "s@KUBELET_DIND_ARGS=@KUBELET_DIND_ARGS=${kubelet_dind_args[*]}@" /lib/systemd/system/kubelet.service
   fi
 }
 
@@ -310,7 +306,7 @@ function dind::prepare-for-kubeadm {
   # Ensure that DNS drop-in is created
   systemctl start dindnet
 
-  dind::set-kubelet-extra-args
+  dind::set-kubelet-dind-args
 
   systemctl daemon-reload
 

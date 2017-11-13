@@ -57,6 +57,7 @@ RUN apt-get -qq update && \
     mkdir -p /etc/systemd/system/docker.service.wants && \
     ln -s /lib/systemd/system/dindnet.service /etc/systemd/system/docker.service.wants/ && \
     ln -s /k8s/hyperkube /usr/bin/kubectl && \
+    ln -s /k8s/hyperkube /usr/bin/kubelet && \
     ln -s /k8s/kubeadm /usr/bin/kubeadm
 
 # TODO: move getty target removal to the base image
