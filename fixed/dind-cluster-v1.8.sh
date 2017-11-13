@@ -33,11 +33,13 @@ if [[ ! ${RUN_ON_BTRFS_ANYWAY} ]] && docker info| grep -q '^Storage Driver: btrf
   exit 1
 fi
 
-# In case of moby linux, -v will not work so we can't
-# mount /lib/modules and /boot
-is_moby_linux=
-if docker info|grep -s '^Kernel Version: .*-moby$' > /dev/null 2>&1; then
-    is_moby_linux=1
+# In case of linuxkit / moby linux, -v will not work so we can't
+# mount /lib/modules and /boot. Also we'll be using localhost
+# to access the apiserver
+using_linuxkit=
+if docker info|grep -s '^Kernel Version: .*-moby$' >/dev/null 2>&1 ||
+     docker info|grep -s '^Kernel Version: .*-linuxkit-' > /dev/null 2>&1; then
+    using_linuxkit=1
 fi
 
 EMBEDDED_CONFIG=y;DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.8
@@ -183,7 +185,7 @@ function dind::create-volume {
 # (unless a remote docker daemon on Linux is used)
 # NB: there's no /boot on recent Mac dockers
 function dind::prepare-sys-mounts {
-  if [[ ! ${is_moby_linux} ]]; then
+  if [[ ! ${using_linuxkit} ]]; then
     sys_volume_args=()
     if [[ -d /boot ]]; then
       sys_volume_args+=(-v /boot:/boot)
@@ -546,7 +548,7 @@ function dind::run {
 
   dind::step "Starting DIND container:" "${container_name}"
 
-  if [[ ! ${is_moby_linux} ]]; then
+  if [[ ! ${using_linuxkit} ]]; then
     opts+=(-v /boot:/boot -v /lib/modules:/lib/modules)
   fi
 
@@ -603,7 +605,7 @@ function dind::configure-kubectl {
   if [[ ${IP_MODE} = "ipv6" ]]; then
       host="[${host}]"
   fi
-  if [[ "${GCE_HOSTED}" = true || ${DOCKER_HOST:-} =~ ^tcp: ]]; then
+  if [[ "${GCE_HOSTED}" = true || ${DOCKER_HOST:-} =~ ^tcp: || ${using_linuxkit} ]]; then
     if [[ "${IP_MODE}" = "ipv4" ]]; then
       host="localhost"
     else
