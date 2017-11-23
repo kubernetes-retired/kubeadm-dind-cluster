@@ -21,8 +21,8 @@ better to have `kubectl` executable in your path matching the
 version of k8s binaries you're using (i.e. for example better don't
 use `kubectl` 1.7.x with `hyperkube` 1.6.x).
 
-`kubeadm-dind-cluster` supports k8s versions 1.6.x (tested with 1.6.9),
-1.7.x (tested with 1.7.8) and 1.8 (tested with 1.8.1).
+`kubeadm-dind-cluster` supports k8s versions 1.6.x (tested with 1.6.12),
+1.7.x (tested with 1.7.10) and 1.8 (tested with 1.8.4).
 
 **As of now, running `kubeadm-dind-cluster` on Docker with `btrfs`
 storage driver is not supported.**
@@ -65,9 +65,9 @@ $ export PATH="$HOME/.kubeadm-dind-cluster:$PATH"
 
 $ kubectl get nodes
 NAME          STATUS    AGE       VERSION
-kube-master   Ready     6m        v1.8.1
-kube-node-1   Ready     5m        v1.8.1
-kube-node-2   Ready     5m        v1.8.1
+kube-master   Ready     6m        v1.8.4
+kube-node-1   Ready     5m        v1.8.4
+kube-node-2   Ready     5m        v1.8.4
 
 $ # k8s dashboard available at http://localhost:8080/ui
 

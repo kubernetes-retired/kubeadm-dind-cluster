@@ -330,19 +330,19 @@ function dind::ensure-downloaded-kubectl {
 
   case "${LOCAL_KUBECTL_VERSION}" in
     v1.6)
-      full_kubectl_version=v1.6.9
-      kubectl_sha1_linux=5a26d1ad9712ff7117e24dc5408bf3a816489758
-      kubectl_sha1_darwin=ddf88f8c8b0a97ed3f599920f2f2de2cc3efb599
+      full_kubectl_version=v1.6.12
+      kubectl_sha1_linux=51557b2fe31a2755a5b0f8597f5eef2a3eef559c
+      kubectl_sha1_darwin=94aa1c4110f1cf5acf291923f9eb310313e0ac6b
       ;;
     v1.7)
-      full_kubectl_version=v1.7.8
-      kubectl_sha1_linux=0c3a28ac6551ee340b838e406f32fafe3124a5d5
-      kubectl_sha1_darwin=6049f0353dc37313a16775374ace23439594a7ca
+      full_kubectl_version=v1.7.10
+      kubectl_sha1_linux=4c174128ad3657bb09c5b3bd4a05565956b44744
+      kubectl_sha1_darwin=4186cbbf547d54a5fb1144aaeb61fa081a76d9e1
       ;;
     v1.8)
-      full_kubectl_version=v1.8.1
-      kubectl_sha1_linux=e3e5d59be033ea6b46cfb65d6f8a0861e5c6322a
-      kubectl_sha1_darwin=c0f49bafa683740541d28f7fd0a0b00147f1d159
+      full_kubectl_version=v1.8.4
+      kubectl_sha1_linux=8e2314db816b9b4465c5f713c1152cb0603db15e
+      kubectl_sha1_darwin=45e871d3ab7c0b32baff28bef8ba9255823131cb
       ;;
     "")
       return 0

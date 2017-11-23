@@ -1,20 +1,20 @@
-# Version 1.6.9
-KUBEADM_URL_1_6='https://storage.googleapis.com/kubernetes-release/release/v1.6.9/bin/linux/amd64/kubeadm'
-KUBEADM_SHA1_1_6=96ed4a8ad999e469882d867ae1b7dfbe8c1d7894
-HYPERKUBE_URL_1_6='https://storage.googleapis.com/kubernetes-release/release/v1.6.9/bin/linux/amd64/hyperkube'
-HYPERKUBE_SHA1_1_6=bdbed1ef845d701d4c55cf0a905d1e600aec5b23
+# Version 1.6.12
+KUBEADM_URL_1_6='https://storage.googleapis.com/kubernetes-release/release/v1.6.12/bin/linux/amd64/kubeadm'
+KUBEADM_SHA1_1_6=fd4b93ad795c194461ad004a616a561c7572840b
+HYPERKUBE_URL_1_6='https://storage.googleapis.com/kubernetes-release/release/v1.6.12/bin/linux/amd64/hyperkube'
+HYPERKUBE_SHA1_1_6=1f25b89c602570ba3451d4e849050424805de793
 
-# Version 1.7.8
-KUBEADM_URL_1_7='https://storage.googleapis.com/kubernetes-release/release/v1.7.8/bin/linux/amd64/kubeadm'
-KUBEADM_SHA1_1_7=c79edbc8942a064be20026b51070d0cfb71e3529
-HYPERKUBE_URL_1_7='https://storage.googleapis.com/kubernetes-release/release/v1.7.8/bin/linux/amd64/hyperkube'
-HYPERKUBE_SHA1_1_7=22aec18da9935fe0a2208225c40ff820898eb010
+# Version 1.7.10
+KUBEADM_URL_1_7='https://storage.googleapis.com/kubernetes-release/release/v1.7.10/bin/linux/amd64/kubeadm'
+KUBEADM_SHA1_1_7=6b536d165abff73a87fb9f0338cdd2c55804ae9a
+HYPERKUBE_URL_1_7='https://storage.googleapis.com/kubernetes-release/release/v1.7.10/bin/linux/amd64/hyperkube'
+HYPERKUBE_SHA1_1_7=c4028e5010cf673c871918e3db9ca288a106da37
 
-# Version 1.8.1
-KUBEADM_URL_1_8='https://storage.googleapis.com/kubernetes-release/release/v1.8.1/bin/linux/amd64/kubeadm'
-KUBEADM_SHA1_1_8=d63518b06fa3694af808fb9a9d69be0cb53d33e7
-HYPERKUBE_URL_1_8='https://storage.googleapis.com/kubernetes-release/release/v1.8.1/bin/linux/amd64/hyperkube'
-HYPERKUBE_SHA1_1_8=0649c9b16ba18028f5b449df882844463adf7a8a
+# Version 1.8.4
+KUBEADM_URL_1_8='https://storage.googleapis.com/kubernetes-release/release/v1.8.4/bin/linux/amd64/kubeadm'
+KUBEADM_SHA1_1_8=da851284055fe9be8512a7e8272da0b42096d6cc
+HYPERKUBE_URL_1_8='https://storage.googleapis.com/kubernetes-release/release/v1.8.4/bin/linux/amd64/hyperkube'
+HYPERKUBE_SHA1_1_8=d86a6d48fb6138dab210bed01e7941530302fe22
 
 # url and sha1sum of kubeadm binary -- only used for prebuilt kubeadm
 KUBEADM_URL=${KUBEADM_URL:-${KUBEADM_URL_1_8}}
