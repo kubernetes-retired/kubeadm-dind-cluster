@@ -161,14 +161,6 @@ EOF
 # ******************** START ********************
 if [[ "${CNI_BRIDGE_NETWORK_OFFSET:-}" ]]; then
   dind::setup-bridge
-  # TODO: Remove, once DinD is able to use v0.6.0 CNI release
-  protocol=""
-  if [[ "${IP_MODE}" = "ipv6" ]]; then
-      protocol="-6"
-  fi
-  curl -sSL ${protocol} --retry 5 https://github.com/containernetworking/plugins/releases/download/v0.6.0/cni-plugins-amd64-v0.6.0.tgz | \
-      tar -C /opt/cni/bin -xz
-  echo "Installed CNI v0.6.0"
   dind::setup-config-file
   dind::make-kubelet-extra-dns-args
 else

@@ -29,6 +29,7 @@ fi
 
 set -x
 KUBE_DIND_VM="${KUBE_DIND_VM:-k8s-dind}"
+export GCE_HOSTED=true
 export KUBE_RSYNC_PORT=8730
 export APISERVER_PORT=8899
 IP_MODE="${IP_MODE:-ipv4}"
@@ -51,5 +52,11 @@ docker-machine create \
                ${KUBE_DIND_VM}
 eval $(docker-machine env ${KUBE_DIND_VM})
 docker-machine ssh ${KUBE_DIND_VM} ${opts[*]} -N&
+if [ ! -z "${DIND_IMAGE:-}" ]; then
+    place=`pwd`
+    cd "${DIND_ROOT}"
+    build/build-local.sh
+    cd "$place"
+fi
 time "${DIND_ROOT}"/dind-cluster.sh up
 set +x

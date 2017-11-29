@@ -18,9 +18,10 @@ FROM gcr.io/kubeadm/ci-xenial-systemd:base-master-6f6ae74260bfa1b6d97251e6e01914
 
 LABEL mirantis.kubeadm_dind_cluster=1
 
-ARG CNI_RELEASE=0799f5732f2a11b329d9e3d51b9c8f2e3759f2ff
 
 ENV ARCH amd64
+ENV CNI_ARCHIVE=cni-plugins-"${ARCH}"-v0.6.0.tgz
+ENV CNI_SHA1=d595d3ded6499a64e8dac02466e2f5f2ce257c9f
 
 # make systemd behave correctly in Docker container
 # (e.g. accept systemd.setenv args, etc.)
@@ -52,8 +53,10 @@ RUN apt-get -qq update && \
     rm -f /lib/systemd/system/multi-user.target.wants/getty.target /lib/systemd/system/sysinit.target.wants/systemd-udev* /lib/systemd/system/sockets.target.wants/systemd-udev* && \
     chmod +x /usr/local/bin/rundocker /usr/local/bin/dindnet /usr/local/bin/snapshot && \
     mkdir -p /opt/cni/bin && \
-    curl -sSL --retry 5 https://storage.googleapis.com/kubernetes-release/network-plugins/cni-${ARCH}-${CNI_RELEASE}.tar.gz | \
-      tar -C /opt/cni -xz && \
+    curl -sSL --retry 5 https://storage.googleapis.com/kubernetes-release/network-plugins/"${CNI_ARCHIVE}" >"/tmp/${CNI_ARCHIVE}" && \
+      echo "${CNI_SHA1}  /tmp/${CNI_ARCHIVE}" | sha1sum -c && \
+      tar -C /opt/cni/bin -xzf "/tmp/${CNI_ARCHIVE}" && \
+      rm -f "/tmp/${CNI_ARCHIVE}" && \
     mkdir -p /etc/systemd/system/docker.service.wants && \
     ln -s /lib/systemd/system/dindnet.service /etc/systemd/system/docker.service.wants/ && \
     ln -s /k8s/hyperkube /usr/bin/kubectl && \
