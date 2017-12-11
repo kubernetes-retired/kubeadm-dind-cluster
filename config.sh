@@ -52,3 +52,7 @@ CNI_PLUGIN="${CNI_PLUGIN:-bridge}"
 # Disable parallel running of e2e tests. Use this if you use a resource
 # constrained machine for e2e tests and get some flakes.
 # DIND_NO_PARALLEL_E2E=y
+
+# Any options to be passed to the docker run both on init and reup.
+# By default it's empty
+# MASTER_EXTRA_OPTS="  "
