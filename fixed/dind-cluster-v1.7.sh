@@ -88,9 +88,11 @@ fi
 dns_prefix="$(echo ${SERVICE_CIDR} | sed 's,/.*,,')"
 if [[ ${IP_MODE} != "ipv6" ]]; then
     dns_prefix="$(echo ${dns_prefix} | sed 's/0$//')"
+    DNS_SVC_IP="${dns_prefix}10"
+else
+    DNS_SVC_IP="${dns_prefix}a"
 fi
 kube_master_ip="${dind_ip_base}2"
-DNS_SVC_IP="${dns_prefix}10"
 
 DIND_IMAGE="${DIND_IMAGE:-}"
 BUILD_KUBEADM="${BUILD_KUBEADM:-}"
@@ -484,13 +486,13 @@ function dind::ensure-nat {
 		   --privileged=true --ip 172.18.0.200 --ip6 ${LOCAL_NAT64_SERVER} --dns ${REMOTE_DNS64_V4SERVER} --dns ${dns_server} \
 		   -e TAYGA_CONF_PREFIX=${DNS64_PREFIX_CIDR} -e TAYGA_CONF_IPV4_ADDR=172.18.0.200 \
 		   danehans/tayga:latest >/dev/null
-	    # TODO Way to add route w/o sudo? Need to check/create, as "clean" may remove route
+	    # Need to check/create, as "clean" may remove route
 	    local route="$(ip route | egrep "^172.18.0.128/25")"
 	    if [[ -z "${route}" ]]; then
 		if [[ "${GCE_HOSTED}" = true ]]; then
 		    docker-machine ssh k8s-dind sudo ip route add 172.18.0.128/25 via 172.18.0.200
 		else
-		    sudo ip route add 172.18.0.128/25 via 172.18.0.200
+		    docker run --net=host --privileged busybox ip route add 172.18.0.128/25 via 172.18.0.200
 		fi
 	    fi
 	fi
@@ -563,6 +565,7 @@ function dind::run {
 
   # Start the new container.
   docker run \
+	 -e IP_MODE="${IP_MODE}" \
          -d --privileged \
          --net kubeadm-dind-net \
          --name "${container_name}" \
@@ -640,6 +643,9 @@ function dind::set-master-opts {
       dind::ensure-binaries "${bins[@]}"
     fi
   fi
+  if [[ ${MASTER_EXTRA_OPTS:-} ]]; then
+    master_opts+=( ${MASTER_EXTRA_OPTS} )
+  fi
 }
 
 cached_k8s_version=
@@ -701,16 +707,15 @@ function dind::init {
     fi
     local bind_address="0.0.0.0"
     if [[ ${IP_MODE} = "ipv6" ]]; then
-	bind_address="::"
+      bind_address="::"
     fi
     docker exec -i kube-master /bin/sh -c "cat >/etc/kubeadm.conf" <<EOF
 apiVersion: kubeadm.k8s.io/v1alpha1
 unifiedControlPlaneImage: mirantis/hypokube:final
 kind: MasterConfiguration
+kubernetesVersion: 1.10.0
 api:
   advertiseAddress: "${kube_master_ip}"
-kubeProxy:
-  bindAddress: "${bind_address}"
 networking:
   ${pod_net_cidr}serviceSubnet: "${SERVICE_CIDR}"
 tokenTTL: 0s
