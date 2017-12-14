@@ -643,6 +643,9 @@ function dind::set-master-opts {
       dind::ensure-binaries "${bins[@]}"
     fi
   fi
+  if [[ ${MASTER_EXTRA_OPTS:-} ]]; then
+    master_opts+=( ${MASTER_EXTRA_OPTS} )
+  fi
 }
 
 cached_k8s_version=
