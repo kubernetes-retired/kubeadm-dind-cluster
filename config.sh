@@ -56,3 +56,8 @@ CNI_PLUGIN="${CNI_PLUGIN:-bridge}"
 # Any options to be passed to the docker run both on init and reup.
 # By default it's empty
 # MASTER_EXTRA_OPTS="  "
+
+# Define which DNS service to run
+# possible values are kube-dns (default) and coredns
+DNS_SERVICE=${DNS_SERVICE:-kube-dns}
+
