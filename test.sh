@@ -272,6 +272,14 @@ function test-case-src-working-area {
   test-cluster-src
 }
 
+function test-case-src-master-coredns {
+  (
+    export DNS_SERVICE=coredns
+    test-cluster-src
+  )
+}
+
+
 if [[ ! ${TEST_CASE} ]]; then
   test-case-1.6
   test-case-1.6-flannel
@@ -293,6 +301,7 @@ if [[ ! ${TEST_CASE} ]]; then
   # test-case-src-master-calico
   # test-case-src-calico-kdd
   # test-case-src-master-weave
+  # test-case-src-master-coredns
 else
   "test-case-${TEST_CASE}"
 fi
