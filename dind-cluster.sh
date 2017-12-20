@@ -106,6 +106,12 @@ SKIP_SNAPSHOT="${SKIP_SNAPSHOT:-}"
 E2E_REPORT_DIR="${E2E_REPORT_DIR:-}"
 DIND_NO_PARALLEL_E2E="${DIND_NO_PARALLEL_E2E:-}"
 
+DIND_CA_CERT_URL="${DIND_CA_CERT_URL:-}"
+DIND_PROPAGATE_HTTP_PROXY="${DIND_PROPAGATE_HTTP_PROXY:-}"
+DIND_HTTP_PROXY="${DIND_HTTP_PROXY:-}"
+DIND_HTTPS_PROXY="${DIND_HTTPS_PROXY:-}"
+DIND_NO_PROXY="${DIND_NO_PROXY:-}"
+
 if [[ ! ${LOCAL_KUBECTL_VERSION:-} && ${DIND_IMAGE:-} =~ :(v[0-9]+\.[0-9]+)$ ]]; then
   LOCAL_KUBECTL_VERSION="${BASH_REMATCH[1]}"
 fi
@@ -709,6 +715,7 @@ function dind::init {
     if [[ ${IP_MODE} = "ipv6" ]]; then
       bind_address="::"
     fi
+    dind::proxy kube-master
     docker exec -i kube-master /bin/sh -c "cat >/etc/kubeadm.conf" <<EOF
 apiVersion: kubeadm.k8s.io/v1alpha1
 unifiedControlPlaneImage: mirantis/hypokube:final
@@ -759,6 +766,7 @@ function dind::create-node-container {
 function dind::join {
   local container_id="$1"
   shift
+  dind::proxy "${container_id}"
   dind::kubeadm "${container_id}" join --skip-preflight-checks "$@" >/dev/null
 }
 
@@ -1186,6 +1194,30 @@ function dind::split-dump64 {
     base64 "${decode_opt}" |
     lzma -dc |
     dind::split-dump
+}
+
+function dind::proxy {
+  local container_id="$1"
+  if [[ ${DIND_CA_CERT_URL} ]] ; then
+    dind::step "+ Adding certificate on ${container_id}"
+    docker exec ${container_id} /bin/sh -c "cd /usr/local/share/ca-certificates; curl -sSO ${DIND_CA_CERT_URL}"
+    docker exec ${container_id} update-ca-certificates
+  fi
+  if [[ "${DIND_PROPAGATE_HTTP_PROXY}" || "${DIND_HTTP_PROXY}" || "${DIND_HTTPS_PROXY}" || "${DIND_NO_PROXY}" ]]; then
+    dind::step "+ Setting *_PROXY for docker service on ${container_id}"
+    local proxy_env="[Service]"$'\n'"Environment="
+    if [[ "${DIND_PROPAGATE_HTTP_PROXY}" ]]; then
+      # take *_PROXY values from container environment
+      proxy_env+=$(docker exec ${container_id} env | grep -i _proxy | awk '{ print "\""$0"\""}' | xargs -d'\n')
+    else
+      if [[ "${DIND_HTTP_PROXY}" ]] ;  then proxy_env+="\"HTTP_PROXY=${DIND_HTTP_PROXY}\" "; fi
+      if [[ "${DIND_HTTPS_PROXY}" ]] ; then proxy_env+="\"HTTPS_PROXY=${DIND_HTTPS_PROXY}\" "; fi
+      if [[ "${DIND_NO_PROXY}" ]] ;    then proxy_env+="\"NO_PROXY=${DIND_NO_PROXY}\" "; fi
+    fi
+    docker exec -i ${container_id} /bin/sh -c "cat > /etc/systemd/system/docker.service.d/30-proxy.conf" <<< "${proxy_env}"
+    docker exec ${container_id} systemctl daemon-reload
+    docker exec ${container_id} systemctl restart docker
+  fi
 }
 
 case "${1:-}" in
