@@ -99,6 +99,7 @@ BUILD_KUBEADM="${BUILD_KUBEADM:-}"
 BUILD_HYPERKUBE="${BUILD_HYPERKUBE:-}"
 APISERVER_PORT=${APISERVER_PORT:-8080}
 NUM_NODES=${NUM_NODES:-2}
+EXTRA_PORTS="${EXTRA_PORTS:-}"
 LOCAL_KUBECTL_VERSION=${LOCAL_KUBECTL_VERSION:-}
 KUBECTL_DIR="${KUBECTL_DIR:-${HOME}/.kubeadm-dind-cluster}"
 DASHBOARD_URL="${DASHBOARD_URL:-https://rawgit.com/kubernetes/dashboard/bfab10151f012d1acc5dfb1979f3172e2400aa3c/src/deploy/kubernetes-dashboard.yaml}"
@@ -498,7 +499,7 @@ function dind::ensure-nat {
 		if [[ "${GCE_HOSTED}" = true ]]; then
 		    docker-machine ssh k8s-dind sudo ip route add 172.18.0.128/25 via 172.18.0.200
 		else
-		    docker run --net=host --privileged busybox ip route add 172.18.0.128/25 via 172.18.0.200
+		    docker run --net=host --rm --privileged busybox ip route add 172.18.0.128/25 via 172.18.0.200
 		fi
 	    fi
 	fi
@@ -545,7 +546,10 @@ function dind::run {
   docker rm -vf "${container_name}" >&/dev/null || true
 
   if [[ "$portforward" ]]; then
-    opts+=(-p "$portforward")
+    IFS=';' read -ra array <<< "$portforward"
+    for element in "${array[@]}"; do
+      opts+=(-p "$element")
+    done
   fi
 
   if [[ ${CNI_PLUGIN} = bridge && ${netshift} ]]; then
@@ -701,35 +705,33 @@ function dind::init {
   # 'failed to parse response as JWS object [square/go-jose: compact JWS format must have three parts]'
   # So we just pick the line from 'kubeadm init' output
   if dind::at-least-kubeadm-1-8; then
-    # We must create config file here because unifiedContolPlaneImage can't be set via
-    # a command line flag.
-    # insecure-bind-address and insecure-bind-port are also overridden by patching
-    # apiserver static pod, but someday when k-d-c will only support
-    # kubeadm 1.8+ we'll be able to remove that patching
-    local pod_net_cidr=""
+    # Using a template file in the image to build a kubeadm.conf file and to customize
+    # it based on CNI plugin, IP mode, and environment settings. User can add additional
+    # customizations to template and then rebuild the image used (build/build-local.sh).
+    local pod_subnet_disable="# "
     # TODO: May want to specify each of the plugins that require --pod-network-cidr
     if [[ ${CNI_PLUGIN} != "bridge" ]]; then
-      pod_net_cidr="podSubnet: \"${POD_NETWORK_CIDR}\""$'\n'"  "
+      pod_subnet_disable=""
     fi
     local bind_address="0.0.0.0"
     if [[ ${IP_MODE} = "ipv6" ]]; then
       bind_address="::"
     fi
     dind::proxy kube-master
-    docker exec -i kube-master /bin/sh -c "cat >/etc/kubeadm.conf" <<EOF
-apiVersion: kubeadm.k8s.io/v1alpha1
-unifiedControlPlaneImage: mirantis/hypokube:final
-kind: MasterConfiguration
-kubernetesVersion: 1.10.0
-api:
-  advertiseAddress: "${kube_master_ip}"
-networking:
-  ${pod_net_cidr}serviceSubnet: "${SERVICE_CIDR}"
-tokenTTL: 0s
-nodeName: kube-master
-apiServerExtraArgs:
-  insecure-bind-address: "${bind_address}"
-  insecure-port: "8080"
+
+    # HACK: Indicating mode, so that wrapkubeadm will not set a cluster CIDR for kube-proxy
+    # in IPv6 (only) mode.
+    if [[ ${IP_MODE} = "ipv6" ]]; then
+      docker exec --privileged -i kube-master touch /v6-mode
+    fi
+
+    docker exec --privileged -i kube-master bash <<EOF
+sed -e "s|{{ADV_ADDR}}|${kube_master_ip}|" \
+    -e "s|{{POD_SUBNET_DISABLE}}|${pod_subnet_disable}|" \
+    -e "s|{{POD_NETWORK_CIDR}}|${POD_NETWORK_CIDR}|" \
+    -e "s|{{SVC_SUBNET}}|${SERVICE_CIDR}|" \
+    -e "s|{{BIND_ADDR}}|${bind_address}|" \
+    /etc/kubeadm.conf.tmpl > /etc/kubeadm.conf
 EOF
     init_args=(--config /etc/kubeadm.conf)
   else
@@ -760,7 +762,7 @@ function dind::create-node-container {
       opts+=(-e HYPERKUBE_SOURCE=build://)
     fi
   fi
-  dind::run ${reuse_volume} kube-node-${next_node_index} ${node_ip} $((next_node_index + 1)) "" ${opts[@]+"${opts[@]}"}
+  dind::run ${reuse_volume} kube-node-${next_node_index} ${node_ip} $((next_node_index + 1)) "${EXTRA_PORTS}" ${opts[@]+"${opts[@]}"}
 }
 
 function dind::join {
