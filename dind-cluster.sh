@@ -49,11 +49,11 @@ if [[ ! ${EMBEDDED_CONFIG:-} ]]; then
   source "${DIND_ROOT}/config.sh"
 fi
 
+CNI_PLUGIN="${CNI_PLUGIN:-bridge}"
 DEFAULT_POD_NETWORK_CIDR="10.244.0.0/16"
-if [[ CNI_PLUGIN = "calico" || CNI_PLUGIN = "calico-kdd" ]]; then
+if [[ ${CNI_PLUGIN} = "calico" || ${CNI_PLUGIN} = "calico-kdd" ]]; then
   DEFAULT_POD_NETWORK_CIDR="192.168.0.0/16"
 fi
-CNI_PLUGIN="${CNI_PLUGIN:-bridge}"
 POD_NETWORK_CIDR="${POD_NETWORK_CIDR:-${DEFAULT_POD_NETWORK_CIDR}}"
 ETCD_HOST="${ETCD_HOST:-127.0.0.1}"
 GCE_HOSTED="${GCE_HOSTED:-false}"
