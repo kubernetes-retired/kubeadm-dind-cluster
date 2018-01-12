@@ -45,9 +45,14 @@ apiserver_insecure_bind_address='.spec.containers[0].command|=map(select(startsw
 # Make apiserver accept insecure connections on port 8080
 # TODO: don't use insecure port
 apiserver_insecure_bind_port='.spec.containers[0].command|=map(select(startswith("--insecure-port=")|not))+["--insecure-port=8080"]'
+
+function dind::cluster-cidr {
+  ip addr show docker0 | grep -w inet | awk '{ print $2; }'
+}
+
 # Update kube-proxy CIDR, enable --masquerade-all and disable conntrack (see dind::frob-proxy below)
 function dind::proxy-cidr-and-no-conntrack {
-  cluster_cidr="$(ip addr show docker0 | grep -w inet | awk '{ print $2; }')"
+  local cluster_cidr="$(dind::cluster-cidr)"
   echo ".items[0].spec.template.spec.containers[0].command |= .+ [\"--cluster-cidr=${cluster_cidr}\", \"--masquerade-all\", \"--conntrack-max=0\", \"--conntrack-max-per-core=0\"]"
 }
 
@@ -196,6 +201,39 @@ function dind::frob-file {
   fi
 }
 
+function dind::frob-proxy-configmap {
+  # This function modifies config.conf inside kube-proxy configmap
+  # to apply the following settings (clusterCIDR may be different):
+  #
+  # clusterCIDR: "172.17.0.1/16"
+  # conntrack:
+  #   max: 0
+  #   maxPerCore: 0
+  # masqueradeAll: true
+  local cluster_cidr="$(cluster-cidr)"
+  local confdir="$(mktemp -d kube-proxy-conf-XXXXXX)"
+  local conffile="${confdir}/config.conf"
+  kubectl get configmap -n kube-system kube-proxy -o jsonpath='{.data.config\.conf}' >"${conffile}"
+  # sadly we can't easily convery yaml to json in this case
+  # (kubectl convert will not work for kube-proxy config),
+  # so we have to use sed on the yaml file
+  sed -i "s@\bclusterCIDR:.*@clusterCIDR: \"${cluster_cidr}\"@" "${conffile}"
+  # FIXME: here we assume that max: and maxPerCore:
+  # only occur within conntrack: section
+  sed -i "s/\bmax:.*/max: 0/;s/\bmaxPerCore:.*/maxPerCore: 0/" "${conffile}"
+  sed -i "s/\bmasqueradeAll:.*/masqueradeAll: true/" "${conffile}"
+  # Use a simple hack described in comments for
+  # https://github.com/kubernetes/kubernetes/issues/30558
+  # to replace just one key in the configmap
+  kubectl create configmap \
+          -n kube-system --dry-run -o yaml --from-file=config.conf="${conffile}" kube-proxy |
+    kubectl apply -f -
+
+  # only remove the temp dir (inside the container) if the
+  # commands above have succeeded
+  rm -rf "${confdir}"
+}
+
 function dind::frob-proxy {
   # Trying to change conntrack settings fails even in priveleged containers,
   # so we need to avoid it. Here's sample error message from kube-proxy:
@@ -210,8 +248,17 @@ function dind::frob-proxy {
   # if done too early
   dind::retry kubectl -n kube-system get ds -l k8s-app=kube-proxy -o name >/dev/null
 
+  local filters
+  # in case if the configmap is used, command line args will be overridden by it
+  if kubectl get configmap -n kube-system -l app=kube-proxy -o name | grep -q configmaps/kube-proxy; then
+    dind::frob-proxy-configmap
+    filters="${proxy_mount_binaries}"
+  else
+    filters="$(dind::join-filters "${proxy_mount_binaries}" "$(dind::proxy-cidr-and-no-conntrack)")"
+  fi
+
   kubectl -n kube-system get ds -l k8s-app=kube-proxy -o json |
-    jq "$(dind::join-filters "${proxy_mount_binaries}" "$(dind::proxy-cidr-and-no-conntrack)")" |
+    jq "${filters}" |
     kubectl apply --force -f -
   kubectl -n kube-system delete pods --now -l "k8s-app=kube-proxy"
 }

@@ -106,6 +106,12 @@ SKIP_SNAPSHOT="${SKIP_SNAPSHOT:-}"
 E2E_REPORT_DIR="${E2E_REPORT_DIR:-}"
 DIND_NO_PARALLEL_E2E="${DIND_NO_PARALLEL_E2E:-}"
 
+DIND_CA_CERT_URL="${DIND_CA_CERT_URL:-}"
+DIND_PROPAGATE_HTTP_PROXY="${DIND_PROPAGATE_HTTP_PROXY:-}"
+DIND_HTTP_PROXY="${DIND_HTTP_PROXY:-}"
+DIND_HTTPS_PROXY="${DIND_HTTPS_PROXY:-}"
+DIND_NO_PROXY="${DIND_NO_PROXY:-}"
+
 if [[ ! ${LOCAL_KUBECTL_VERSION:-} && ${DIND_IMAGE:-} =~ :(v[0-9]+\.[0-9]+)$ ]]; then
   LOCAL_KUBECTL_VERSION="${BASH_REMATCH[1]}"
 fi
@@ -331,20 +337,20 @@ function dind::ensure-downloaded-kubectl {
   local full_kubectl_version
 
   case "${LOCAL_KUBECTL_VERSION}" in
-    v1.6)
-      full_kubectl_version=v1.6.12
-      kubectl_sha1_linux=51557b2fe31a2755a5b0f8597f5eef2a3eef559c
-      kubectl_sha1_darwin=94aa1c4110f1cf5acf291923f9eb310313e0ac6b
-      ;;
     v1.7)
-      full_kubectl_version=v1.7.10
-      kubectl_sha1_linux=4c174128ad3657bb09c5b3bd4a05565956b44744
-      kubectl_sha1_darwin=4186cbbf547d54a5fb1144aaeb61fa081a76d9e1
+      full_kubectl_version=v1.7.12
+      kubectl_sha1_linux=385229d4189e4f7978de42f237d6c443c0534edd
+      kubectl_sha1_darwin=af0e0853b965aa42774bba5dfbaeecb416fc6089
       ;;
     v1.8)
-      full_kubectl_version=v1.8.4
-      kubectl_sha1_linux=8e2314db816b9b4465c5f713c1152cb0603db15e
-      kubectl_sha1_darwin=45e871d3ab7c0b32baff28bef8ba9255823131cb
+      full_kubectl_version=v1.8.6
+      kubectl_sha1_linux=59f138a5144224cb0c8ed440d3a0a0e91ef01271
+      kubectl_sha1_darwin=f1f7f1c776704e87b2db0d81229fc529ada70d41
+      ;;
+    v1.9)
+      full_kubectl_version=v1.9.1
+      kubectl_sha1_linux=4f997a2fd85473e684906dcd58f9b03c000d6c0b
+      kubectl_sha1_darwin=3a3f3616b930e06fd503558870caa7d82e4cb1ef
       ;;
     "")
       return 0
@@ -709,6 +715,7 @@ function dind::init {
     if [[ ${IP_MODE} = "ipv6" ]]; then
       bind_address="::"
     fi
+    dind::proxy kube-master
     docker exec -i kube-master /bin/sh -c "cat >/etc/kubeadm.conf" <<EOF
 apiVersion: kubeadm.k8s.io/v1alpha1
 unifiedControlPlaneImage: mirantis/hypokube:final
@@ -759,6 +766,7 @@ function dind::create-node-container {
 function dind::join {
   local container_id="$1"
   shift
+  dind::proxy "${container_id}"
   dind::kubeadm "${container_id}" join --skip-preflight-checks "$@" >/dev/null
 }
 
@@ -904,20 +912,11 @@ function dind::up {
       dind::retry "${kubectl}" apply --validate=false -f "https://github.com/coreos/flannel/blob/master/Documentation/kube-flannel.yml?raw=true"
       ;;
     calico)
-      if [[ $(dind::k8s-version) = 1.6 ]]; then
-        dind::retry "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/kubeadm/1.6/calico.yaml
-      else
-        dind::retry "${kubectl}" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/kubeadm/1.6/calico.yaml
-      fi
+      dind::retry "${kubectl}" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/kubeadm/1.6/calico.yaml
       ;;
     calico-kdd)
-      if [[ $(dind::k8s-version) = 1.6 ]]; then
-        dind::retry "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/rbac.yaml
-        dind::retry "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/kubernetes-datastore/calico-networking/1.6/calico.yaml
-      else
-        dind::retry "${kubectl}" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/rbac-kdd.yaml
-        dind::retry "${kubectl}" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/kubernetes-datastore/calico-networking/1.7/calico.yaml
-      fi
+      dind::retry "${kubectl}" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/rbac-kdd.yaml
+      dind::retry "${kubectl}" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/kubernetes-datastore/calico-networking/1.7/calico.yaml
       ;;
     weave)
       dind::retry "${kubectl}" apply -f "https://github.com/weaveworks/weave/blob/master/prog/weave-kube/weave-daemonset-k8s-1.6.yaml?raw=true"
@@ -1186,6 +1185,30 @@ function dind::split-dump64 {
     base64 "${decode_opt}" |
     lzma -dc |
     dind::split-dump
+}
+
+function dind::proxy {
+  local container_id="$1"
+  if [[ ${DIND_CA_CERT_URL} ]] ; then
+    dind::step "+ Adding certificate on ${container_id}"
+    docker exec ${container_id} /bin/sh -c "cd /usr/local/share/ca-certificates; curl -sSO ${DIND_CA_CERT_URL}"
+    docker exec ${container_id} update-ca-certificates
+  fi
+  if [[ "${DIND_PROPAGATE_HTTP_PROXY}" || "${DIND_HTTP_PROXY}" || "${DIND_HTTPS_PROXY}" || "${DIND_NO_PROXY}" ]]; then
+    dind::step "+ Setting *_PROXY for docker service on ${container_id}"
+    local proxy_env="[Service]"$'\n'"Environment="
+    if [[ "${DIND_PROPAGATE_HTTP_PROXY}" ]]; then
+      # take *_PROXY values from container environment
+      proxy_env+=$(docker exec ${container_id} env | grep -i _proxy | awk '{ print "\""$0"\""}' | xargs -d'\n')
+    else
+      if [[ "${DIND_HTTP_PROXY}" ]] ;  then proxy_env+="\"HTTP_PROXY=${DIND_HTTP_PROXY}\" "; fi
+      if [[ "${DIND_HTTPS_PROXY}" ]] ; then proxy_env+="\"HTTPS_PROXY=${DIND_HTTPS_PROXY}\" "; fi
+      if [[ "${DIND_NO_PROXY}" ]] ;    then proxy_env+="\"NO_PROXY=${DIND_NO_PROXY}\" "; fi
+    fi
+    docker exec -i ${container_id} /bin/sh -c "cat > /etc/systemd/system/docker.service.d/30-proxy.conf" <<< "${proxy_env}"
+    docker exec ${container_id} systemctl daemon-reload
+    docker exec ${container_id} systemctl restart docker
+  fi
 }
 
 case "${1:-}" in

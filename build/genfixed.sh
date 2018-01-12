@@ -22,7 +22,7 @@ DIND_ROOT=$(dirname "${BASH_SOURCE}")/..
 
 fixed_dir="${DIND_ROOT}/fixed"
 mkdir -p "${fixed_dir}"
-for tag in v1.6 v1.7 v1.8; do
+for tag in v1.7 v1.8 v1.9; do
   dest="${fixed_dir}/dind-cluster-${tag}.sh"
   sed "s@#%CONFIG%@EMBEDDED_CONFIG=y;DIND_IMAGE=mirantis/kubeadm-dind-cluster:${tag}@" \
       "${DIND_ROOT}/dind-cluster.sh" >"${dest}"
