@@ -210,7 +210,7 @@ function dind::frob-proxy-configmap {
   #   max: 0
   #   maxPerCore: 0
   # masqueradeAll: true
-  local cluster_cidr="$(cluster-cidr)"
+  local cluster_cidr="$(dind::cluster-cidr)"
   local confdir="$(mktemp -d kube-proxy-conf-XXXXXX)"
   local conffile="${confdir}/config.conf"
   kubectl get configmap -n kube-system kube-proxy -o jsonpath='{.data.config\.conf}' >"${conffile}"
