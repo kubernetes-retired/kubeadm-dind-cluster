@@ -250,7 +250,7 @@ function dind::frob-proxy {
 
   local filters
   # in case if the configmap is used, command line args will be overridden by it
-  if kubectl get configmap -n kube-system -l app=kube-proxy -o name | grep -q configmaps/kube-proxy; then
+  if kubectl get configmap -n kube-system -l app=kube-proxy -o jsonpath='{.items[*].data.config\.conf}' | grep -q apiVersion; then
     dind::frob-proxy-configmap
     filters="${proxy_mount_binaries}"
   else
