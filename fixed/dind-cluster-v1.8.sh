@@ -42,6 +42,13 @@ if docker info|grep -s '^Kernel Version: .*-moby$' >/dev/null 2>&1 ||
     using_linuxkit=1
 fi
 
+# In case of linux as the OS and docker running locally we will be using
+# localhost to access the apiserver nor do we need to add routes
+using_linuxdocker=
+if [[ $(uname) == Linux && -z ${DOCKER_HOST:-} ]]; then
+  using_linuxdocker=1
+fi
+ 
 EMBEDDED_CONFIG=y;DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.8
 
 IP_MODE="${IP_MODE:-ipv4}"  # ipv4, ipv6, (future) dualstack
@@ -497,6 +504,9 @@ function dind::ensure-nat {
 	    if [[ -z "${route}" ]]; then
 		if [[ "${GCE_HOSTED}" = true ]]; then
 		    docker-machine ssh k8s-dind sudo ip route add 172.18.0.128/25 via 172.18.0.200
+    elif [[ -z ${using_linuxdocker} ]]; then
+      # don't do anything!
+      echo 
 		else
 		    docker run --net=host --privileged busybox ip route add 172.18.0.128/25 via 172.18.0.200
 		fi
@@ -614,7 +624,7 @@ function dind::configure-kubectl {
   if [[ ${IP_MODE} = "ipv6" ]]; then
       host="[${host}]"
   fi
-  if [[ "${GCE_HOSTED}" = true || ${DOCKER_HOST:-} =~ ^tcp: || ${using_linuxkit} ]]; then
+  if [[ "${GCE_HOSTED}" = true || ${DOCKER_HOST:-} =~ ^tcp: || ${using_linuxkit} || -n ${using_linuxdocker} ]]; then
     if [[ "${IP_MODE}" = "ipv4" ]]; then
       host="localhost"
     else
@@ -1027,7 +1037,7 @@ function dind::do-run-e2e {
   if [[ "${IP_MODE}" = "ipv6" ]]; then
     host="[$host]"
   fi
-  if [[ "${GCE_HOSTED}" = true || ${DOCKER_HOST:-} =~ ^tcp: ]]; then
+  if [[ "${GCE_HOSTED}" = true || ${DOCKER_HOST:-} =~ ^tcp: || -n ${using_linuxdocker} ]]; then
     if [[ "${IP_MODE}" = "ipv4" ]]; then
       host="localhost"
     else
