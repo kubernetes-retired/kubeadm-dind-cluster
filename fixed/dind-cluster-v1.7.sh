@@ -862,7 +862,7 @@ function dind::wait-for-ready {
   if [[ ${IP_MODE} = "ipv6" ]]; then
       local_host="[::1]"
   fi
-  dind::step "Access dashboard at:" "http://${local_host}:${APISERVER_PORT}/ui"
+  dind::step "Access dashboard at:" "http://${local_host}:${APISERVER_PORT}/api/v1/namespaces/kube-system/services/kubernetes-dashboard:/proxy"
 }
 
 function dind::up {
