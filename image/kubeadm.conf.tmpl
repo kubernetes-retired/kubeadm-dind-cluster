@@ -1,0 +1,18 @@
+# Customize this, as needed, for your situation, but keep
+# the variables defined herein:
+#   ADV_ADDR, POD_SUBNET_DISABLE, POD_NETWORK_CIDR,
+#   SVC_SUBNET, BIND_ADDR
+apiVersion: kubeadm.k8s.io/v1alpha1
+unifiedControlPlaneImage: mirantis/hypokube:final
+kind: MasterConfiguration
+kubernetesVersion: 1.9.0
+api:
+  advertiseAddress: "{{ADV_ADDR}}"
+networking:
+  {{POD_SUBNET_DISABLE}}podSubnet: "{{POD_NETWORK_CIDR}}"
+  serviceSubnet: "{{SVC_SUBNET}}"
+tokenTTL: 0s
+nodeName: kube-master
+apiServerExtraArgs:
+  insecure-bind-address: "{{BIND_ADDR}}"
+  insecure-port: "8080"

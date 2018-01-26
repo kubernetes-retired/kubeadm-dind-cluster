@@ -38,6 +38,7 @@ COPY start_services /usr/local/bin/
 COPY rundocker /usr/local/bin
 COPY dindnet /usr/local/bin
 COPY snapshot /usr/local/bin
+COPY kubeadm.conf.tmpl /etc/kubeadm.conf.tmpl
 
 # TODO: use 'systemctl mask' to disable units
 # See here for example: https://github.com/docker/docker/issues/27202#issuecomment-253579916
