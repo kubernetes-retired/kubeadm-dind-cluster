@@ -947,6 +947,16 @@ function dind::up {
   fi
 }
 
+function dind::fix-mounts {
+  for ((n=0; n <= NUM_NODES; n++)); do
+    local node_name=kube-master
+    if ((n > 0)); then
+      node_name="kube-node-${n}"
+    fi
+    docker exec "${node_name}" mount /run -o remount,rshared
+  done
+}
+
 function dind::snapshot_container {
   local container_name="$1"
   docker exec -i ${container_name} /usr/local/bin/snapshot prepare
@@ -1239,6 +1249,7 @@ case "${1:-}" in
     else
       dind::restore
     fi
+    dind::fix-mounts
     ;;
   reup)
     dind::prepare-sys-mounts
@@ -1253,6 +1264,7 @@ case "${1:-}" in
       restore_cmd=update_and_restore
       dind::restore
     fi
+    dind::fix-mounts
     ;;
   down)
     dind::down
@@ -1280,6 +1292,7 @@ case "${1:-}" in
   restore)
     shift
     dind::restore
+    dind::fix-mounts
     ;;
   clean)
     dind::clean
