@@ -46,6 +46,10 @@ apiserver_insecure_bind_address='.spec.containers[0].command|=map(select(startsw
 # TODO: don't use insecure port
 apiserver_insecure_bind_port='.spec.containers[0].command|=map(select(startswith("--insecure-port=")|not))+["--insecure-port=8080"]'
 
+# Enable MountPropagation in api
+# FIXME: It deletes other enabled gates
+apiserver_mount_propagation='.spec.containers[0].command|=map(select(startswith("--feature-gates=")|not))+["--feature-gates=MountPropagation=true"]'
+
 function dind::cluster-cidr {
   if [[ ! -e "/v6-mode" ]]; then
     ip addr show docker0 | grep -w inet | awk '{ print $2; }'
@@ -267,7 +271,11 @@ function dind::frob-proxy {
 }
 
 function dind::frob-apiserver {
-  local -a filters=("${mount_binaries}" "${apiserver_insecure_bind_address}" "${apiserver_insecure_bind_port}")
+  if ! /k8s/hyperkube kubelet --version | grep -q 'v1\.7\.'; then
+    local -a filters=("${mount_binaries}" "${apiserver_insecure_bind_address}" "${apiserver_insecure_bind_port}" "${apiserver_mount_propagation}")
+  else
+    local -a filters=("${mount_binaries}" "${apiserver_insecure_bind_address}" "${apiserver_insecure_bind_port}")
+  fi
   dind::frob-file "${apiserver_static_pod}" "${filters[@]}"
 }
 
@@ -335,10 +343,20 @@ function dind::maybe-enable-swap {
   kubelet_dind_args+=("--fail-swap-on=false")
 }
 
+function dind::enable-feature-gates {
+  # Mount propagation was added in 1.8, don't use it in k8s
+  if ! /k8s/hyperkube kubelet --version | grep -q 'v1\.7\.'; then
+    kubelet_dind_args+=(--feature-gates=DynamicKubeletConfig=true,MountPropagation=true)
+  else
+    kubelet_dind_args+=(--feature-gates=DynamicKubeletConfig=true)
+  fi
+}
+
 function dind::set-kubelet-dind-args {
   dind::maybe-use-bootstrap-kubeconfig
   dind::fix-cgroups
   dind::maybe-enable-swap
+  dind::enable-feature-gates
   if [[ ${#kubelet_dind_args[@]} -gt 0 ]]; then
     sed -i "s@KUBELET_DIND_ARGS=@KUBELET_DIND_ARGS=${kubelet_dind_args[*]}@" /lib/systemd/system/kubelet.service
   fi
