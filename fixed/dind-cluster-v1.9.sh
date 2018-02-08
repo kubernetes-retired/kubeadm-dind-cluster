@@ -746,6 +746,10 @@ EOF
   else
     init_args=(--pod-network-cidr="${POD_NETWORK_CIDR}")
   fi
+  # required when building from source
+  if [[ ${BUILD_KUBEADM} || ${BUILD_HYPERKUBE} ]]; then
+    docker exec kube-master mount --make-shared /k8s
+  fi
   kubeadm_join_flags="$(dind::kubeadm "${container_id}" init "${init_args[@]}" --skip-preflight-checks "$@" | grep '^ *kubeadm join' | sed 's/^ *kubeadm join //')"
   dind::configure-kubectl
 }
@@ -891,6 +895,7 @@ function dind::up {
       dind::step "Node container started:" ${n}
     fi
   done
+  dind::fix-mounts
   status=0
   local -a pids
   for ((n=1; n <= NUM_NODES; n++)); do
@@ -953,7 +958,12 @@ function dind::fix-mounts {
     if ((n > 0)); then
       node_name="kube-node-${n}"
     fi
-    docker exec "${node_name}" mount /run -o remount,rshared
+    docker exec "${node_name}" mount --make-shared /lib/modules/
+    docker exec "${node_name}" mount --make-shared /run
+    # required when building from source
+    if [[ ${BUILD_KUBEADM} || ${BUILD_HYPERKUBE} ]]; then
+      docker exec "${node_name}" mount --make-shared /k8s
+    fi
   done
 }
 
@@ -1008,6 +1018,7 @@ function dind::restore {
   for pid in ${pids[*]}; do
     wait ${pid}
   done
+  dind::fix-mounts
   # Recheck kubectl config. It's possible that the cluster was started
   # on this docker from different host
   dind::configure-kubectl
@@ -1249,7 +1260,6 @@ case "${1:-}" in
     else
       dind::restore
     fi
-    dind::fix-mounts
     ;;
   reup)
     dind::prepare-sys-mounts
@@ -1264,7 +1274,6 @@ case "${1:-}" in
       restore_cmd=update_and_restore
       dind::restore
     fi
-    dind::fix-mounts
     ;;
   down)
     dind::down
@@ -1292,7 +1301,6 @@ case "${1:-}" in
   restore)
     shift
     dind::restore
-    dind::fix-mounts
     ;;
   clean)
     dind::clean
