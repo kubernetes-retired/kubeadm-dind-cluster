@@ -104,6 +104,8 @@ kube_master_ip="${dind_ip_base}2"
 DIND_IMAGE="${DIND_IMAGE:-}"
 BUILD_KUBEADM="${BUILD_KUBEADM:-}"
 BUILD_HYPERKUBE="${BUILD_HYPERKUBE:-}"
+KUBEADM_SOURCE="${KUBEADM_SOURCE-}"
+HYPERKUBE_SOURCE="${HYPERKUBE_SOURCE-}"
 APISERVER_PORT=${APISERVER_PORT:-8080}
 NUM_NODES=${NUM_NODES:-2}
 EXTRA_PORTS="${EXTRA_PORTS:-}"
@@ -585,6 +587,8 @@ function dind::run {
   # Start the new container.
   docker run \
 	 -e IP_MODE="${IP_MODE}" \
+         -e KUBEADM_SOURCE="${KUBEADM_SOURCE}" \
+         -e HYPERKUBE_SOURCE="${HYPERKUBE_SOURCE}" \
          -d --privileged \
          --net kubeadm-dind-net \
          --name "${container_name}" \
@@ -651,6 +655,8 @@ function dind::set-master-opts {
     if [[ ${BUILD_KUBEADM} ]]; then
       master_opts+=(-e KUBEADM_SOURCE=build://)
       bins+=(cmd/kubeadm)
+    else
+      master_opts+=(-e ${KUBEADM_SOURCE})
     fi
     if [[ ${BUILD_HYPERKUBE} ]]; then
       master_opts+=(-e HYPERKUBE_SOURCE=build://)
@@ -972,7 +978,8 @@ function dind::fix-mounts {
 function dind::snapshot_container {
   local container_name="$1"
   docker exec -i ${container_name} /usr/local/bin/snapshot prepare
-  docker diff ${container_name} | docker exec -i ${container_name} /usr/local/bin/snapshot save
+  # remove the hidden *plnk directories
+  docker diff ${container_name} | grep -v plnk | docker exec -i ${container_name} /usr/local/bin/snapshot save
 }
 
 function dind::snapshot {
