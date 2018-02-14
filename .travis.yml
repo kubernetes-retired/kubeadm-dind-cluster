@@ -20,8 +20,10 @@ env:
   - TEST_CASE=1.9-weave
   - TEST_CASE=src-1.9
     TWAIT=1
-  - TEST_CASE=src-master
-    TWAIT=1
+  # Temporarily disabling master (14 Feb 2018)
+  # The breakage appears to be Travis-specific
+  # - TEST_CASE=src-master
+  #   TWAIT=1
   # The following tests often don't pass because CNI
   # implementations often aren't up-to-date for k8s master
   # - TEST_CASE=src-master-flannel
