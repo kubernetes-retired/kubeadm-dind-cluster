@@ -958,8 +958,10 @@ function dind::fix-mounts {
     if ((n > 0)); then
       node_name="kube-node-${n}"
     fi
-    docker exec "${node_name}" mount --make-shared /lib/modules/
     docker exec "${node_name}" mount --make-shared /run
+    if [[ ! ${using_linuxkit} ]]; then
+      docker exec "${node_name}" mount --make-shared /lib/modules/
+    fi
     # required when building from source
     if [[ ${BUILD_KUBEADM} || ${BUILD_HYPERKUBE} ]]; then
       docker exec "${node_name}" mount --make-shared /k8s
