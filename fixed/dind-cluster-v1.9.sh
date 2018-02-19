@@ -37,9 +37,11 @@ fi
 # mount /lib/modules and /boot. Also we'll be using localhost
 # to access the apiserver
 using_linuxkit=
-if docker info|grep -s '^Kernel Version: .*-moby$' >/dev/null 2>&1 ||
-     docker info|grep -s '^Kernel Version: .*-linuxkit-' > /dev/null 2>&1; then
-    using_linuxkit=1
+if ! docker info|grep -s '^Operating System: .*Docker for Windows' > /dev/null 2>&1 ; then
+    if docker info|grep -s '^Kernel Version: .*-moby$' >/dev/null 2>&1 ||
+         docker info|grep -s '^Kernel Version: .*-linuxkit-' > /dev/null 2>&1 ; then
+        using_linuxkit=1
+    fi
 fi
 
 # In case of linux as the OS and docker running locally we will be using
