@@ -366,7 +366,7 @@ function dind::set-kubelet-dind-args {
   dind::fix-cgroups
   dind::maybe-enable-swap
   dind::enable-feature-gates
-  ding::maybe-use-require-kubeconfig
+  dind::maybe-use-require-kubeconfig
   if [[ ${#kubelet_dind_args[@]} -gt 0 ]]; then
     sed -i "s@KUBELET_DIND_ARGS=@KUBELET_DIND_ARGS=${kubelet_dind_args[*]}@" /lib/systemd/system/kubelet.service
   fi
