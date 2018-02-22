@@ -352,7 +352,7 @@ function dind::enable-feature-gates {
   fi
 }
 
-function dind:maybe-use-require-kubeconfig {
+function dind::maybe-use-require-kubeconfig {
     # require-kubeconfig flag is obsolete starting with 1.8 and removed from 1.10
     # Add it only for 1.7
     if ! /k8s/hyperkube kubelet --version | grep -q 'v1\.7\.'; then
