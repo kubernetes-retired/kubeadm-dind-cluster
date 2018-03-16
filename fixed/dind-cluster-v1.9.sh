@@ -120,6 +120,9 @@ DIND_HTTP_PROXY="${DIND_HTTP_PROXY:-}"
 DIND_HTTPS_PROXY="${DIND_HTTPS_PROXY:-}"
 DIND_NO_PROXY="${DIND_NO_PROXY:-}"
 
+DIND_REGISTRY_MIRROR="${DIND_REGISTRY_MIRROR:-}"  # plain string format
+DIND_INSECURE_REGISTRIES="${DIND_INSECURE_REGISTRIES:-}"  # json list format
+
 if [[ ! ${LOCAL_KUBECTL_VERSION:-} && ${DIND_IMAGE:-} =~ :(v[0-9]+\.[0-9]+)$ ]]; then
   LOCAL_KUBECTL_VERSION="${BASH_REMATCH[1]}"
 fi
@@ -159,7 +162,7 @@ function dind::retry {
 }
 
 busybox_image="busybox:1.26.2"
-e2e_base_image="golang:1.9.2"
+e2e_base_image="golang:1.7.1"
 sys_volume_args=()
 build_volume_args=()
 
@@ -727,6 +730,7 @@ function dind::init {
       bind_address="::"
     fi
     dind::proxy kube-master
+    dind::custom-docker-opts kube-master
 
     # HACK: Indicating mode, so that wrapkubeadm will not set a cluster CIDR for kube-proxy
     # in IPv6 (only) mode.
@@ -782,6 +786,7 @@ function dind::join {
   local container_id="$1"
   shift
   dind::proxy "${container_id}"
+  dind::custom-docker-opts "${container_id}"
   dind::kubeadm "${container_id}" join --skip-preflight-checks "$@" >/dev/null
 }
 
@@ -1104,7 +1109,7 @@ function dind::do-run-e2e {
          bash -c "cluster/kubectl.sh config set-cluster dind --server='http://${host}:${APISERVER_PORT}' --insecure-skip-tls-verify=true &&
          cluster/kubectl.sh config set-context dind --cluster=dind &&
          cluster/kubectl.sh config use-context dind &&
-         go run hack/e2e.go -- --v 6 --test --check-version-skew=false --test_args='${test_args}'"
+         go run hack/e2e.go -- --v --test --check-version-skew=false --test_args='${test_args}'"
 }
 
 function dind::clean {
@@ -1240,6 +1245,31 @@ function dind::proxy {
       if [[ "${DIND_NO_PROXY}" ]] ;    then proxy_env+="\"NO_PROXY=${DIND_NO_PROXY}\" "; fi
     fi
     docker exec -i ${container_id} /bin/sh -c "cat > /etc/systemd/system/docker.service.d/30-proxy.conf" <<< "${proxy_env}"
+    docker exec ${container_id} systemctl daemon-reload
+    docker exec ${container_id} systemctl restart docker
+  fi
+}
+
+function dind::custom-docker-opts {
+  local container_id="$1"
+  local -a jq=()
+  if [ ! -f /etc/docker/daemon.json ] ; then
+    docker exec -i ${container_id} /bin/sh -c "mkdir -p /etc/docker"
+    jq[0]="{}"
+  else
+    jq+=($(cat /etc/docker/daemon.json))
+  fi
+  if [[ ${DIND_REGISTRY_MIRROR} ]] ; then
+    dind::step "+ Setting up registry mirror on ${container_id}"
+    jq+=("{\"registry-mirrors\": [\"${DIND_REGISTRY_MIRROR}\"]}")
+  fi
+  if [[ ${DIND_INSECURE_REGISTRIES} ]] ; then
+    dind::step "+ Setting up insecure-registries on ${container_id}"
+    jq+=("{\"insecure-registries\": ${DIND_INSECURE_REGISTRIES}}")
+  fi
+  if [[ ${jq} ]] ; then
+    local json=$(IFS="+"; echo "${jq[*]}")
+    docker exec -i ${container_id} /bin/sh -c "jq -n '${json}' > /etc/docker/daemon.json"
     docker exec ${container_id} systemctl daemon-reload
     docker exec ${container_id} systemctl restart docker
   fi
