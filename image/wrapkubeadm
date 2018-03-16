@@ -116,10 +116,22 @@ function dind::get-binary-from-url {
 function dind::get-binary {
   local filename="$1"
   local src="$2"
+  if [ ! -d "google-cloud-sdk" ]
+  then
+    dind::install-google-cloud-sdk
+  fi
+
   if [[ ${src} = "build://" ]]; then
     dind::get-binary-from-build-data-container "${filename}"
   elif [[ ${src} = "keep://" ]]; then
     dind::verify-binary "${filename}"
+  elif [[ ${src} = gs://* ]]; then
+    if [ ! -d "google-cloud-sdk" ]
+    then
+      dind::install-google-cloud-sdk
+    fi
+    ./google-cloud-sdk/bin/gsutil cp ${src} ${binary_dir}
+    chmod 755 ${binary_dir}/${filename}
   else
     dind::get-binary-from-url "${filename}" "${src}"
   fi
@@ -137,16 +149,26 @@ function dind::image-exists {
   fi
 }
 
+function dind::install-google-cloud-sdk {
+  cd
+  apt-get -y install wget python
+  wget https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-186.0.0-linux-x86_64.tar.gz
+  tar -xvf ./google-cloud-sdk-186.0.0-linux-x86_64.tar.gz
+  ./google-cloud-sdk/install.sh -q
+  rm ./google-cloud-sdk-186.0.0-linux-x86_64.tar.gz
+}
+
+
 function dind::ensure-binaries-and-hypokube {
   # avoid race - if binaries need to be fetched,
   # do it in just one container
-  if [[ ${is_master} ]]; then
+  if [[ ${is_master} ]] || [[ ${HYPERKUBE_SOURCE} = gs://* ]]; then
      dind::get-binaries
   fi
   local hyperkube_bin="${binary_dir}/hyperkube"
   # in prebuilt (complete) DIND images, final hypokube image is
   # already present
-  if ! dind::image-exists "${hypokube_final_image}" || [[ ${HYPERKUBE_SOURCE} = build:// ]] ; then
+  if ! dind::image-exists "${hypokube_final_image}" || [[ ${HYPERKUBE_SOURCE} = build:// ]] || [[ ${HYPERKUBE_SOURCE} = gs://* ]] ; then
     # We use current hyperkube binary to build final hypokube image.
     # It will be used for initial cluster deployment.
     # After we "frob" the cluster, the hyperkube image is taken from /k8s directory.
