@@ -106,6 +106,8 @@ kube_master_ip="${dind_ip_base}2"
 DIND_IMAGE="${DIND_IMAGE:-}"
 BUILD_KUBEADM="${BUILD_KUBEADM:-}"
 BUILD_HYPERKUBE="${BUILD_HYPERKUBE:-}"
+KUBEADM_SOURCE="${KUBEADM_SOURCE-}"
+HYPERKUBE_SOURCE="${HYPERKUBE_SOURCE-}"
 APISERVER_PORT=${APISERVER_PORT:-8080}
 NUM_NODES=${NUM_NODES:-2}
 EXTRA_PORTS="${EXTRA_PORTS:-}"
@@ -164,7 +166,7 @@ function dind::retry {
 }
 
 busybox_image="busybox:1.26.2"
-e2e_base_image="golang:1.7.1"
+e2e_base_image="golang:1.9.2"
 sys_volume_args=()
 build_volume_args=()
 
@@ -590,6 +592,8 @@ function dind::run {
   # Start the new container.
   docker run \
 	 -e IP_MODE="${IP_MODE}" \
+         -e KUBEADM_SOURCE="${KUBEADM_SOURCE}" \
+         -e HYPERKUBE_SOURCE="${HYPERKUBE_SOURCE}" \
          -d --privileged \
          --net kubeadm-dind-net \
          --name "${container_name}" \
@@ -656,6 +660,8 @@ function dind::set-master-opts {
     if [[ ${BUILD_KUBEADM} ]]; then
       master_opts+=(-e KUBEADM_SOURCE=build://)
       bins+=(cmd/kubeadm)
+    else
+      master_opts+=(-e ${KUBEADM_SOURCE})
     fi
     if [[ ${BUILD_HYPERKUBE} ]]; then
       master_opts+=(-e HYPERKUBE_SOURCE=build://)
@@ -979,7 +985,8 @@ function dind::fix-mounts {
 function dind::snapshot_container {
   local container_name="$1"
   docker exec -i ${container_name} /usr/local/bin/snapshot prepare
-  docker diff ${container_name} | docker exec -i ${container_name} /usr/local/bin/snapshot save
+  # remove the hidden *plnk directories
+  docker diff ${container_name} | grep -v plnk | docker exec -i ${container_name} /usr/local/bin/snapshot save
 }
 
 function dind::snapshot {
@@ -1111,7 +1118,7 @@ function dind::do-run-e2e {
          bash -c "cluster/kubectl.sh config set-cluster dind --server='http://${host}:${APISERVER_PORT}' --insecure-skip-tls-verify=true &&
          cluster/kubectl.sh config set-context dind --cluster=dind &&
          cluster/kubectl.sh config use-context dind &&
-         go run hack/e2e.go -- --v --test --check-version-skew=false --test_args='${test_args}'"
+         go run hack/e2e.go -- --v 6 --test --check-version-skew=false --test_args='${test_args}'"
 }
 
 function dind::clean {
