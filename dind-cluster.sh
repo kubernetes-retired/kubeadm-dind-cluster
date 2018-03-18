@@ -1130,6 +1130,19 @@ function dind::clean {
   fi
 }
 
+function dind::copy-image {
+  local image="${2:-}"
+  local image_path="/tmp/save_${image/\//_}"
+  if [[ -f "${image_path}" ]]; then
+    rm -fr "${image_path}"
+  fi
+  docker save "${image}" -o "${image_path}"
+  docker ps -a -q --filter=label=mirantis.kubeadm_dind_cluster | while read container_id; do
+    cat "${image_path}" | docker exec -i "${container_id}" docker load
+  done
+  rm -fr "${image_path}"
+}
+
 function dind::run-e2e {
   local focus="${1:-}"
   local skip="${2:-[Serial]}"
@@ -1346,6 +1359,9 @@ case "${1:-}" in
   clean)
     dind::clean
     ;;
+  copy-image)
+    dind::copy-image
+    ;;
   e2e)
     shift
     dind::run-e2e "$@"
@@ -1375,6 +1391,7 @@ case "${1:-}" in
     echo "  $0 join kubeadm-args..." >&2
     # echo "  $0 bare container_name [docker_options...]"
     echo "  $0 clean"
+    echo "  $0 copy-image [image_name]" >&2
     echo "  $0 e2e [test-name-substring]" >&2
     echo "  $0 e2e-serial [test-name-substring]" >&2
     echo "  $0 dump" >&2
