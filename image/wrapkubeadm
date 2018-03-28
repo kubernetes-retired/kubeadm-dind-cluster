@@ -116,10 +116,6 @@ function dind::get-binary-from-url {
 function dind::get-binary {
   local filename="$1"
   local src="$2"
-  if [ ! -d "google-cloud-sdk" ]
-  then
-    dind::install-google-cloud-sdk
-  fi
 
   if [[ ${src} = "build://" ]]; then
     dind::get-binary-from-build-data-container "${filename}"
