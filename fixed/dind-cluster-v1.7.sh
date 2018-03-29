@@ -1359,6 +1359,9 @@ case "${1:-}" in
   clean)
     dind::clean
     ;;
+  copy-image)
+    dind::copy-image
+    ;;
   e2e)
     shift
     dind::run-e2e "$@"
