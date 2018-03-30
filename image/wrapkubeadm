@@ -250,8 +250,11 @@ function dind::frob-proxy-configmap {
   # Use a simple hack described in comments for
   # https://github.com/kubernetes/kubernetes/issues/30558
   # to replace just one key in the configmap
+  # In k8s 1.10, 'kubectl create configmap --dry-run' doesn't set apiVersion
+  # and kind for some reason (they are required for 'kubectl apply').
   kubectl create configmap \
-          -n kube-system --dry-run -o yaml --from-file=config.conf="${conffile}" kube-proxy |
+          -n kube-system --dry-run -o json --from-file=config.conf="${conffile}" kube-proxy |
+          jq '.apiVersion="v1"|.kind|="ConfigMap"' |
     kubectl apply -f -
 
   # only remove the temp dir (inside the container) if the
