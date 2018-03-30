@@ -18,7 +18,12 @@ env:
   - TEST_CASE=1.9-calico
   - TEST_CASE=1.9-calico-kdd
   - TEST_CASE=1.9-weave
-  - TEST_CASE=src-1.9
+  - TEST_CASE=1.10
+  - TEST_CASE=1.10-flannel
+  - TEST_CASE=1.10-calico
+  - TEST_CASE=1.10-calico-kdd
+  - TEST_CASE=1.10-weave
+  - TEST_CASE=src-1.10
     TWAIT=1
   # Temporarily disabling master (14 Feb 2018)
   # The breakage appears to be Travis-specific
