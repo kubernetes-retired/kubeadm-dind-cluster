@@ -698,6 +698,7 @@ function dind::ensure-dashboard-clusterrolebinding {
                --clusterrole=cluster-admin \
                --serviceaccount=kube-system:default \
                -o json --dry-run |
+    docker exec -i kube-master jq '.apiVersion="rbac.authorization.k8s.io/v1beta1"|.kind|="ClusterRoleBinding"' |
     "${kubectl}" apply -f -
 }
 
