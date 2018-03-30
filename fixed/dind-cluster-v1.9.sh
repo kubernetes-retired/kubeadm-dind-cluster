@@ -979,6 +979,7 @@ function dind::fix-mounts {
     if [[ ${BUILD_KUBEADM} || ${BUILD_HYPERKUBE} ]]; then
       docker exec "${node_name}" mount --make-shared /k8s
     fi
+    docker exec "${node_name}" mount --make-shared /sys/kernel/debug
   done
 }
 
@@ -1358,6 +1359,9 @@ case "${1:-}" in
     ;;
   clean)
     dind::clean
+    ;;
+  copy-image)
+    dind::copy-image
     ;;
   e2e)
     shift
