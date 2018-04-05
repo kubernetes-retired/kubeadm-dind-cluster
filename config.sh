@@ -59,5 +59,5 @@ CNI_PLUGIN="${CNI_PLUGIN:-bridge}"
 
 # Define which DNS service to run
 # possible values are kube-dns (default) and coredns
-DNS_SERVICE=${DNS_SERVICE:-kube-dns}
+DNS_SERVICE="${DNS_SERVICE:-kube-dns}"
 
