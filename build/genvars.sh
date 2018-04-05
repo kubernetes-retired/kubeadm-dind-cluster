@@ -18,7 +18,7 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 
-VERSIONS=(1.6.12 1.7.10 1.8.4)
+VERSIONS=(1.7.15 1.8.10 1.9.6 1.10.0)
 
 first=1
 for version in ${VERSIONS[@]}; do

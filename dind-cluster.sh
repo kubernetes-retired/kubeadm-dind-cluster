@@ -35,11 +35,20 @@ fi
 
 # In case of linuxkit / moby linux, -v will not work so we can't
 # mount /lib/modules and /boot. Also we'll be using localhost
-# to access the apiserver
+# to access the apiserver.
 using_linuxkit=
-if docker info|grep -s '^Kernel Version: .*-moby$' >/dev/null 2>&1 ||
-     docker info|grep -s '^Kernel Version: .*-linuxkit-' > /dev/null 2>&1; then
-    using_linuxkit=1
+if ! docker info|grep -s '^Operating System: .*Docker for Windows' > /dev/null 2>&1 ; then
+    if docker info|grep -s '^Kernel Version: .*-moby$' >/dev/null 2>&1 ||
+         docker info|grep -s '^Kernel Version: .*-linuxkit-' > /dev/null 2>&1 ; then
+        using_linuxkit=1
+    fi
+fi
+
+# In case of linux as the OS and docker running locally we will be using
+# localhost to access the apiserver nor do we need to add routes
+using_linuxdocker=
+if [[ $(uname) == Linux && -z ${DOCKER_HOST:-} ]]; then
+    using_linuxdocker=1
 fi
 
 #%CONFIG%
@@ -49,11 +58,11 @@ if [[ ! ${EMBEDDED_CONFIG:-} ]]; then
   source "${DIND_ROOT}/config.sh"
 fi
 
+CNI_PLUGIN="${CNI_PLUGIN:-bridge}"
 DEFAULT_POD_NETWORK_CIDR="10.244.0.0/16"
-if [[ CNI_PLUGIN = "calico" || CNI_PLUGIN = "calico-kdd" ]]; then
+if [[ ${CNI_PLUGIN} = "calico" || ${CNI_PLUGIN} = "calico-kdd" ]]; then
   DEFAULT_POD_NETWORK_CIDR="192.168.0.0/16"
 fi
-CNI_PLUGIN="${CNI_PLUGIN:-bridge}"
 POD_NETWORK_CIDR="${POD_NETWORK_CIDR:-${DEFAULT_POD_NETWORK_CIDR}}"
 ETCD_HOST="${ETCD_HOST:-127.0.0.1}"
 GCE_HOSTED="${GCE_HOSTED:-false}"
@@ -97,14 +106,26 @@ kube_master_ip="${dind_ip_base}2"
 DIND_IMAGE="${DIND_IMAGE:-}"
 BUILD_KUBEADM="${BUILD_KUBEADM:-}"
 BUILD_HYPERKUBE="${BUILD_HYPERKUBE:-}"
+KUBEADM_SOURCE="${KUBEADM_SOURCE-}"
+HYPERKUBE_SOURCE="${HYPERKUBE_SOURCE-}"
 APISERVER_PORT=${APISERVER_PORT:-8080}
 NUM_NODES=${NUM_NODES:-2}
+EXTRA_PORTS="${EXTRA_PORTS:-}"
 LOCAL_KUBECTL_VERSION=${LOCAL_KUBECTL_VERSION:-}
 KUBECTL_DIR="${KUBECTL_DIR:-${HOME}/.kubeadm-dind-cluster}"
 DASHBOARD_URL="${DASHBOARD_URL:-https://rawgit.com/kubernetes/dashboard/bfab10151f012d1acc5dfb1979f3172e2400aa3c/src/deploy/kubernetes-dashboard.yaml}"
 SKIP_SNAPSHOT="${SKIP_SNAPSHOT:-}"
 E2E_REPORT_DIR="${E2E_REPORT_DIR:-}"
 DIND_NO_PARALLEL_E2E="${DIND_NO_PARALLEL_E2E:-}"
+
+DIND_CA_CERT_URL="${DIND_CA_CERT_URL:-}"
+DIND_PROPAGATE_HTTP_PROXY="${DIND_PROPAGATE_HTTP_PROXY:-}"
+DIND_HTTP_PROXY="${DIND_HTTP_PROXY:-}"
+DIND_HTTPS_PROXY="${DIND_HTTPS_PROXY:-}"
+DIND_NO_PROXY="${DIND_NO_PROXY:-}"
+
+DIND_REGISTRY_MIRROR="${DIND_REGISTRY_MIRROR:-}"  # plain string format
+DIND_INSECURE_REGISTRIES="${DIND_INSECURE_REGISTRIES:-}"  # json list format
 
 if [[ ! ${LOCAL_KUBECTL_VERSION:-} && ${DIND_IMAGE:-} =~ :(v[0-9]+\.[0-9]+)$ ]]; then
   LOCAL_KUBECTL_VERSION="${BASH_REMATCH[1]}"
@@ -145,7 +166,7 @@ function dind::retry {
 }
 
 busybox_image="busybox:1.26.2"
-e2e_base_image="golang:1.7.1"
+e2e_base_image="golang:1.9.2"
 sys_volume_args=()
 build_volume_args=()
 
@@ -331,20 +352,25 @@ function dind::ensure-downloaded-kubectl {
   local full_kubectl_version
 
   case "${LOCAL_KUBECTL_VERSION}" in
-    v1.6)
-      full_kubectl_version=v1.6.12
-      kubectl_sha1_linux=51557b2fe31a2755a5b0f8597f5eef2a3eef559c
-      kubectl_sha1_darwin=94aa1c4110f1cf5acf291923f9eb310313e0ac6b
-      ;;
     v1.7)
-      full_kubectl_version=v1.7.10
-      kubectl_sha1_linux=4c174128ad3657bb09c5b3bd4a05565956b44744
-      kubectl_sha1_darwin=4186cbbf547d54a5fb1144aaeb61fa081a76d9e1
+      full_kubectl_version=v1.7.15
+      kubectl_sha1_linux=f4bd9f71af5cbd6c0a84ad50c07db3206bf04d13
+      kubectl_sha1_darwin=505e5561d3fbd18360037f47f587f6d7519ddf86
       ;;
     v1.8)
-      full_kubectl_version=v1.8.4
-      kubectl_sha1_linux=8e2314db816b9b4465c5f713c1152cb0603db15e
-      kubectl_sha1_darwin=45e871d3ab7c0b32baff28bef8ba9255823131cb
+      full_kubectl_version=v1.8.10
+      kubectl_sha1_linux=1164e216945102901499d7bf839ed293beb714c2
+      kubectl_sha1_darwin=59c85373484ff70291f8bc706c4440fe8d96ce52
+      ;;
+    v1.9)
+      full_kubectl_version=v1.9.6
+      kubectl_sha1_linux=04d344ac9b2a6514f0d94c2df79073e42d6c1182
+      kubectl_sha1_darwin=eb9e2f7978a94c433a2d27432cfd8dd77fb5997e
+      ;;
+    v1.10)
+      full_kubectl_version=v1.10.0
+      kubectl_sha1_linux=7a17e4f1b7f084b49771467ed16859bc46508eae
+      kubectl_sha1_darwin=367ae1a818660f673212a65965ca9bfd2cdf109e
       ;;
     "")
       return 0
@@ -491,8 +517,10 @@ function dind::ensure-nat {
 	    if [[ -z "${route}" ]]; then
 		if [[ "${GCE_HOSTED}" = true ]]; then
 		    docker-machine ssh k8s-dind sudo ip route add 172.18.0.128/25 via 172.18.0.200
+    elif [[ -z ${using_linuxdocker} ]]; then
+        :
 		else
-		    docker run --net=host --privileged busybox ip route add 172.18.0.128/25 via 172.18.0.200
+		    docker run --net=host --rm --privileged busybox ip route add 172.18.0.128/25 via 172.18.0.200
 		fi
 	    fi
 	fi
@@ -540,7 +568,10 @@ function dind::run {
   docker rm -vf "${container_name}" >&/dev/null || true
 
   if [[ "$portforward" ]]; then
-    opts+=(-p "$portforward")
+    IFS=';' read -ra array <<< "$portforward"
+    for element in "${array[@]}"; do
+      opts+=(-p "$element")
+    done
   fi
 
   if [[ ${CNI_PLUGIN} = bridge && ${netshift} ]]; then
@@ -566,7 +597,9 @@ function dind::run {
 
   # Start the new container.
   docker run \
-         -e IP_MODE="${IP_MODE}" \
+	 -e IP_MODE="${IP_MODE}" \
+         -e KUBEADM_SOURCE="${KUBEADM_SOURCE}" \
+         -e HYPERKUBE_SOURCE="${HYPERKUBE_SOURCE}" \
          -d --privileged \
          --net kubeadm-dind-net \
          --name "${container_name}" \
@@ -609,7 +642,7 @@ function dind::configure-kubectl {
   if [[ ${IP_MODE} = "ipv6" ]]; then
       host="[${host}]"
   fi
-  if [[ "${GCE_HOSTED}" = true || ${DOCKER_HOST:-} =~ ^tcp: || ${using_linuxkit} ]]; then
+  if [[ "${GCE_HOSTED}" = true || ${DOCKER_HOST:-} =~ ^tcp: || ${using_linuxkit} || -n ${using_linuxdocker} ]]; then
     if [[ "${IP_MODE}" = "ipv4" ]]; then
       host="localhost"
     else
@@ -633,6 +666,8 @@ function dind::set-master-opts {
     if [[ ${BUILD_KUBEADM} ]]; then
       master_opts+=(-e KUBEADM_SOURCE=build://)
       bins+=(cmd/kubeadm)
+    else
+      master_opts+=(-e ${KUBEADM_SOURCE})
     fi
     if [[ ${BUILD_HYPERKUBE} ]]; then
       master_opts+=(-e HYPERKUBE_SOURCE=build://)
@@ -664,6 +699,7 @@ function dind::ensure-dashboard-clusterrolebinding {
                --clusterrole=cluster-admin \
                --serviceaccount=kube-system:default \
                -o json --dry-run |
+    docker exec -i kube-master jq '.apiVersion="rbac.authorization.k8s.io/v1beta1"|.kind|="ClusterRoleBinding"' |
     "${kubectl}" apply -f -
 }
 
@@ -696,34 +732,34 @@ function dind::init {
   # 'failed to parse response as JWS object [square/go-jose: compact JWS format must have three parts]'
   # So we just pick the line from 'kubeadm init' output
   if dind::at-least-kubeadm-1-8; then
-    # We must create config file here because unifiedContolPlaneImage can't be set via
-    # a command line flag.
-    # insecure-bind-address and insecure-bind-port are also overridden by patching
-    # apiserver static pod, but someday when k-d-c will only support
-    # kubeadm 1.8+ we'll be able to remove that patching
-    local pod_net_cidr=""
+    # Using a template file in the image to build a kubeadm.conf file and to customize
+    # it based on CNI plugin, IP mode, and environment settings. User can add additional
+    # customizations to template and then rebuild the image used (build/build-local.sh).
+    local pod_subnet_disable="# "
     # TODO: May want to specify each of the plugins that require --pod-network-cidr
     if [[ ${CNI_PLUGIN} != "bridge" ]]; then
-      pod_net_cidr="podSubnet: \"${POD_NETWORK_CIDR}\""$'\n'"  "
+      pod_subnet_disable=""
     fi
     local bind_address="0.0.0.0"
     if [[ ${IP_MODE} = "ipv6" ]]; then
       bind_address="::"
     fi
-    docker exec -i kube-master /bin/sh -c "cat >/etc/kubeadm.conf" <<EOF
-apiVersion: kubeadm.k8s.io/v1alpha1
-unifiedControlPlaneImage: mirantis/hypokube:final
-kind: MasterConfiguration
-kubernetesVersion: 1.10.0
-api:
-  advertiseAddress: "${kube_master_ip}"
-networking:
-  ${pod_net_cidr}serviceSubnet: "${SERVICE_CIDR}"
-tokenTTL: 0s
-nodeName: kube-master
-apiServerExtraArgs:
-  insecure-bind-address: "${bind_address}"
-  insecure-port: "8080"
+    dind::proxy kube-master
+    dind::custom-docker-opts kube-master
+
+    # HACK: Indicating mode, so that wrapkubeadm will not set a cluster CIDR for kube-proxy
+    # in IPv6 (only) mode.
+    if [[ ${IP_MODE} = "ipv6" ]]; then
+      docker exec --privileged -i kube-master touch /v6-mode
+    fi
+
+    docker exec --privileged -i kube-master bash <<EOF
+sed -e "s|{{ADV_ADDR}}|${kube_master_ip}|" \
+    -e "s|{{POD_SUBNET_DISABLE}}|${pod_subnet_disable}|" \
+    -e "s|{{POD_NETWORK_CIDR}}|${POD_NETWORK_CIDR}|" \
+    -e "s|{{SVC_SUBNET}}|${SERVICE_CIDR}|" \
+    -e "s|{{BIND_ADDR}}|${bind_address}|" \
+    /etc/kubeadm.conf.tmpl > /etc/kubeadm.conf
 EOF
     if [[ ${DNS_SERVICE} == "coredns" ]]; then
       docker exec -i kube-master /bin/sh -c "cat >>/etc/kubeadm.conf" <<EOF
@@ -735,6 +771,10 @@ EOF
     init_args=(--config /etc/kubeadm.conf)
   else
     init_args=(--pod-network-cidr="${POD_NETWORK_CIDR}")
+  fi
+  # required when building from source
+  if [[ ${BUILD_KUBEADM} || ${BUILD_HYPERKUBE} ]]; then
+    docker exec kube-master mount --make-shared /k8s
   fi
   kubeadm_join_flags="$(dind::kubeadm "${container_id}" init "${init_args[@]}" --skip-preflight-checks "$@" | grep '^ *kubeadm join' | sed 's/^ *kubeadm join //')"
   dind::configure-kubectl
@@ -761,12 +801,14 @@ function dind::create-node-container {
       opts+=(-e HYPERKUBE_SOURCE=build://)
     fi
   fi
-  dind::run ${reuse_volume} kube-node-${next_node_index} ${node_ip} $((next_node_index + 1)) "" ${opts[@]+"${opts[@]}"}
+  dind::run ${reuse_volume} kube-node-${next_node_index} ${node_ip} $((next_node_index + 1)) "${EXTRA_PORTS}" ${opts[@]+"${opts[@]}"}
 }
 
 function dind::join {
   local container_id="$1"
   shift
+  dind::proxy "${container_id}"
+  dind::custom-docker-opts "${container_id}"
   dind::kubeadm "${container_id}" join --skip-preflight-checks "$@" >/dev/null
 }
 
@@ -864,7 +906,7 @@ function dind::wait-for-ready {
   if [[ ${IP_MODE} = "ipv6" ]]; then
       local_host="[::1]"
   fi
-  dind::step "Access dashboard at:" "http://${local_host}:${APISERVER_PORT}/ui"
+  dind::step "Access dashboard at:" "http://${local_host}:${APISERVER_PORT}/api/v1/namespaces/kube-system/services/kubernetes-dashboard:/proxy"
 }
 
 function dind::up {
@@ -882,6 +924,7 @@ function dind::up {
       dind::step "Node container started:" ${n}
     fi
   done
+  dind::fix-mounts
   status=0
   local -a pids
   for ((n=1; n <= NUM_NODES; n++)); do
@@ -914,20 +957,11 @@ function dind::up {
       dind::retry "${kubectl}" apply --validate=false -f "https://github.com/coreos/flannel/blob/master/Documentation/kube-flannel.yml?raw=true"
       ;;
     calico)
-      if [[ $(dind::k8s-version) = 1.6 ]]; then
-        dind::retry "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/kubeadm/1.6/calico.yaml
-      else
-        dind::retry "${kubectl}" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/kubeadm/1.6/calico.yaml
-      fi
+      dind::retry "${kubectl}" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/kubeadm/1.6/calico.yaml
       ;;
     calico-kdd)
-      if [[ $(dind::k8s-version) = 1.6 ]]; then
-        dind::retry "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/rbac.yaml
-        dind::retry "${kubectl}" apply -f http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/kubernetes-datastore/calico-networking/1.6/calico.yaml
-      else
-        dind::retry "${kubectl}" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/rbac-kdd.yaml
-        dind::retry "${kubectl}" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/kubernetes-datastore/calico-networking/1.7/calico.yaml
-      fi
+      dind::retry "${kubectl}" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/rbac-kdd.yaml
+      dind::retry "${kubectl}" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/kubernetes-datastore/calico-networking/1.7/calico.yaml
       ;;
     weave)
       dind::retry "${kubectl}" apply -f "https://github.com/weaveworks/weave/blob/master/prog/weave-kube/weave-daemonset-k8s-1.6.yaml?raw=true"
@@ -947,10 +981,29 @@ function dind::up {
   fi
 }
 
+function dind::fix-mounts {
+  for ((n=0; n <= NUM_NODES; n++)); do
+    local node_name=kube-master
+    if ((n > 0)); then
+      node_name="kube-node-${n}"
+    fi
+    docker exec "${node_name}" mount --make-shared /run
+    if [[ ! ${using_linuxkit} ]]; then
+      docker exec "${node_name}" mount --make-shared /lib/modules/
+    fi
+    # required when building from source
+    if [[ ${BUILD_KUBEADM} || ${BUILD_HYPERKUBE} ]]; then
+      docker exec "${node_name}" mount --make-shared /k8s
+    fi
+    docker exec "${node_name}" mount --make-shared /sys/kernel/debug
+  done
+}
+
 function dind::snapshot_container {
   local container_name="$1"
   docker exec -i ${container_name} /usr/local/bin/snapshot prepare
-  docker diff ${container_name} | docker exec -i ${container_name} /usr/local/bin/snapshot save
+  # remove the hidden *plnk directories
+  docker diff ${container_name} | grep -v plnk | docker exec -i ${container_name} /usr/local/bin/snapshot save
 }
 
 function dind::snapshot {
@@ -998,6 +1051,7 @@ function dind::restore {
   for pid in ${pids[*]}; do
     wait ${pid}
   done
+  dind::fix-mounts
   # Recheck kubectl config. It's possible that the cluster was started
   # on this docker from different host
   dind::configure-kubectl
@@ -1038,7 +1092,7 @@ function dind::do-run-e2e {
   if [[ "${IP_MODE}" = "ipv6" ]]; then
     host="[$host]"
   fi
-  if [[ "${GCE_HOSTED}" = true || ${DOCKER_HOST:-} =~ ^tcp: ]]; then
+  if [[ "${GCE_HOSTED}" = true || ${DOCKER_HOST:-} =~ ^tcp: || -n ${using_linuxdocker} ]]; then
     if [[ "${IP_MODE}" = "ipv4" ]]; then
       host="localhost"
     else
@@ -1081,7 +1135,7 @@ function dind::do-run-e2e {
          bash -c "cluster/kubectl.sh config set-cluster dind --server='http://${host}:${APISERVER_PORT}' --insecure-skip-tls-verify=true &&
          cluster/kubectl.sh config set-context dind --cluster=dind &&
          cluster/kubectl.sh config use-context dind &&
-         go run hack/e2e.go -- --v --test --check-version-skew=false --test_args='${test_args}'"
+         go run hack/e2e.go -- --v 6 --test --check-version-skew=false --test_args='${test_args}'"
 }
 
 function dind::clean {
@@ -1091,6 +1145,19 @@ function dind::clean {
   if docker network inspect kubeadm-dind-net >&/dev/null; then
     docker network rm kubeadm-dind-net
   fi
+}
+
+function dind::copy-image {
+  local image="${2:-}"
+  local image_path="/tmp/save_${image/\//_}"
+  if [[ -f "${image_path}" ]]; then
+    rm -fr "${image_path}"
+  fi
+  docker save "${image}" -o "${image_path}"
+  docker ps -a -q --filter=label=mirantis.kubeadm_dind_cluster | while read container_id; do
+    cat "${image_path}" | docker exec -i "${container_id}" docker load
+  done
+  rm -fr "${image_path}"
 }
 
 function dind::run-e2e {
@@ -1198,6 +1265,55 @@ function dind::split-dump64 {
     dind::split-dump
 }
 
+function dind::proxy {
+  local container_id="$1"
+  if [[ ${DIND_CA_CERT_URL} ]] ; then
+    dind::step "+ Adding certificate on ${container_id}"
+    docker exec ${container_id} /bin/sh -c "cd /usr/local/share/ca-certificates; curl -sSO ${DIND_CA_CERT_URL}"
+    docker exec ${container_id} update-ca-certificates
+  fi
+  if [[ "${DIND_PROPAGATE_HTTP_PROXY}" || "${DIND_HTTP_PROXY}" || "${DIND_HTTPS_PROXY}" || "${DIND_NO_PROXY}" ]]; then
+    dind::step "+ Setting *_PROXY for docker service on ${container_id}"
+    local proxy_env="[Service]"$'\n'"Environment="
+    if [[ "${DIND_PROPAGATE_HTTP_PROXY}" ]]; then
+      # take *_PROXY values from container environment
+      proxy_env+=$(docker exec ${container_id} env | grep -i _proxy | awk '{ print "\""$0"\""}' | xargs -d'\n')
+    else
+      if [[ "${DIND_HTTP_PROXY}" ]] ;  then proxy_env+="\"HTTP_PROXY=${DIND_HTTP_PROXY}\" "; fi
+      if [[ "${DIND_HTTPS_PROXY}" ]] ; then proxy_env+="\"HTTPS_PROXY=${DIND_HTTPS_PROXY}\" "; fi
+      if [[ "${DIND_NO_PROXY}" ]] ;    then proxy_env+="\"NO_PROXY=${DIND_NO_PROXY}\" "; fi
+    fi
+    docker exec -i ${container_id} /bin/sh -c "cat > /etc/systemd/system/docker.service.d/30-proxy.conf" <<< "${proxy_env}"
+    docker exec ${container_id} systemctl daemon-reload
+    docker exec ${container_id} systemctl restart docker
+  fi
+}
+
+function dind::custom-docker-opts {
+  local container_id="$1"
+  local -a jq=()
+  if [ ! -f /etc/docker/daemon.json ] ; then
+    docker exec -i ${container_id} /bin/sh -c "mkdir -p /etc/docker"
+    jq[0]="{}"
+  else
+    jq+=($(cat /etc/docker/daemon.json))
+  fi
+  if [[ ${DIND_REGISTRY_MIRROR} ]] ; then
+    dind::step "+ Setting up registry mirror on ${container_id}"
+    jq+=("{\"registry-mirrors\": [\"${DIND_REGISTRY_MIRROR}\"]}")
+  fi
+  if [[ ${DIND_INSECURE_REGISTRIES} ]] ; then
+    dind::step "+ Setting up insecure-registries on ${container_id}"
+    jq+=("{\"insecure-registries\": ${DIND_INSECURE_REGISTRIES}}")
+  fi
+  if [[ ${jq} ]] ; then
+    local json=$(IFS="+"; echo "${jq[*]}")
+    docker exec -i ${container_id} /bin/sh -c "jq -n '${json}' > /etc/docker/daemon.json"
+    docker exec ${container_id} systemctl daemon-reload
+    docker exec ${container_id} systemctl restart docker
+  fi
+}
+
 case "${1:-}" in
   up)
     if [[ ! ( ${DIND_IMAGE} =~ local ) ]]; then
@@ -1260,6 +1376,9 @@ case "${1:-}" in
   clean)
     dind::clean
     ;;
+  copy-image)
+    dind::copy-image
+    ;;
   e2e)
     shift
     dind::run-e2e "$@"
@@ -1289,6 +1408,7 @@ case "${1:-}" in
     echo "  $0 join kubeadm-args..." >&2
     # echo "  $0 bare container_name [docker_options...]"
     echo "  $0 clean"
+    echo "  $0 copy-image [image_name]" >&2
     echo "  $0 e2e [test-name-substring]" >&2
     echo "  $0 e2e-serial [test-name-substring]" >&2
     echo "  $0 dump" >&2
