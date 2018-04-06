@@ -117,6 +117,7 @@ DASHBOARD_URL="${DASHBOARD_URL:-https://rawgit.com/kubernetes/dashboard/bfab1015
 SKIP_SNAPSHOT="${SKIP_SNAPSHOT:-}"
 E2E_REPORT_DIR="${E2E_REPORT_DIR:-}"
 DIND_NO_PARALLEL_E2E="${DIND_NO_PARALLEL_E2E:-}"
+DNS_SERVICE="${DNS_SERVICE:-kube-dns}"
 
 DIND_CA_CERT_URL="${DIND_CA_CERT_URL:-}"
 DIND_PROPAGATE_HTTP_PROXY="${DIND_PROPAGATE_HTTP_PROXY:-}"
@@ -559,6 +560,7 @@ function dind::run {
       args+=("systemd.setenv=POD_NET_PREFIX=${POD_NET_PREFIX}")
   fi
   args+=("systemd.setenv=DNS_SVC_IP=${DNS_SVC_IP}")
+  args+=("systemd.setenv=DNS_SERVICE=${DNS_SERVICE}")
   if [[ ! "${container_name}" ]]; then
     echo >&2 "Must specify container name"
     exit 1
@@ -761,6 +763,13 @@ sed -e "s|{{ADV_ADDR}}|${kube_master_ip}|" \
     -e "s|{{BIND_ADDR}}|${bind_address}|" \
     /etc/kubeadm.conf.tmpl > /etc/kubeadm.conf
 EOF
+    if [[ ${DNS_SERVICE} == "coredns" ]]; then
+      docker exec -i kube-master /bin/sh -c "cat >>/etc/kubeadm.conf" <<EOF
+featureGates:
+  CoreDNS: true 
+
+EOF
+    fi
     init_args=(--config /etc/kubeadm.conf)
   else
     init_args=(--pod-network-cidr="${POD_NETWORK_CIDR}")
@@ -810,11 +819,13 @@ function dind::escape-e2e-name {
 }
 
 function dind::accelerate-kube-dns {
-  dind::step "Patching kube-dns deployment to make it start faster"
-  # Could do this on the host, too, but we don't want to require jq here
-  # TODO: do this in wrapkubeadm
-  docker exec kube-master /bin/bash -c \
-         "kubectl get deployment kube-dns -n kube-system -o json | jq '.spec.template.spec.containers[0].readinessProbe.initialDelaySeconds = 3|.spec.template.spec.containers[0].readinessProbe.periodSeconds = 3' | kubectl apply --force -f -"
+  if [[ ${DNS_SERVICE} == "kube-dns" ]]; then
+     dind::step "Patching kube-dns deployment to make it start faster"
+     # Could do this on the host, too, but we don't want to require jq here
+     # TODO: do this in wrapkubeadm
+     docker exec kube-master /bin/bash -c \
+        "kubectl get deployment kube-dns -n kube-system -o json | jq '.spec.template.spec.containers[0].readinessProbe.initialDelaySeconds = 3|.spec.template.spec.containers[0].readinessProbe.periodSeconds = 3' | kubectl apply --force -f -"
+ fi
 }
 
 function dind::component-ready {
@@ -877,7 +888,7 @@ function dind::wait-for-ready {
 
   dind::step "Bringing up kube-dns and kubernetes-dashboard"
   # on Travis 'scale' sometimes fails with 'error: Scaling the resource failed with: etcdserver: request timed out; Current resource version 442' here
-  dind::retry "${kubectl}" scale deployment --replicas=1 -n kube-system kube-dns
+  dind::retry "${kubectl}" scale deployment --replicas=1 -n kube-system ${DNS_SERVICE}
   dind::retry "${kubectl}" scale deployment --replicas=1 -n kube-system kubernetes-dashboard
 
   ntries=200
