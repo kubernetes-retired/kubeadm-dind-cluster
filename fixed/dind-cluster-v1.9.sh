@@ -1378,7 +1378,7 @@ case "${1:-}" in
     dind::clean
     ;;
   copy-image)
-    dind::copy-image
+    dind::copy-image "$@"
     ;;
   e2e)
     shift
