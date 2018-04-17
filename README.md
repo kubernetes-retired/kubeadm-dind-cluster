@@ -69,7 +69,7 @@ kube-master   Ready     6m        v1.8.6
 kube-node-1   Ready     5m        v1.8.6
 kube-node-2   Ready     5m        v1.8.6
 
-$ # k8s dashboard available at http://localhost:8080/ui
+$ # k8s dashboard available at http://localhost:8080/api/v1/namespaces/kube-system/services/kubernetes-dashboard:/proxy
 
 $ # restart the cluster, this should happen much quicker than initial startup
 $ ./dind-cluster-v1.8.sh up
