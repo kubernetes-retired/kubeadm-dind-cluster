@@ -34,11 +34,7 @@ function snapshot::prepare {
     # FIXME: when using k8s 1.6 kube-dns pods stay in 'Terminating' state
     # Possibly related: https://github.com/kubernetes/kubernetes/issues/42685
 
-    if [[ -n `kubectl get deployment -n kube-system coredns` ]]; then
-      DNS_SERVICE=coredns
-    else
-      DNS_SERVICE=kube-dns
-    fi
+    DNS_SERVICE=`kubectl get deployment -n kube-system -l k8s-app=kube-dns -o name | cut -d / -f 2`
     snapshot::retry kubectl scale deployment --replicas=0 -n kube-system ${DNS_SERVICE}
     snapshot::retry kubectl scale deployment --replicas=0 -n kube-system kubernetes-dashboard
     local n=60
