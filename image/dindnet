@@ -17,131 +17,69 @@ set -o errexit
 set -o nounset
 set -o pipefail
 set -o errtrace
+set -x
 
-
-first_time=true
+first_time=false
 
 function get_ipv4_info {
   local from_intf=$1
   IPV4_CIDR=$(ip addr show $from_intf | grep -w inet | awk '{ print $2; }')
   IPV4="$(echo ${IPV4_CIDR} | sed 's,/.*,,')"
-  DEFAULT_GW="$(ip route | grep default | cut -f 3 -d" ")"
 }
 
 function get_ipv6_info {
   local from_intf=$1
   IPV6_CIDR="$(ip addr show $from_intf | grep -w inet6 | grep -i global | head -1 | awk '{ print $2; }')"
   IPV6="$(echo ${IPV6_CIDR} | sed 's,/.*,,')"
-  DEFAULT_GW="$(ip -6 route | grep default | cut -f 3 -d" ")"
 }
 
 function dind::setup-bridge {
   if [[ ! -z "$(ip addr show dind0 2>/dev/null)" ]]; then
-    if [[ "${IP_MODE}" = "ipv6" ]]; then
-      get_ipv6_info dind0
-    else
-      get_ipv4_info dind0
-    fi
-    first_time=false
     return  # Bridge is already set up
   fi
 
-  get_ipv4_info eth0
-
-  # create dind0 bridge and attach it to the veth interface eth0
+  first_time=true
   brctl addbr dind0
-  brctl addif dind0 eth0
-  ip link set dind0 up
-
-  # Note: default route will be removed, when delete IPv4 address
-  ip addr del ${IPV4_CIDR} dev eth0
-  ip addr add ${IPV4_CIDR} dev dind0
-  ip route add default via ${DEFAULT_GW} dev dind0
   if [[ "${IP_MODE}" = "ipv6" ]]; then
-    get_ipv6_info eth0
-    ip addr del ${IPV6_CIDR} dev eth0
-    ip addr add ${IPV6_CIDR} dev dind0
-    if [[ ! -z "${DEFAULT_GW}" ]]; then
-      # Must remove old route first (not deleted, when delete IP off of eth0, like with V4)
-      ip -6 route del default via ${DEFAULT_GW} dev eth0
-      ip -6 route add default via ${DEFAULT_GW} dev dind0
-    fi
+    ip -6 addr add "${POD_NET_PREFIX}::1/${POD_NET_SIZE}" dev dind0
     ip -6 route add ${DNS64_PREFIX_CIDR} via ${LOCAL_NAT64_SERVER}
+  else
+    ip addr add "${POD_NET_PREFIX}.1/${POD_NET_SIZE}" dev dind0
   fi
-  echo "Bridge dind0 set up and IPs/routes adjusted."
+  ip link set dind0 up
 }
 
 function dind::setup-config-file {
   if [[ "${IP_MODE}" = "ipv6" ]]; then
-    INSTANCE=`hostname | cut -d"-" -f 3`
-    if [[ "${INSTANCE}" = "" ]]; then
-      INSTANCE="10"
-    fi
-    echo "Instance: ${INSTANCE}"
-
-    # FUTURE: Handle dual-stack mode
-  
-    NETWORK="$(echo $DEFAULT_GW | sed 's/[:][^:]*$/:/')"
-    NETWORK_SIZE="$(echo ${IPV6_CIDR} | sed 's,.*/,,')"
-    # Will use /80 for pod network
-    HOST_MIN="${POD_NET_PREFIX}:${INSTANCE}::1"
-    HOST_MAX="${POD_NET_PREFIX}:${INSTANCE}:ffff:ffff:ffff"
+    NETWORK="${POD_NET_PREFIX}::"
+    DEFAULT_GW="${POD_NET_PREFIX}::1"
     DEFAULT_ROUTE="::/0"
   else
-    # compute a network for the containers to live in
-    # by adding CNI_BRIDGE_NETWORK_OFFSET to the current IP and cutting off
-    # non-network bits according to CNI_BRIDGE_NETWORK_SIZE
-    CNI_BRIDGE_NETWORK_SIZE="${CNI_BRIDGE_NETWORK_SIZE:-24}"
-    NETWORK="$(ip route | grep dind0 | grep -v default | sed 's,/.*,,')"
-    NETWORK_SIZE="$(echo ${IPV4_CIDR} | sed 's,.*/,,')"
-  
-    WILDCARD=$(ipcalc ${IPV4_CIDR} | grep Wildcard | awk '{print $2;}')
-    IFS=. read -r i1 i2 i3 i4 <<< ${IPV4}
-    IFS=. read -r n1 n2 n3 n4 <<< ${NETWORK}
-    IFS=. read -r o1 o2 o3 o4 <<< ${CNI_BRIDGE_NETWORK_OFFSET}
-    IFS=. read -r w1 w2 w3 w4 <<< ${WILDCARD}
-  
-    IP_PLUS_OFFSET=$(printf "%d.%d.%d.%d\n" \
-                            "$(( n1 + ((i1 - n1 + o1) & w1) ))" \
-                            "$(( n2 + ((i2 - n2 + o2) & w2) ))" \
-                            "$(( n3 + ((i3 - n3 + o3) & w3) ))" \
-                            "$(( n4 + ((i4 - n4 + o4) & w4) ))")
-  
-    HOST_MIN=$(ipcalc ${IP_PLUS_OFFSET}/${CNI_BRIDGE_NETWORK_SIZE} | grep HostMin | awk '{print $2;}')
-    HOST_MAX=$(ipcalc ${IP_PLUS_OFFSET}/${CNI_BRIDGE_NETWORK_SIZE} | grep HostMax | awk '{print $2;}')
+    NETWORK="${POD_NET_PREFIX}.0"
+    DEFAULT_GW="${POD_NET_PREFIX}.1"
     DEFAULT_ROUTE="0.0.0.0/0"
   fi
-  echo "Using ${HOST_MIN} .. ${HOST_MAX} for docker containers"
+  echo "Subnet ${NETWORK}/${POD_NET_SIZE}"
   CONFIG_FILE="/etc/cni/net.d/cni.conf"
-  # XXX: hairpin mode for CNI bridge breaks Virtlet networking,
-  # to be investigated & fixed.
-  # For now only enabling it for IPv6.
-  cat >${CONFIG_FILE} <<CFG_PREFIX_EOF
+  # NOTE: hairpin mode for CNI bridge breaks Virtlet networking,
+  # to be investigated & fixed. For now, default is false for IPv4
+  # and true for IPv6, unless overridden.
+  cat >${CONFIG_FILE} <<CFG_EOF
 {
     "cniVersion": "0.3.0",
     "name": "dindnet",
     "type": "bridge",
     "bridge": "dind0",
+    "isDefaultGateway": true,
+    "hairpinMode": ${USE_HAIRPIN},
+    "ipMasq": true,
     "ipam": {
         "type": "host-local",
-        "subnet": "${NETWORK}/${NETWORK_SIZE}",
-        "rangeStart": "${HOST_MIN}",
-        "rangeEnd": "${HOST_MAX}",
-        "gateway": "${DEFAULT_GW}",
-        "routes": [
-CFG_PREFIX_EOF
-  if [[ "${IP_MODE}" = "ipv6" ]]; then
-      HAIRPIN=',"hairpinMode": true'
-      cat >>${CONFIG_FILE} <<CFG_IPV6_EOF
-            { "dst": "${DNS64_PREFIX_CIDR}", "gw": "${LOCAL_NAT64_SERVER}"},
-CFG_IPV6_EOF
-  fi
-  cat >>${CONFIG_FILE} <<CFG_SUFFIX_EOF
-            { "dst": "${DEFAULT_ROUTE}" }
-        ]
-    }${HAIRPIN:-}
+        "subnet": "${NETWORK}/${POD_NET_SIZE}",
+        "gateway": "${DEFAULT_GW}"
+    }
 }
-CFG_SUFFIX_EOF
+CFG_EOF
   echo "Config file created: ${CONFIG_FILE}"
 }
 
@@ -159,12 +97,14 @@ EOF
 
 
 # ******************** START ********************
-if [[ "${CNI_BRIDGE_NETWORK_OFFSET:-}" ]]; then
+get_ipv4_info eth0
+if [[ "${IP_MODE}" = "ipv6" ]]; then
+  get_ipv6_info eth0
+fi
+if [[ ! -z "${POD_NET_PREFIX:-}" && ${POD_NET_SIZE:0} -ne 0 ]]; then
   dind::setup-bridge
   dind::setup-config-file
   dind::make-kubelet-extra-dns-args
-else
-  get_ipv4_info eth0
 fi
 
 if [[ "${IP_MODE}" = "ipv6" ]]; then
@@ -187,20 +127,19 @@ else
   if [[ "$first_time" = true ]]; then
     # make docker's kube-dns friendly
     old_ns="$(awk '/^nameserver/ {print $2; exit}' /etc/resolv.conf)"
-    if [[ ${old_ns} ]]; then
-      # sed -i doesn't work here because of docker's handling of /etc/resolv.conf
-      sed "s/^nameserver.*/nameserver ${IPV4}/" /etc/resolv.conf >/etc/resolv.conf.updated
-      cp /etc/resolv.conf /etc/resolv.conf.orig
-      cat /etc/resolv.conf.updated >/etc/resolv.conf
-    else
+    if [[ -z ${old_ns} ]]; then
       echo "WARNING: couldn't get nameserver" >&2
       exit 1
     fi
+    # sed -i doesn't work here because of docker's handling of /etc/resolv.conf
+    sed "s/^nameserver.*/nameserver ${IPV4}/" /etc/resolv.conf >/etc/resolv.conf.updated
+    cp /etc/resolv.conf /etc/resolv.conf.orig
+    cat /etc/resolv.conf.updated >/etc/resolv.conf
+    echo "Setup completed for IPv4"
   else
     # Already switched from built-in DNS server, so use original value for socat 
     old_ns="127.0.0.11"
   fi
-  echo "Setup completed for IPv4"
   while true; do
     socat udp4-recvfrom:53,reuseaddr,fork,bind=${IPV4} UDP:${old_ns}:53 || true
     echo "WARNING: restarting socat" >&2

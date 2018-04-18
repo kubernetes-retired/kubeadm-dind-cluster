@@ -59,11 +59,6 @@ if [[ ! ${EMBEDDED_CONFIG:-} ]]; then
 fi
 
 CNI_PLUGIN="${CNI_PLUGIN:-bridge}"
-DEFAULT_POD_NETWORK_CIDR="10.244.0.0/16"
-if [[ ${CNI_PLUGIN} = "calico" || ${CNI_PLUGIN} = "calico-kdd" ]]; then
-  DEFAULT_POD_NETWORK_CIDR="192.168.0.0/16"
-fi
-POD_NETWORK_CIDR="${POD_NETWORK_CIDR:-${DEFAULT_POD_NETWORK_CIDR}}"
 ETCD_HOST="${ETCD_HOST:-127.0.0.1}"
 GCE_HOSTED="${GCE_HOSTED:-false}"
 if [[ ${IP_MODE} = "ipv6" ]]; then
@@ -79,13 +74,8 @@ if [[ ${IP_MODE} = "ipv6" ]]; then
     DNS64_PREFIX_SIZE="${DNS64_PREFIX_SIZE:-96}"
     DNS64_PREFIX_CIDR="${DNS64_PREFIX}/${DNS64_PREFIX_SIZE}"
     dns_server="${dind_ip_base}100"
-    # Create a /64 prefix so that created /80 pod net is inside the /64 DinD network
-    POD_NET_PREFIX="$(echo $DIND_SUBNET | sed 's/::$//')"
-    num_colons="$(grep -o ":" <<< "${POD_NET_PREFIX}" | wc -l)"
-    while [ $num_colons -lt 3 ]; do
-	POD_NET_PREFIX+=":0"
-	let num_colons+=1
-    done
+    DEFAULT_POD_NETWORK_CIDR="fd00:10:20::/72"
+    USE_HAIRPIN="${USE_HAIRPIN:-true}"  # defaults on
 else
     DIND_SUBNET="${DIND_SUBNET:-10.192.0.0}"
     dind_ip_base="$(echo "${DIND_SUBNET}" | sed 's/0$//')"
@@ -93,6 +83,11 @@ else
     SERVICE_CIDR="${SERVICE_CIDR:-10.96.0.0/12}"
     DIND_SUBNET_SIZE="${DIND_SUBNET_SIZE:-16}"
     dns_server="${REMOTE_DNS64_V4SERVER:-8.8.8.8}"
+    DEFAULT_POD_NETWORK_CIDR="10.244.0.0/16"
+    USE_HAIRPIN="${USE_HAIRPIN:-false}"  # Defaults off for V4, as issue with Virtlet networking
+    if [[ ${CNI_PLUGIN} = "calico" || ${CNI_PLUGIN} = "calico-kdd" ]]; then
+	DEFAULT_POD_NETWORK_CIDR="192.168.0.0/16"
+    fi
 fi
 dns_prefix="$(echo ${SERVICE_CIDR} | sed 's,/.*,,')"
 if [[ ${IP_MODE} != "ipv6" ]]; then
@@ -102,6 +97,38 @@ else
     DNS_SVC_IP="${dns_prefix}a"
 fi
 kube_master_ip="${dind_ip_base}2"
+
+POD_NETWORK_CIDR="${POD_NETWORK_CIDR:-${DEFAULT_POD_NETWORK_CIDR}}"
+if [[ ${IP_MODE} = "ipv6" ]]; then
+    # For IPv6 will extract the network part and size from pod cluster CIDR.
+    # The size will be increased by eight, as the pod network will be split
+    # into subnets for each node. The network part will be converted into a
+    # prefix that will get the node ID appended, for each node. In some cases
+    # this means padding the prefix. In other cases, the prefix must be
+    # trimmed, so that when the node ID is added, it forms a correct prefix.
+    POD_NET_PREFIX="$(echo ${POD_NETWORK_CIDR} | sed 's,::/.*,:,')"
+    cluster_size="$(echo ${POD_NETWORK_CIDR} | sed 's,.*::/,,')"
+    POD_NET_SIZE=$((${cluster_size}+8))
+
+    num_colons="$(grep -o ":" <<< "${POD_NET_PREFIX}" | wc -l)"
+    need_zero_pads=$((${cluster_size}/16))
+
+    # Will be replacing lowest byte with node ID, so pull off last byte and colon
+    if [[ ${num_colons} -gt ${need_zero_pads} ]]; then
+	POD_NET_PREFIX=${POD_NET_PREFIX::-3}
+    fi
+    # Add in zeros to pad 16 bits at a time, up to the padding needed, which is
+    # need_zero_pads - num_colons.
+    while [ ${num_colons} -lt ${need_zero_pads} ]; do
+	POD_NET_PREFIX+="0:"
+        num_colons+=1
+    done
+else  # IPv4
+    # For IPv4, will assume user specifies /16 CIDR and will use a /24 subnet
+    # on each node.
+    POD_NET_PREFIX="$(echo ${POD_NETWORK_CIDR} | sed 's/^\([0-9]*\.[0-9]*\.\).*/\1/')"
+    POD_NET_SIZE=24
+fi
 
 DIND_IMAGE="${DIND_IMAGE:-}"
 BUILD_KUBEADM="${BUILD_KUBEADM:-}"
@@ -496,7 +523,7 @@ BIND9_EOF
 	    fi
 	    docker run -d --name bind9 --hostname bind9 --net kubeadm-dind-net --label mirantis.kubeadm_dind_cluster \
 		   --sysctl net.ipv6.conf.all.disable_ipv6=0 --sysctl net.ipv6.conf.all.forwarding=1 \
-		   --privileged=true --ip6 $dns_server --dns $dns_server \
+		   --privileged=true --ip6 ${dns_server} --dns ${dns_server} \
 		   -v ${bind9_path}/conf/named.conf:/etc/bind/named.conf \
 		   resystit/bind9:latest >/dev/null
 	    ipv4_addr="$(docker exec bind9 ip addr list eth0 | grep "inet" | awk '$1 == "inet" {print $2}')"
@@ -537,7 +564,7 @@ function dind::run {
   fi
   local container_name="${1:-}"
   local ip="${2:-}"
-  local netshift="${3:-}"
+  local node_id="${3:-}"
   local portforward="${4:-}"
   if [[ $# -gt 4 ]]; then
     shift 4
@@ -557,8 +584,22 @@ function dind::run {
       opts+=(--dns ${dns_server})
       args+=("systemd.setenv=DNS64_PREFIX_CIDR=${DNS64_PREFIX_CIDR}")
       args+=("systemd.setenv=LOCAL_NAT64_SERVER=${LOCAL_NAT64_SERVER}")
-      args+=("systemd.setenv=POD_NET_PREFIX=${POD_NET_PREFIX}")
+
+      # For prefix, if node ID will be in the upper byte, push it over
+      if [[ $((${POD_NET_SIZE} % 16)) -ne 0 ]]; then
+	  node_id=$(printf "%02x00\n" "${node_id}")
+      else
+	  if [[ "${POD_NET_PREFIX: -1}" = ":" ]]; then
+	      node_id=$(printf "%x\n" "${node_id}")
+	  else
+	      node_id=$(printf "%02x\n" "${node_id}")  # In lower byte, so ensure two chars
+	  fi
+      fi
   fi
+
+  args+=("systemd.setenv=POD_NET_PREFIX=${POD_NET_PREFIX}${node_id}")
+  args+=("systemd.setenv=POD_NET_SIZE=${POD_NET_SIZE}")
+  args+=("systemd.setenv=USE_HAIRPIN=${USE_HAIRPIN}")
   args+=("systemd.setenv=DNS_SVC_IP=${DNS_SVC_IP}")
   args+=("systemd.setenv=DNS_SERVICE=${DNS_SERVICE}")
   if [[ ! "${container_name}" ]]; then
@@ -569,15 +610,11 @@ function dind::run {
   # remove any previously created containers with the same name
   docker rm -vf "${container_name}" >&/dev/null || true
 
-  if [[ "$portforward" ]]; then
-    IFS=';' read -ra array <<< "$portforward"
+  if [[ "${portforward}" ]]; then
+    IFS=';' read -ra array <<< "${portforward}"
     for element in "${array[@]}"; do
-      opts+=(-p "$element")
+      opts+=(-p "${element}")
     done
-  fi
-
-  if [[ ${CNI_PLUGIN} = bridge && ${netshift} ]]; then
-    args+=("systemd.setenv=CNI_BRIDGE_NETWORK_OFFSET=0.0.${netshift}.0")
   fi
 
   opts+=(${sys_volume_args[@]+"${sys_volume_args[@]}"})
@@ -852,6 +889,41 @@ function dind::kill-failed-pods {
   done
 }
 
+function dind::create-static-routes-for-bridge {
+  echo "Creating static routes for bridge plugin"
+  for ((i=0; i <= NUM_NODES; i++)); do
+    if [[ ${i} -eq 0 ]]; then
+      node="kube-master"
+    else
+      node="kube-node-${i}"
+    fi
+    for ((j=0; j <= NUM_NODES; j++)); do
+      if [[ ${i} -eq ${j} ]]; then
+	continue
+      fi
+      if [[ ${j} -eq 0 ]]; then
+        dest_node="kube-master"
+      else
+        dest_node="kube-node-${j}"
+      fi
+      id=$((${j}+1))
+      if [[ ${IP_MODE} = "ipv4" ]]; then
+	# Assuming pod subnets will all be /24
+        dest="${POD_NET_PREFIX}${id}.0/24"
+        gw=`docker exec ${dest_node} ifconfig eth0 | grep "inet addr" | cut -f 2 -d: | cut -f 1 -d' '`
+      else
+	instance=$(printf "%02x" ${id})
+	if [[ $((${POD_NET_SIZE} % 16)) -ne 0 ]]; then
+	  instance+="00" # Move node ID to upper byte
+	fi
+	dest="${POD_NET_PREFIX}${instance}::/${POD_NET_SIZE}"
+        gw=`docker exec ${dest_node} ifconfig eth0 | grep "inet6" | grep -i global | awk '{ print $3 }' | cut -f 1 -d/`
+      fi
+      docker exec ${node} ip route add ${dest} via ${gw}
+    done
+  done
+}
+
 function dind::wait-for-ready {
   dind::step "Waiting for kube-proxy and the nodes"
   local proxy_ready
@@ -932,7 +1004,7 @@ function dind::up {
   for ((n=1; n <= NUM_NODES; n++)); do
     (
       dind::step "Joining node:" ${n}
-      container_id="${node_containers[n-1]}"
+      container_id="${node_containers[${n}-1]}"
       if ! dind::join ${container_id} ${kubeadm_join_flags}; then
         echo >&2 "*** Failed to start node container ${n}"
         exit 1
@@ -953,6 +1025,7 @@ function dind::up {
   fi
   case "${CNI_PLUGIN}" in
     bridge)
+      dind::create-static-routes-for-bridge
       ;;
     flannel)
       # without --validate=false this will fail on older k8s versions
@@ -1053,6 +1126,9 @@ function dind::restore {
   for pid in ${pids[*]}; do
     wait ${pid}
   done
+  if [[ "${CNI_PLUGIN}" = "bridge" ]]; then
+    dind::create-static-routes-for-bridge
+  fi
   dind::fix-mounts
   # Recheck kubectl config. It's possible that the cluster was started
   # on this docker from different host
