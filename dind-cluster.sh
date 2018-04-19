@@ -123,7 +123,7 @@ if [[ ${IP_MODE} = "ipv6" ]]; then
 	POD_NET_PREFIX+="0:"
         num_colons+=1
     done
-else  # IPv4
+elif [[ ${CNI_PLUGIN} = "bridge" ]]; then # IPv4, bridge
     # For IPv4, will assume user specifies /16 CIDR and will use a /24 subnet
     # on each node.
     POD_NET_PREFIX="$(echo ${POD_NETWORK_CIDR} | sed 's/^\([0-9]*\.[0-9]*\.\).*/\1/')"
