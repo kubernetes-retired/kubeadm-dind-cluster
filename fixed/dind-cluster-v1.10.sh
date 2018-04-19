@@ -123,7 +123,7 @@ if [[ ${IP_MODE} = "ipv6" ]]; then
 	POD_NET_PREFIX+="0:"
         num_colons+=1
     done
-else  # IPv4
+elif [[ ${CNI_PLUGIN} = "bridge" ]]; then # IPv4, bridge
     # For IPv4, will assume user specifies /16 CIDR and will use a /24 subnet
     # on each node.
     POD_NET_PREFIX="$(echo ${POD_NETWORK_CIDR} | sed 's/^\([0-9]*\.[0-9]*\.\).*/\1/')"
@@ -958,7 +958,7 @@ function dind::wait-for-ready {
     sleep 1
   done
 
-  dind::step "Bringing up kube-dns and kubernetes-dashboard"
+  dind::step "Bringing up ${DNS_SERVICE} and kubernetes-dashboard"
   # on Travis 'scale' sometimes fails with 'error: Scaling the resource failed with: etcdserver: request timed out; Current resource version 442' here
   dind::retry "${kubectl}" scale deployment --replicas=1 -n kube-system ${DNS_SERVICE}
   dind::retry "${kubectl}" scale deployment --replicas=1 -n kube-system kubernetes-dashboard
@@ -966,7 +966,7 @@ function dind::wait-for-ready {
   ntries=200
   while ! dind::component-ready k8s-app=kube-dns || ! dind::component-ready app=kubernetes-dashboard; do
     if ((--ntries == 0)); then
-      echo "Error bringing up kube-dns and kubernetes-dashboard" >&2
+      echo "Error bringing up ${DNS_SERVICE} and kubernetes-dashboard" >&2
       exit 1
     fi
     echo -n "." >&2
