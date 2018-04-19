@@ -101,7 +101,7 @@ get_ipv4_info eth0
 if [[ "${IP_MODE}" = "ipv6" ]]; then
   get_ipv6_info eth0
 fi
-if [[ ! -z "${POD_NET_PREFIX:-}" && ${POD_NET_SIZE:0} -ne 0 ]]; then
+if [[ ! -z "${POD_NET_PREFIX:-}" && ${POD_NET_SIZE:-0} -ne 0 ]]; then
   dind::setup-bridge
   dind::setup-config-file
   dind::make-kubelet-extra-dns-args

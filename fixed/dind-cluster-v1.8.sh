@@ -128,6 +128,9 @@ elif [[ ${CNI_PLUGIN} = "bridge" ]]; then # IPv4, bridge
     # on each node.
     POD_NET_PREFIX="$(echo ${POD_NETWORK_CIDR} | sed 's/^\([0-9]*\.[0-9]*\.\).*/\1/')"
     POD_NET_SIZE=24
+else
+    POD_NET_PREFIX=
+    POD_NET_SIZE=
 fi
 
 DIND_IMAGE="${DIND_IMAGE:-}"
@@ -597,7 +600,9 @@ function dind::run {
       fi
   fi
 
-  args+=("systemd.setenv=POD_NET_PREFIX=${POD_NET_PREFIX}${node_id}")
+  if [[ ${POD_NET_PREFIX} ]]; then
+    args+=("systemd.setenv=POD_NET_PREFIX=${POD_NET_PREFIX}${node_id}")
+  fi
   args+=("systemd.setenv=POD_NET_SIZE=${POD_NET_SIZE}")
   args+=("systemd.setenv=USE_HAIRPIN=${USE_HAIRPIN}")
   args+=("systemd.setenv=DNS_SVC_IP=${DNS_SVC_IP}")
