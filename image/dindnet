@@ -19,8 +19,6 @@ set -o pipefail
 set -o errtrace
 set -x
 
-first_time=false
-
 function get_ipv4_info {
   local from_intf=$1
   IPV4_CIDR=$(ip addr show $from_intf | grep -w inet | awk '{ print $2; }')
@@ -38,7 +36,6 @@ function dind::setup-bridge {
     return  # Bridge is already set up
   fi
 
-  first_time=true
   brctl addbr dind0
   if [[ "${IP_MODE}" = "ipv6" ]]; then
     ip -6 addr add "${POD_NET_PREFIX}::1/${POD_NET_SIZE}" dev dind0
@@ -108,7 +105,9 @@ if [[ ! -z "${POD_NET_PREFIX:-}" && ${POD_NET_SIZE:-0} -ne 0 ]]; then
 fi
 
 if [[ "${IP_MODE}" = "ipv6" ]]; then
-  if [[ "$first_time" = true ]]; then
+  if ! grep -q '#fixed#' /etc/resolv.conf; then
+    # TODO: check if this trickery is still needed, esp. for the hosts file
+    # (instead of using sed -i)  
     sed -e "s/^${IPV4}/${IPV6}/g" /etc/hosts > /etc/hosts.updated
     cp /etc/hosts /etc/hosts.orig
     cat /etc/hosts.updated >/etc/hosts
@@ -116,6 +115,7 @@ if [[ "${IP_MODE}" = "ipv6" ]]; then
     sed "s/^nameserver.*127\.0\.0\.11/# Removed 127.0.0.11/" /etc/resolv.conf >/etc/resolv.conf.updated
     cp /etc/resolv.conf /etc/resolv.conf.orig
     cat /etc/resolv.conf.updated >/etc/resolv.conf
+    (echo; echo '#fixed#') >>/etc/resolv.conf
     echo "Host and DNS info updated"
   fi
   echo "Setup completed for IPv6"
@@ -124,7 +124,7 @@ if [[ "${IP_MODE}" = "ipv6" ]]; then
       sleep 1  # Keep service running, so actions not attempted multiple times
   done
 else
-  if [[ "$first_time" = true ]]; then
+  if ! grep -q '#fixed#' /etc/resolv.conf; then
     # make docker's kube-dns friendly
     old_ns="$(awk '/^nameserver/ {print $2; exit}' /etc/resolv.conf)"
     if [[ -z ${old_ns} ]]; then
@@ -135,6 +135,7 @@ else
     sed "s/^nameserver.*/nameserver ${IPV4}/" /etc/resolv.conf >/etc/resolv.conf.updated
     cp /etc/resolv.conf /etc/resolv.conf.orig
     cat /etc/resolv.conf.updated >/etc/resolv.conf
+    (echo; echo '#fixed#') >>/etc/resolv.conf
     echo "Setup completed for IPv4"
   else
     # Already switched from built-in DNS server, so use original value for socat 
