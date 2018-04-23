@@ -96,51 +96,6 @@ function test-cluster-src {
   )
 }
 
-function test-case-1.7 {
-  (
-    export KUBEADM_URL="${KUBEADM_URL_1_7}"
-    export KUBEADM_SHA1="${KUBEADM_SHA1_1_7}"
-    export HYPERKUBE_URL="${HYPERKUBE_URL_1_7}"
-    export HYPERKUBE_SHA1="${HYPERKUBE_SHA1_1_7}"
-    if [[ ${NOBUILD} ]]; then
-        export DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.7
-        docker pull "${DIND_IMAGE}"
-    else
-        export LOCAL_KUBECTL_VERSION=v1.7
-    fi
-    test-cluster
-  )
-}
-
-function test-case-1.7-flannel {
-  (
-    export CNI_PLUGIN=flannel
-    test-case-1.7
-  )
-}
-
-function test-case-1.7-calico {
-  (
-    export CNI_PLUGIN=calico
-    test-case-1.7
-  )
-}
-
-function test-case-1.7-calico-kdd {
-  (
-    export CNI_PLUGIN=calico-kdd
-    POD_NETWORK_CIDR="192.168.0.0/16"
-    test-case-1.7
-  )
-}
-
-function test-case-1.7-weave {
-  (
-    export CNI_PLUGIN=weave
-    test-case-1.7
-  )
-}
-
 function test-case-1.8 {
   (
     export KUBEADM_URL="${KUBEADM_URL_1_8}"
@@ -326,10 +281,6 @@ function test-case-src-master-coredns {
 
 
 if [[ ! ${TEST_CASE} ]]; then
-  test-case-1.7-flannel
-  test-case-1.7-calico
-  test-case-1.7-calico-kdd
-  test-case-1.7-weave
   test-case-1.8
   test-case-1.8-flannel
   test-case-1.8-calico

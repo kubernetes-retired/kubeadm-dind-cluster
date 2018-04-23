@@ -18,11 +18,13 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 
-VERSIONS=(1.7.15 1.8.10 1.9.6 1.10.0)
+VERSIONS=(1.8.11 1.9.7 1.10.1)
 
 first=1
 for version in ${VERSIONS[@]}; do
-  base_url="https://storage.googleapis.com/kubernetes-release/release/v${version}/bin/linux/amd64"
+  base_url="https://storage.googleapis.com/kubernetes-release/release/v${version}/bin"
+  linux_url="${base_url}/linux/amd64"
+  darwin_url="${base_url}/darwin/amd64"
   if [[ ${first} ]]; then
     first=
   else
@@ -30,10 +32,12 @@ for version in ${VERSIONS[@]}; do
   fi
   echo "# Version ${version}"
   suffix="$(tr .- _ <<<"${version}" | sed 's/^\([0-9]*_[0-9]*\).*/\1/')"
-  if [[ ! (${version} =~ ^1\.4\.) ]]; then
-      echo "KUBEADM_URL_${suffix}='${base_url}/kubeadm'"
-      echo "KUBEADM_SHA1_${suffix}=$(curl -sSL "${base_url}/kubeadm.sha1")"
-  fi
-  echo "HYPERKUBE_URL_${suffix}='${base_url}/hyperkube'"
-  echo "HYPERKUBE_SHA1_${suffix}=$(curl -sSL "${base_url}/hyperkube.sha1")"
+  echo "KUBEADM_URL_${suffix}='${linux_url}/kubeadm'"
+  echo "KUBEADM_SHA1_${suffix}=$(curl -sSL "${linux_url}/kubeadm.sha1")"
+  echo "HYPERKUBE_URL_${suffix}='${linux_url}/hyperkube'"
+  echo "HYPERKUBE_SHA1_${suffix}=$(curl -sSL "${linux_url}/hyperkube.sha1")"
+  echo "KUBECTL_URL_${suffix}='${linux_url}/kubectl'"
+  echo "KUBECTL_SHA1_${suffix}=$(curl -sSL "${linux_url}/kubectl.sha1")"
+  echo "KUBECTL_DARWIN_URL_${suffix}='${darwin_url}/kubectl'"
+  echo "KUBECTL_DARWIN_SHA1_${suffix}=$(curl -sSL "${darwin_url}/kubectl.sha1")"
 done

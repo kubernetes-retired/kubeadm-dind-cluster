@@ -19,10 +19,9 @@ Docker 1.12+ is recommended. If you're not using one of the
 preconfigured scripts (see below) and not building from source, it's
 better to have `kubectl` executable in your path matching the
 version of k8s binaries you're using (i.e. for example better don't
-use `kubectl` 1.8.x with `hyperkube` 1.7.x).
+use `kubectl` 1.10.x with `hyperkube` 1.9.x).
 
-`kubeadm-dind-cluster` supports k8s versions 1.7.x (tested with 1.7.12),
-1.8.x (tested with 1.8.6) and 1.9.x (tested with 1.9.1).
+`kubeadm-dind-cluster` supports k8s versions 1.8.x, 1.9.x and 1.10.x.
 
 **As of now, running `kubeadm-dind-cluster` on Docker with `btrfs`
 storage driver is not supported.**
@@ -49,7 +48,7 @@ work.
 
 ## Using preconfigured scripts
 `kubeadm-dind-cluster` currently provides preconfigured scripts for
-Kubernetes 1.7, 1.8 and 1.9. This may be convenient for use with
+Kubernetes 1.8, 1.9 and 1.10. This may be convenient for use with
 projects that extend or use Kubernetes. For example, you can start
 Kubernetes 1.8 like this:
 
@@ -81,7 +80,7 @@ $ # remove DIND containers and volumes
 $ ./dind-cluster-v1.8.sh clean
 ```
 
-Replace 1.8 with 1.7 or 1.9 to use other Kubernetes versions.
+Replace 1.8 with 1.9 or 1.10 to use other Kubernetes versions.
 **Important note:** you need to do `./dind-cluster....sh clean` when
 you switch between Kubernetes versions (but no need to do this between
 rebuilds if you use `BUILD_HYPERKUBE=y` like described below).

@@ -29,11 +29,9 @@ binary_dir="/k8s"
 # FIXME: don't hardcode
 platform="linux/amd64"
 
-# These files can be either .json or .yaml depending on kubeadm version
-# (TODO: use newer kubeadm)
-apiserver_static_pod="/etc/kubernetes/manifests/kube-apiserver"
-scheduler_static_pod="/etc/kubernetes/manifests/kube-scheduler"
-controller_manager_static_pod="/etc/kubernetes/manifests/kube-controller-manager"
+apiserver_static_pod="/etc/kubernetes/manifests/kube-apiserver.yaml"
+scheduler_static_pod="/etc/kubernetes/manifests/kube-scheduler.yaml"
+controller_manager_static_pod="/etc/kubernetes/manifests/kube-controller-manager.yaml"
 
 # jq filters follow.
 # This filter updates static pod definitions to mount /hyperkube from hosts:
@@ -196,32 +194,19 @@ function dind::yq {
   rm -f "${tmp}"
 }
 
-function dind::jq {
-  local filter="$1"
-  local path="$2"
-  jq "${filter}" "${path}" | dind::replace "${path}"
-}
-
 function dind::join-filters {
   local IFS="|"
   echo "$*"
 }
 
 function dind::frob-file {
-  local path_base="$1"
+  local path="$1"
   shift
   local filter="$(dind::join-filters "$@")"
   local status=0
-  if [[ -f ${path_base}.json ]]; then
-    dind::jq "${filter}" "${path_base}.json" || status=$?
-  elif [[ -f ${path_base}.yaml ]]; then
-    dind::yq "${filter}" "${path_base}.yaml" || status=$?
-  else
-    echo "${path_base}.json or ${path_base}.yaml not found" >&2
-    return 1
-  fi
+  dind::yq "${filter}" "${path}" || status=$?
   if [[ ${status} -ne 0 ]]; then
-    echo "Failed to frob ${path_base}.json or ${path_base}.yaml" >&2
+    echo "Failed to frob ${path}" >&2
     return 1
   fi
 }
@@ -292,11 +277,7 @@ function dind::frob-proxy {
 }
 
 function dind::frob-apiserver {
-  if ! /k8s/hyperkube kubelet --version | grep -q 'v1\.7\.'; then
-    local -a filters=("${mount_binaries}" "${apiserver_insecure_bind_address}" "${apiserver_insecure_bind_port}" "${apiserver_mount_propagation}")
-  else
-    local -a filters=("${mount_binaries}" "${apiserver_insecure_bind_address}" "${apiserver_insecure_bind_port}")
-  fi
+  local -a filters=("${mount_binaries}" "${apiserver_insecure_bind_address}" "${apiserver_insecure_bind_port}" "${apiserver_mount_propagation}")
   dind::frob-file "${apiserver_static_pod}" "${filters[@]}"
 }
 
@@ -335,16 +316,9 @@ function dind::frob-cluster {
   dind::frob-proxy
 }
 
-kubelet_dind_args=()
-
-function dind::maybe-use-bootstrap-kubeconfig {
-  # New behavior to be used after https://github.com/kubernetes/kubernetes/pull/49681
-  # Don't use --bootstrap-kubeconfig for k8s 1.7 though
-  if ! /k8s/hyperkube kubelet --help 2>&1 | grep -q -- --bootstrap-kubeconfig || /k8s/hyperkube kubelet --version | grep -q 'v1\.7\.'; then
-    return
-  fi
-  kubelet_dind_args+=(--bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf)
-}
+kubelet_dind_args=(--fail-swap-on=false
+                   --bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf
+                   --feature-gates=DynamicKubeletConfig=true,MountPropagation=true)
 
 function dind::fix-cgroups {
   # Workaround for https://github.com/kubernetes/kubernetes/issues/43704
@@ -357,37 +331,8 @@ function dind::fix-cgroups {
   kubelet_dind_args+=(--cgroups-per-qos=false --enforce-node-allocatable=)
 }
 
-function dind::maybe-enable-swap {
-  if ! /k8s/hyperkube kubelet --help 2>&1 | grep -q -- --fail-swap-on; then
-    return
-  fi
-  kubelet_dind_args+=("--fail-swap-on=false")
-}
-
-function dind::enable-feature-gates {
-  # Mount propagation was added in 1.8, don't use it in k8s
-  if ! /k8s/hyperkube kubelet --version | grep -q 'v1\.7\.'; then
-    kubelet_dind_args+=(--feature-gates=DynamicKubeletConfig=true,MountPropagation=true)
-  else
-    kubelet_dind_args+=(--feature-gates=DynamicKubeletConfig=true)
-  fi
-}
-
-function dind::maybe-use-require-kubeconfig {
-    # require-kubeconfig flag is obsolete starting with 1.8 and removed from 1.10
-    # Add it only for 1.7
-    if ! /k8s/hyperkube kubelet --version | grep -q 'v1\.7\.'; then
-        return
-    fi
-    kubelet_dind_args+=("--require-kubeconfig=true")
-}
-
 function dind::set-kubelet-dind-args {
-  dind::maybe-use-bootstrap-kubeconfig
   dind::fix-cgroups
-  dind::maybe-enable-swap
-  dind::enable-feature-gates
-  dind::maybe-use-require-kubeconfig
   if [[ ${#kubelet_dind_args[@]} -gt 0 ]]; then
     sed -i "s@KUBELET_DIND_ARGS=@KUBELET_DIND_ARGS=${kubelet_dind_args[*]}@" /lib/systemd/system/kubelet.service
   fi

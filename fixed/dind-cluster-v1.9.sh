@@ -384,25 +384,20 @@ function dind::ensure-downloaded-kubectl {
   local full_kubectl_version
 
   case "${LOCAL_KUBECTL_VERSION}" in
-    v1.7)
-      full_kubectl_version=v1.7.15
-      kubectl_sha1_linux=f4bd9f71af5cbd6c0a84ad50c07db3206bf04d13
-      kubectl_sha1_darwin=505e5561d3fbd18360037f47f587f6d7519ddf86
-      ;;
     v1.8)
-      full_kubectl_version=v1.8.10
-      kubectl_sha1_linux=1164e216945102901499d7bf839ed293beb714c2
-      kubectl_sha1_darwin=59c85373484ff70291f8bc706c4440fe8d96ce52
+      full_kubectl_version=v1.8.11
+      kubectl_sha1_linux=6a089bec1802611ad9f5120c486a6e0e00095279
+      kubectl_sha1_darwin=d0b4c54e65b66e106758a84cddb6a5528527b017
       ;;
     v1.9)
-      full_kubectl_version=v1.9.6
-      kubectl_sha1_linux=04d344ac9b2a6514f0d94c2df79073e42d6c1182
-      kubectl_sha1_darwin=eb9e2f7978a94c433a2d27432cfd8dd77fb5997e
+      full_kubectl_version=v1.9.7
+      kubectl_sha1_linux=7425dbf67007cee328b85da3bf5155d01d3939e2
+      kubectl_sha1_darwin=b9f6122fe29dd29fff01194cc00a40a5451581fd
       ;;
     v1.10)
-      full_kubectl_version=v1.10.0
-      kubectl_sha1_linux=7a17e4f1b7f084b49771467ed16859bc46508eae
-      kubectl_sha1_darwin=367ae1a818660f673212a65965ca9bfd2cdf109e
+      full_kubectl_version=v1.10.1
+      kubectl_sha1_linux=a5c8e589bed21ec471e8c582885a8c9972a84da1
+      kubectl_sha1_darwin=e869ab8298bd92056b23568343ebd4a6c84f9817
       ;;
     "")
       return 0
@@ -728,14 +723,6 @@ function dind::set-master-opts {
   fi
 }
 
-cached_k8s_version=
-function dind::k8s-version {
-  if [[ ! ${cached_k8s_version} ]]; then
-    cached_k8s_version="$("${kubectl}" version --short | grep 'Server Version' | sed 's/.*: v\|\.[0-9]*$//g')"
-  fi
-  echo "${cached_k8s_version}"
-}
-
 function dind::ensure-dashboard-clusterrolebinding {
   # 'create' may cause etcd timeout, yet create the clusterrolebinding.
   # So use 'apply' to actually create it
@@ -755,15 +742,6 @@ function dind::deploy-dashboard {
   dind::retry dind::ensure-dashboard-clusterrolebinding
 }
 
-function dind::at-least-kubeadm-1-8 {
-  # kubeadm 1.6 and below doesn't support 'version -o short' and will
-  # thus produce an empty string
-  local ver="$(docker exec kube-master kubeadm version -o short 2>/dev/null|sed 's/^\(v[0-9]*\.[0-9]*\).*$/\1/')"
-  if [[ ! ${ver} || ${ver} = v1.7 ]]; then
-    return 1
-  fi
-}
-
 function dind::init {
   local -a opts
   dind::set-master-opts
@@ -775,29 +753,28 @@ function dind::init {
   # FIXME: I tried using custom tokens with 'kubeadm ex token create' but join failed with:
   # 'failed to parse response as JWS object [square/go-jose: compact JWS format must have three parts]'
   # So we just pick the line from 'kubeadm init' output
-  if dind::at-least-kubeadm-1-8; then
-    # Using a template file in the image to build a kubeadm.conf file and to customize
-    # it based on CNI plugin, IP mode, and environment settings. User can add additional
-    # customizations to template and then rebuild the image used (build/build-local.sh).
-    local pod_subnet_disable="# "
-    # TODO: May want to specify each of the plugins that require --pod-network-cidr
-    if [[ ${CNI_PLUGIN} != "bridge" ]]; then
-      pod_subnet_disable=""
-    fi
-    local bind_address="0.0.0.0"
-    if [[ ${IP_MODE} = "ipv6" ]]; then
-      bind_address="::"
-    fi
-    dind::proxy kube-master
-    dind::custom-docker-opts kube-master
+  # Using a template file in the image to build a kubeadm.conf file and to customize
+  # it based on CNI plugin, IP mode, and environment settings. User can add additional
+  # customizations to template and then rebuild the image used (build/build-local.sh).
+  local pod_subnet_disable="# "
+  # TODO: May want to specify each of the plugins that require --pod-network-cidr
+  if [[ ${CNI_PLUGIN} != "bridge" ]]; then
+    pod_subnet_disable=""
+  fi
+  local bind_address="0.0.0.0"
+  if [[ ${IP_MODE} = "ipv6" ]]; then
+    bind_address="::"
+  fi
+  dind::proxy kube-master
+  dind::custom-docker-opts kube-master
 
-    # HACK: Indicating mode, so that wrapkubeadm will not set a cluster CIDR for kube-proxy
-    # in IPv6 (only) mode.
-    if [[ ${IP_MODE} = "ipv6" ]]; then
-      docker exec --privileged -i kube-master touch /v6-mode
-    fi
+  # HACK: Indicating mode, so that wrapkubeadm will not set a cluster CIDR for kube-proxy
+  # in IPv6 (only) mode.
+  if [[ ${IP_MODE} = "ipv6" ]]; then
+    docker exec --privileged -i kube-master touch /v6-mode
+  fi
 
-    docker exec --privileged -i kube-master bash <<EOF
+  docker exec --privileged -i kube-master bash <<EOF
 sed -e "s|{{ADV_ADDR}}|${kube_master_ip}|" \
     -e "s|{{POD_SUBNET_DISABLE}}|${pod_subnet_disable}|" \
     -e "s|{{POD_NETWORK_CIDR}}|${POD_NETWORK_CIDR}|" \
@@ -805,17 +782,17 @@ sed -e "s|{{ADV_ADDR}}|${kube_master_ip}|" \
     -e "s|{{BIND_ADDR}}|${bind_address}|" \
     /etc/kubeadm.conf.tmpl > /etc/kubeadm.conf
 EOF
-    if [[ ${DNS_SERVICE} == "coredns" ]]; then
-      docker exec -i kube-master /bin/sh -c "cat >>/etc/kubeadm.conf" <<EOF
+  if [[ ${DNS_SERVICE} == "coredns" ]]; then
+    docker exec -i kube-master /bin/sh -c "cat >>/etc/kubeadm.conf" <<EOF
 featureGates:
   CoreDNS: true 
 
 EOF
-    fi
-    init_args=(--config /etc/kubeadm.conf)
-  else
-    init_args=(--pod-network-cidr="${POD_NETWORK_CIDR}")
   fi
+  # TODO: --skip-preflight-checks needs to be replaced with
+  # --ignore-preflight-errors=all for k8s 1.10+
+  # (need to check k8s 1.9)
+  init_args=(--config /etc/kubeadm.conf)
   # required when building from source
   if [[ ${BUILD_KUBEADM} || ${BUILD_HYPERKUBE} ]]; then
     docker exec kube-master mount --make-shared /k8s
