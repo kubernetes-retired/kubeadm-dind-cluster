@@ -77,4 +77,13 @@ if [[ $(cat /sys/class/dmi/id/product_name) =~ Google ]]; then
     mount --bind /dmi_product_name /sys/class/dmi/id/product_name
 fi
 
+# Directories bind-mounted from /dind are not managed by the Docker's snapshotting mechanism, e.g. overlayfs.
+# Some apps expect /var/lib/kubelet/pods/{podid}/volumes/kubernetes.io~empty-dir to be non-overlayfs.
+mkdir -p /dind/pods /var/lib/kubelet/pods
+grep "/var/lib/kubelet/pods[[:space:]]" /proc/mounts  || mount --bind /dind/pods /var/lib/kubelet/pods
+
+# `kubectl logs -f` expects /var/log/pods to be non-overlayfs.
+mkdir -p /dind/logs /var/log/pods
+grep "/var/log/pods[[:space:]]" /proc/mounts || mount --bind /dind/logs /var/log/pods
+
 exec /usr/bin/dockerd -H fd:// ${storage_opts} -g /dind/docker "$@"
