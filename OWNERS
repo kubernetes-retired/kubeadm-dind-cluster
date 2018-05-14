@@ -1,0 +1,8 @@
+# See the OWNERS docs: https://git.k8s.io/community/contributors/guide/owners.md
+
+approvers:
+- sig-cluster-lifecycle-leads
+- kubeadm-dind-cluster-maintainers
+reviewers:
+- sig-cluster-lifecycle-leads
+- kubeadm-dind-cluster-maintainers
