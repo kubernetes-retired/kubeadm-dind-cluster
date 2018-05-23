@@ -5,7 +5,7 @@
 apiVersion: kubeadm.k8s.io/v1alpha1
 unifiedControlPlaneImage: mirantis/hypokube:final
 kind: MasterConfiguration
-kubernetesVersion: 1.9.0
+kubernetesVersion: 1.10.0
 api:
   advertiseAddress: "{{ADV_ADDR}}"
 networking:
@@ -16,3 +16,4 @@ nodeName: kube-master
 apiServerExtraArgs:
   insecure-bind-address: "{{BIND_ADDR}}"
   insecure-port: "8080"
+featureGates: {{FEATURE_GATES}}

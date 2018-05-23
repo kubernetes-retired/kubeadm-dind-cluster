@@ -774,21 +774,25 @@ function dind::init {
     docker exec --privileged -i kube-master touch /v6-mode
   fi
 
-  docker exec --privileged -i kube-master bash <<EOF
+  feature_gates="{}"
+  if [[ ${DNS_SERVICE} == "coredns" ]]; then
+    # can't just use 'CoreDNS: false' because
+    # it'll break k8s 1.8. FIXME: simplify
+    # after 1.8 support is removed
+    feature_gates="{CoreDNS: true}"
+  elif docker exec kube-master kubeadm init --help 2>&1 | grep -q CoreDNS; then
+    # FIXME: CoreDNS should be the default in 1.11
+    feature_gates="{CoreDNS: false}"
+  fi
+  docker exec -i kube-master bash <<EOF
 sed -e "s|{{ADV_ADDR}}|${kube_master_ip}|" \
     -e "s|{{POD_SUBNET_DISABLE}}|${pod_subnet_disable}|" \
     -e "s|{{POD_NETWORK_CIDR}}|${POD_NETWORK_CIDR}|" \
     -e "s|{{SVC_SUBNET}}|${SERVICE_CIDR}|" \
     -e "s|{{BIND_ADDR}}|${bind_address}|" \
+    -e "s|{{FEATURE_GATES}}|${feature_gates}|" \
     /etc/kubeadm.conf.tmpl > /etc/kubeadm.conf
 EOF
-  if [[ ${DNS_SERVICE} == "coredns" ]]; then
-    docker exec -i kube-master /bin/sh -c "cat >>/etc/kubeadm.conf" <<EOF
-featureGates:
-  CoreDNS: true 
-
-EOF
-  fi
   # TODO: --skip-preflight-checks needs to be replaced with
   # --ignore-preflight-errors=all for k8s 1.10+
   # (need to check k8s 1.9)
