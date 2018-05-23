@@ -22,14 +22,15 @@ HYPERKUBE_URL="${HYPERKUBE_URL:-}"
 KUBEADM_SHA1=${KUBEADM_SHA1:-}
 HYPERKUBE_SHA1=${HYPERKUBE_SHA1:-}
 
-prepull_images=(gcr.io/google_containers/etcd-amd64:3.0.17
-                gcr.io/google_containers/kube-discovery-amd64:1.0
-                gcr.io/google_containers/kubedns-amd64:1.7
-                gcr.io/google_containers/exechealthz-amd64:1.1
-                gcr.io/google_containers/kube-dnsmasq-amd64:1.3
-                gcr.io/google_containers/pause-amd64:3.0
-                gcr.io/google_containers/etcd-amd64:2.2.5
-                gcr.io/google_containers/etcd:2.2.1)
+# FIXME: use k8s version specific list of images to pre-pull
+# prepull_images=(gcr.io/google_containers/etcd-amd64:3.0.17
+#                 gcr.io/google_containers/kube-discovery-amd64:1.0
+#                 gcr.io/google_containers/kubedns-amd64:1.7
+#                 gcr.io/google_containers/exechealthz-amd64:1.1
+#                 gcr.io/google_containers/kube-dnsmasq-amd64:1.3
+#                 gcr.io/google_containers/pause-amd64:3.0
+#                 gcr.io/google_containers/etcd-amd64:2.2.5
+#                 gcr.io/google_containers/etcd:2.2.1)
 
 hypokube_base_image=mirantis/hypokube:base
 image_version_suffix=v4
@@ -102,7 +103,8 @@ function dind::build-base {
 
 function dind::build-image {
     local name="$1"
-    local -a images=("${prepull_images[@]}")
+    # local -a images=("${prepull_images[@]}")
+    local -a images=()
 
     dind::build-hypokube
     images+=("${hypokube_base_image}")
@@ -115,4 +117,3 @@ function dind::build-image {
            --build-arg HYPERKUBE_SHA1="${HYPERKUBE_SHA1}" \
            .
 }
-
