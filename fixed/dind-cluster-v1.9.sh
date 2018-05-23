@@ -1379,7 +1379,7 @@ function dind::custom-docker-opts {
 
 case "${1:-}" in
   up)
-    if [[ ! ( ${DIND_IMAGE} =~ local ) ]]; then
+    if [[ ! ( ${DIND_IMAGE} =~ local ) && ! ${DIND_SKIP_PULL:-} ]]; then
       dind::step "Making sure DIND image is up to date"
       docker pull "${DIND_IMAGE}" >&2
     fi

@@ -1,7 +1,0 @@
-#!/bin/bash
-set -u -e -x
-DEBIAN_FRONTEND=noninteractive apt-get update
-apt-get install -y liblz4-tool
-DIND_ROOT="${PWD}"
-. build/funcs.sh
-dind::build-base

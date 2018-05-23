@@ -35,7 +35,7 @@ HYPERKUBE_SHA1=${HYPERKUBE_SHA1:-}
 hypokube_base_image=mirantis/hypokube:base
 image_version_suffix=v4
 image_name="mirantis/kubeadm-dind-cluster"
-bare_image_name="${image_name}:bare-${image_version_suffix}"
+BARE_IMAGE_NAME="${image_name}:bare-${image_version_suffix}"
 
 function dind::step {
   local OPTS=""
@@ -98,7 +98,7 @@ function dind::copy-saved-images {
 }
 
 function dind::build-base {
-    docker build -t "${bare_image_name}" image/
+    docker build -t "${BARE_IMAGE_NAME}" image/
 }
 
 function dind::build-image {

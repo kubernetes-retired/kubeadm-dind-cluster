@@ -1,4 +1,4 @@
-# kubeadm-dind-cluster [![Build Status](https://travis-ci.org/Mirantis/kubeadm-dind-cluster.svg?branch=master)](https://travis-ci.org/Mirantis/kubeadm-dind-cluster)
+# kubeadm-dind-cluster [![CircleCI](https://circleci.com/gh/Mirantis/kubeadm-dind-cluster/tree/master.svg?style=svg)](https://circleci.com/gh/Mirantis/kubeadm-dind-cluster/tree/master) [![Travis CI](https://travis-ci.org/Mirantis/kubeadm-dind-cluster.svg?branch=master)](https://travis-ci.org/Mirantis/kubeadm-dind-cluster)
 A Kubernetes multi-node cluster for developer _of_ Kubernetes and
 projects that extend Kubernetes. Based on kubeadm and DIND (Docker in
 Docker).
