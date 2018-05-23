@@ -119,8 +119,8 @@ test_src: &test_src
         name: Check out Kubernetes source
         command: |
           git clone https://github.com/kubernetes/kubernetes.git
+          cd kubernetes
           if [[ ${K8S_SRC_VERSION:-} ]]; then
-            cd kubernetes
             git checkout "${K8S_SRC_VERSION}"
           fi
           echo
