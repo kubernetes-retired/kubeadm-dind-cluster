@@ -360,11 +360,19 @@ function dind::prepare-for-kubeadm {
   systemctl enable kubelet
 }
 
+function dind::kubeadm-reset {
+  if kubeadm reset --help 2>/dev/null|grep -q -- --force; then
+    kubeadm reset --force || true
+  else
+    kubeadm reset || true
+  fi
+}
+
 function dind::do-kubeadm {
   if ! time KUBE_HYPERKUBE_IMAGE="${hypokube_final_image}" kubeadm "$@"; then
     echo "*** 'kubeadm $*' failed, doing kubeadm reset ***" >&2
     cp -av /etc/cni /etc/cni.bak
-    kubeadm reset || true
+    dind::kubeadm-reset
     rm -rf /etc/cni
     mv /etc/cni.bak /etc/cni
     systemctl restart kubelet
