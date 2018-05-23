@@ -14,13 +14,9 @@ env: &env
   KUBE_RSYNC_PORT: 8730
   # which images should be pushed
   IMAGE_PUSH_FILTER: "mirantis/kubeadm-dind-cluster:v*"
-  # TODO: set to 'master'
-  STABLE_BRANCH: circleci-stable
+  STABLE_BRANCH: stable
   STABLE_SRC_TAG: "v1.10"
-  # TODO: set to 'master'
-  PRIMARY_BRANCH: circleci
-  # TODO: comment/remove
-  RETAG_PREFIX: tst
+  PRIMARY_BRANCH: master
 
 setup: &setup
   name: Set up the environment
@@ -468,6 +464,11 @@ workflows:
         requires:
         - build
     - push:
+        filters:
+          branches:
+            only:
+            - master
+            - stable
         requires:
         - test_1.8
         - test_1.8_flannel
