@@ -31,7 +31,7 @@ setup: &setup
 
 display_cluster_state: &display_cluster_state
   command: |
-    build/portforward.sh 8080&
+    build/portforward.sh -wait 8080
     kubectl="kubectl"
     if [[ ${K8S_SRC:-} ]]; then
       cd kubernetes
@@ -43,7 +43,7 @@ display_cluster_state: &display_cluster_state
 
 dump_cluster: &dump_cluster
   command: |
-    build/portforward.sh 8080&
+    build/portforward.sh -wait 8080
     mkdir -p /tmp/cluster_state
     out="/tmp/cluster_state/dump-1.gz"
     if [[ -f ${out} ]]; then
@@ -71,7 +71,7 @@ test: &test
     - run:
         name: Bring up the cluster
         command: |
-          build/portforward.sh 8080&
+          build/portforward.sh 8080
           ./dind-cluster.sh up
     - run:
         name: Display cluster status (1)
@@ -83,7 +83,7 @@ test: &test
     - run:
         name: Bring up the cluster (again)
         command: |
-          build/portforward.sh 8080&
+          build/portforward.sh 8080
           ./dind-cluster.sh up
     - run:
         name: Display cluster status (2)
@@ -125,6 +125,7 @@ test_src: &test_src
           else
             # XXX: remove this after kubeadm is fixed:
             # https://github.com/kubernetes/kubernetes/issues/64241
+            # https://github.com/kubernetes/kubeadm/issues/853
             patch -p1 <../k8s-master-fix.patch
           fi
           echo
@@ -134,8 +135,8 @@ test_src: &test_src
         name: Bring up the cluster
         no_output_timeout: 35m
         command: |
-          build/portforward.sh 8080&
-          build/portforward.sh 8730&
+          build/portforward.sh -wait 8080
+          build/portforward.sh -wait 8730
           cd kubernetes
           ../dind-cluster.sh up
     - run:
@@ -148,16 +149,16 @@ test_src: &test_src
     - run:
         name: Bring up the cluster (again)
         command: |
-          build/portforward.sh 8080&
-          build/portforward.sh 8730&
+          build/portforward.sh -wait 8080
+          build/portforward.sh -wait 8730
           cd kubernetes
           ../dind-cluster.sh up
     - run:
         name: Run some e2e tests
         no_output_timeout: 25m
         command: |
-          build/portforward.sh 8080&
-          build/portforward.sh 8730&
+          build/portforward.sh -wait 8080
+          build/portforward.sh -wait 8730
           cd kubernetes
           ../dind-cluster.sh e2e "existing RC"
     - run:
