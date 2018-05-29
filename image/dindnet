@@ -58,6 +58,7 @@ function dind::setup-config-file {
   fi
   echo "Subnet ${NETWORK}/${POD_NET_SIZE}"
   CONFIG_FILE="/etc/cni/net.d/cni.conf"
+  mkdir -p "$(dirname "${CONFIG_FILE}")"
   # NOTE: hairpin mode for CNI bridge breaks Virtlet networking,
   # to be investigated & fixed. For now, default is false for IPv4
   # and true for IPv6, unless overridden.

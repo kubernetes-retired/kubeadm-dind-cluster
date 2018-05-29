@@ -13,10 +13,51 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Some parts are based on https://github.com/docker/docker/blob/master/hack/dind
+# Copyright 2012-2016 Docker, Inc.
+# Original version by Jerome Petazzoni <jerome@docker.com>
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 set -o errexit
 set -o nounset
 set -o pipefail
 set -o errtrace
+
+# Ensure shared mount propagation to ensure volume mounting works for Kubernetes.
+# Took it from here:
+# https://github.com/marun/dkr-systemd-dind/blob/25702cf7a4a73bcc355a492f4e5ca96cc562a5a5/dind-setup.sh#L46
+mount --make-shared /
+
+# securityfs is mounted by systemd itself if it isn't being run in a container.
+# In case of containerized systemd, it doesn't want to have systemd mounted
+# on startup because it wants to avoid dealing with IMA in this case.
+# See https://github.com/systemd/systemd/blob/master/src/shared/ima-util.c
+# IMA stands for Integrity Measurement Architecture
+# https://sourceforge.net/p/linux-ima/wiki/Home/#integrity-measurement-architecture-ima
+# Still, we need to have securityfs in DIND for AppArmor detection and
+# support for --privileged mode, so we're mounting it there.
+if [ -d /sys/kernel/security ] && ! mountpoint -q /sys/kernel/security; then
+  mount -t securityfs none /sys/kernel/security || {
+    echo >&2 'Could not mount /sys/kernel/security.'
+    echo >&2 'AppArmor detection and --privileged mode might break.'
+  }
+fi
+
+# Mount /tmp (conditionally)
+if ! mountpoint -q /tmp; then
+  mount -t tmpfs none /tmp
+fi
 
 echo "Trying to load overlay module (this may fail)" >&2
 modprobe overlay || true
