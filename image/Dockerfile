@@ -12,12 +12,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Some parts are taken from here:
+# https://github.com/kubernetes/test-infra/blob/master/dind/base/Dockerfile
+
+# Copyright 2017 The Kubernetes Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 # ci-xenial-systemd image source: https://github.com/errordeveloper/kubeadm-ci-dind
 # The tag includes commit id
-FROM gcr.io/kubeadm/ci-xenial-systemd:base-master-6f6ae74260bfa1b6d97251e6e0191489aeff0939
+FROM k8s.gcr.io/debian-base-amd64:0.3
+
+STOPSIGNAL SIGRTMIN+3
 
 LABEL mirantis.kubeadm_dind_cluster=1
-
 
 ENV ARCH amd64
 ENV CNI_ARCHIVE=cni-plugins-"${ARCH}"-v0.6.0.tgz
@@ -27,12 +45,51 @@ ENV CNI_SHA1=d595d3ded6499a64e8dac02466e2f5f2ce257c9f
 # (e.g. accept systemd.setenv args, etc.)
 ENV container docker
 
+ARG DEBIAN_FRONTEND=noninteractive
+RUN clean-install apt-utils \
+    apt-transport-https \
+    bash \
+    bridge-utils \
+    ca-certificates \
+    curl \
+    e2fsprogs \
+    ebtables \
+    ethtool \
+    gnupg2 \
+    ipcalc \
+    iptables \
+    iproute2 \
+    iputils-ping \
+    jq \
+    kmod \
+    lsb-core \
+    less \
+    lzma \
+    liblz4-tool \
+    mount \
+    net-tools \
+    procps \
+    socat \
+    software-properties-common \
+    util-linux \
+    vim \
+    systemd \
+    systemd-sysv \
+    sysvinit-utils
+
+# Install docker.
+RUN curl -fsSL https://download.docker.com/linux/debian/gpg | apt-key add - && apt-key fingerprint 0EBFCD88 && add-apt-repository \
+    "deb [arch=amd64] https://download.docker.com/linux/debian \
+    $(lsb_release -cs) \
+    stable"
+RUN clean-install docker-ce=17.03.2~ce-0~debian-stretch
+
 RUN mkdir -p /hypokube /etc/systemd/system/docker.service.d /var/lib/kubelet
 
 COPY hypokube.dkr /hypokube/
 COPY kubelet.service /lib/systemd/system/
 COPY dindnet.service /lib/systemd/system/
-COPY 20-fs.conf /etc/systemd/system/docker.service.d/
+COPY docker.service /lib/systemd/system/docker.service
 COPY wrapkubeadm /usr/local/bin/
 COPY start_services /usr/local/bin/
 COPY rundocker /usr/local/bin
@@ -40,19 +97,19 @@ COPY dindnet /usr/local/bin
 COPY snapshot /usr/local/bin
 COPY kubeadm.conf.tmpl /etc/kubeadm.conf.tmpl
 
+# Remove unwanted systemd services.
 # TODO: use 'systemctl mask' to disable units
 # See here for example: https://github.com/docker/docker/issues/27202#issuecomment-253579916
-RUN apt-get -qq update && \
-    apt-mark unhold docker-engine && \
-    DEBIAN_FRONTEND=noninteractive apt-get install docker-engine=1.12.6-0~ubuntu-xenial -qqy && \
-    apt-mark hold docker-engine && \
-    DEBIAN_FRONTEND=noninteractive apt-get upgrade -qqy && \
-    DEBIAN_FRONTEND=noninteractive apt-get install bridge-utils net-tools iproute2 iputils-ping tcpdump ipcalc jq curl liblz4-tool -qqy && \
-    apt-get -qq -y autoremove && \
-    apt-get -qq clean && \
-    mkdir -p /etc/systemd/system/kubelet.service.d /etc/cni/net.d && \
-    rm -f /lib/systemd/system/multi-user.target.wants/getty.target /lib/systemd/system/sysinit.target.wants/systemd-udev* /lib/systemd/system/sockets.target.wants/systemd-udev* && \
-    chmod +x /usr/local/bin/rundocker /usr/local/bin/dindnet /usr/local/bin/snapshot && \
+RUN for i in /lib/systemd/system/sysinit.target.wants/*; do [ "${i##*/}" = "systemd-tmpfiles-setup.service" ] || rm -f "$i"; done; \
+  rm -f /lib/systemd/system/multi-user.target.wants/*;\
+  rm -f /etc/systemd/system/*.wants/*;\
+  rm -f /lib/systemd/system/local-fs.target.wants/*; \
+  rm -f /lib/systemd/system/sockets.target.wants/*udev*; \
+  rm -f /lib/systemd/system/sockets.target.wants/*initctl*; \
+  rm -f /lib/systemd/system/basic.target.wants/*;\
+  rm -f /lib/systemd/system/anaconda.target.wants/*;
+
+RUN chmod +x /usr/local/bin/rundocker /usr/local/bin/dindnet /usr/local/bin/snapshot && \
     mkdir -p /opt/cni/bin && \
     curl -sSL --retry 5 https://storage.googleapis.com/kubernetes-release/network-plugins/"${CNI_ARCHIVE}" >"/tmp/${CNI_ARCHIVE}" && \
       echo "${CNI_SHA1}  /tmp/${CNI_ARCHIVE}" | sha1sum -c && \
@@ -68,6 +125,5 @@ RUN apt-get -qq update && \
 
 EXPOSE 8080
 
-# TBD: update gcr.io/kubeadm/ci-xenial-systemd:base / bare
 RUN ln -fs /sbin/init /sbin/dind_init
 ENTRYPOINT ["/sbin/dind_init"]

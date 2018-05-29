@@ -896,14 +896,14 @@ function dind::create-static-routes-for-bridge {
       if [[ ${IP_MODE} = "ipv4" ]]; then
 	# Assuming pod subnets will all be /24
         dest="${POD_NET_PREFIX}${id}.0/24"
-        gw=`docker exec ${dest_node} ifconfig eth0 | grep "inet addr" | cut -f 2 -d: | cut -f 1 -d' '`
+        gw=`docker exec ${dest_node} ip addr show eth0 | grep -w inet | awk '{ print $2 }' | sed 's,/.*,,'`
       else
 	instance=$(printf "%02x" ${id})
 	if [[ $((${POD_NET_SIZE} % 16)) -ne 0 ]]; then
 	  instance+="00" # Move node ID to upper byte
 	fi
 	dest="${POD_NET_PREFIX}${instance}::/${POD_NET_SIZE}"
-        gw=`docker exec ${dest_node} ifconfig eth0 | grep "inet6" | grep -i global | awk '{ print $3 }' | cut -f 1 -d/`
+        gw=`docker exec ${dest_node} ip addr show eth0 | grep -w inet6 | grep -i global | head -1 | awk '{ print $2 }' | sed 's,/.*,,'`
       fi
       docker exec ${node} ip route add ${dest} via ${gw}
     done
@@ -1056,7 +1056,7 @@ function dind::fix-mounts {
     if [[ ${BUILD_KUBEADM} || ${BUILD_HYPERKUBE} ]]; then
       docker exec "${node_name}" mount --make-shared /k8s
     fi
-    docker exec "${node_name}" mount --make-shared /sys/kernel/debug
+    # docker exec "${node_name}" mount --make-shared /sys/kernel/debug
   done
 }
 
