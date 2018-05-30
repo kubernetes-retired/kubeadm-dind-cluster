@@ -1,4 +1,4 @@
-# kubeadm-dind-cluster [![CircleCI](https://circleci.com/gh/Mirantis/kubeadm-dind-cluster/tree/master.svg?style=svg)](https://circleci.com/gh/Mirantis/kubeadm-dind-cluster/tree/master) [![Travis CI](https://travis-ci.org/Mirantis/kubeadm-dind-cluster.svg?branch=master)](https://travis-ci.org/Mirantis/kubeadm-dind-cluster)
+# kubeadm-dind-cluster [![CircleCI](https://circleci.com/gh/kubernetes-sigs/kubeadm-dind-cluster/tree/master.svg?style=svg)](https://circleci.com/gh/kubernetes-sigs/kubeadm-dind-cluster/tree/master) [![Travis CI](https://travis-ci.org/kubernetes-sigs/kubeadm-dind-cluster.svg?branch=master)](https://travis-ci.org/kubernetes-sigs/kubeadm-dind-cluster)
 A Kubernetes multi-node cluster for developer _of_ Kubernetes and
 projects that extend Kubernetes. Based on kubeadm and DIND (Docker in
 Docker).
@@ -53,7 +53,7 @@ projects that extend or use Kubernetes. For example, you can start
 Kubernetes 1.8 like this:
 
 ```shell
-$ wget https://cdn.rawgit.com/Mirantis/kubeadm-dind-cluster/master/fixed/dind-cluster-v1.8.sh
+$ wget https://cdn.rawgit.com/kubernetes-sigs/kubeadm-dind-cluster/master/fixed/dind-cluster-v1.8.sh
 $ chmod +x dind-cluster-v1.8.sh
 
 $ # start the cluster
@@ -87,7 +87,7 @@ rebuilds if you use `BUILD_HYPERKUBE=y` like described below).
 
 ## Using with Kubernetes source
 ```shell
-$ git clone git@github.com:Mirantis/kubeadm-dind-cluster.git ~/dind
+$ git clone git@github.com:kubernetes-sigs/kubeadm-dind-cluster.git ~/dind
 
 $ cd ~/work/kubernetes/src/k8s.io/kubernetes
 
@@ -155,7 +155,7 @@ Note: If you run into a kube-proxy crash during an attempt to modify conntrack
 settings, you'll need to patch that is mentioned in this issue:
 
 ```
-https://github.com/Mirantis/kubeadm-dind-cluster/issues/50
+https://github.com/kubernetes-sigs/kubeadm-dind-cluster/issues/50
 ```
 
 ## Configuration
