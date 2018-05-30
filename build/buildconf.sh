@@ -18,15 +18,15 @@ KUBECTL_SHA1_1_9=7425dbf67007cee328b85da3bf5155d01d3939e2
 KUBECTL_DARWIN_URL_1_9='https://storage.googleapis.com/kubernetes-release/release/v1.9.7/bin/darwin/amd64/kubectl'
 KUBECTL_DARWIN_SHA1_1_9=b9f6122fe29dd29fff01194cc00a40a5451581fd
 
-# Version 1.10.1
-KUBEADM_URL_1_10='https://storage.googleapis.com/kubernetes-release/release/v1.10.1/bin/linux/amd64/kubeadm'
-KUBEADM_SHA1_1_10=c66a5c0baf77f37534dbc1624c8bd19045726b68
-HYPERKUBE_URL_1_10='https://storage.googleapis.com/kubernetes-release/release/v1.10.1/bin/linux/amd64/hyperkube'
-HYPERKUBE_SHA1_1_10=8dc20c079f2caf3a362047e1aa674a177e8a4fb5
-KUBECTL_URL_1_10='https://storage.googleapis.com/kubernetes-release/release/v1.10.1/bin/linux/amd64/kubectl'
-KUBECTL_SHA1_1_10=a5c8e589bed21ec471e8c582885a8c9972a84da1
-KUBECTL_DARWIN_URL_1_10='https://storage.googleapis.com/kubernetes-release/release/v1.10.1/bin/darwin/amd64/kubectl'
-KUBECTL_DARWIN_SHA1_1_10=e869ab8298bd92056b23568343ebd4a6c84f9817
+# Version 1.10.3
+KUBEADM_URL_1_10='https://storage.googleapis.com/kubernetes-release/release/v1.10.3/bin/linux/amd64/kubeadm'
+KUBEADM_SHA1_1_10=ada2c07bbade36897f340cb951ce6e9802ab73bb
+HYPERKUBE_URL_1_10='https://storage.googleapis.com/kubernetes-release/release/v1.10.3/bin/linux/amd64/hyperkube'
+HYPERKUBE_SHA1_1_10=f8546624c6c4001e199c4eaf8b86d968e74b19cc
+KUBECTL_URL_1_10='https://storage.googleapis.com/kubernetes-release/release/v1.10.3/bin/linux/amd64/kubectl'
+KUBECTL_SHA1_1_10=94f996d645e74634a4be67bbb5417f892774230b
+KUBECTL_DARWIN_URL_1_10='https://storage.googleapis.com/kubernetes-release/release/v1.10.3/bin/darwin/amd64/kubectl'
+KUBECTL_DARWIN_SHA1_1_10=226442dd0011c1eb9a50b7996652680f6a45fe36
 # url and sha1sum of kubeadm binary -- only used for prebuilt kubeadm
 KUBEADM_URL=${KUBEADM_URL:-${KUBEADM_URL_1_10}}
 KUBEADM_SHA1=${KUBEADM_SHA1:-${KUBEADM_SHA1_1_10}}
