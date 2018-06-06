@@ -122,11 +122,6 @@ test_src: &test_src
           cd kubernetes
           if [[ ${K8S_SRC_VERSION:-} ]]; then
             git checkout "${K8S_SRC_VERSION}"
-          else
-            # XXX: remove this after kubeadm is fixed:
-            # https://github.com/kubernetes/kubernetes/issues/64241
-            # https://github.com/kubernetes/kubeadm/issues/853
-            patch -p1 <../k8s-master-fix.patch
           fi
           echo
           echo "*** Latest commit:"
