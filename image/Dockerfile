@@ -38,8 +38,9 @@ STOPSIGNAL SIGRTMIN+3
 LABEL mirantis.kubeadm_dind_cluster=1
 
 ENV ARCH amd64
-ENV CNI_ARCHIVE=cni-plugins-"${ARCH}"-v0.6.0.tgz
-ENV CNI_SHA1=d595d3ded6499a64e8dac02466e2f5f2ce257c9f
+ENV CNI_VERSION=v0.7.1
+ENV CNI_ARCHIVE=cni-plugins-"${ARCH}"-"${CNI_VERSION}".tgz
+ENV CNI_SHA1=fb29e20401d3e9598a1d8e8d7992970a36de5e05
 
 # make systemd behave correctly in Docker container
 # (e.g. accept systemd.setenv args, etc.)
@@ -111,7 +112,7 @@ RUN for i in /lib/systemd/system/sysinit.target.wants/*; do [ "${i##*/}" = "syst
 
 RUN chmod +x /usr/local/bin/rundocker /usr/local/bin/dindnet /usr/local/bin/snapshot && \
     mkdir -p /opt/cni/bin && \
-    curl -sSL --retry 5 https://storage.googleapis.com/kubernetes-release/network-plugins/"${CNI_ARCHIVE}" >"/tmp/${CNI_ARCHIVE}" && \
+    curl -sSL --retry 5 https://github.com/containernetworking/plugins/releases/download/"${CNI_VERSION}"/"${CNI_ARCHIVE}" >"/tmp/${CNI_ARCHIVE}" && \
       echo "${CNI_SHA1}  /tmp/${CNI_ARCHIVE}" | sha1sum -c && \
       tar -C /opt/cni/bin -xzf "/tmp/${CNI_ARCHIVE}" && \
       rm -f "/tmp/${CNI_ARCHIVE}" && \

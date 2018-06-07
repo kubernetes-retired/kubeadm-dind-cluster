@@ -36,13 +36,20 @@ function dind::setup-bridge {
     return  # Bridge is already set up
   fi
 
-  brctl addbr dind0
+  ip link add dind0 type bridge
   if [[ "${IP_MODE}" = "ipv6" ]]; then
     ip -6 addr add "${POD_NET_PREFIX}::1/${POD_NET_SIZE}" dev dind0
     ip -6 route add ${DNS64_PREFIX_CIDR} via ${LOCAL_NAT64_SERVER}
   else
     ip addr add "${POD_NET_PREFIX}.1/${POD_NET_SIZE}" dev dind0
   fi
+  # To prevent MAC on dind0 from dynamically changing, create a dummy I/F enslaved in
+  # dind0 and set the MAC of dind0 to match.
+  ip link add v1 type veth peer name v2
+  ip link set dev v1 master dind0
+  DIND0_MAC="$(ip a show v1 | grep link/ether | awk  '{ print $2; }')"
+  ip link set dev dind0 address $DIND0_MAC
+
   ip link set dind0 up
 }
 
