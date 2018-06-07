@@ -1228,7 +1228,7 @@ function dind::clean {
 
 function dind::copy-image {
   local image="${2:-}"
-  local image_path="/tmp/save_${image/\//_}"
+  local image_path="/tmp/save_${image//\//_}"
   if [[ -f "${image_path}" ]]; then
     rm -fr "${image_path}"
   fi
