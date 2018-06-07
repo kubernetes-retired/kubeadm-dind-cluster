@@ -5,7 +5,7 @@
 apiVersion: kubeadm.k8s.io/v1alpha1
 unifiedControlPlaneImage: mirantis/hypokube:final
 kind: MasterConfiguration
-kubernetesVersion: 1.10.0
+kubernetesVersion: "{{KUBEADM_VERSION}}"
 api:
   advertiseAddress: "{{ADV_ADDR}}"
 networking:

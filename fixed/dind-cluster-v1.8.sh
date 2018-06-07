@@ -657,7 +657,7 @@ function dind::kubeadm {
   status=0
   # See image/bare/wrapkubeadm.
   # Capturing output is necessary to grab flags for 'kubeadm join'
-  if ! docker exec "${container_id}" wrapkubeadm "$@" 2>&1 | tee /dev/fd/2; then
+  if ! docker exec "${container_id}" /usr/local/bin/wrapkubeadm "$@" 2>&1 | tee /dev/fd/2; then
     echo "*** kubeadm failed" >&2
     return 1
   fi
@@ -742,6 +742,18 @@ function dind::deploy-dashboard {
   dind::retry dind::ensure-dashboard-clusterrolebinding
 }
 
+function dind::kubeadm-version {
+  if [[ ${use_k8s_source} ]]; then
+    (cluster/kubectl.sh version --short 2>/dev/null || true) |
+      grep Client |
+      sed 's/^.*: v\([0-9.]*\).*/\1/'
+  else
+    docker exec kube-master \
+           /bin/bash -c 'kubeadm version -o json | jq -r .clientVersion.gitVersion' |
+      sed 's/^v\([0-9.]*\).*/\1/'
+  fi
+}
+
 function dind::init {
   local -a opts
   dind::set-master-opts
@@ -784,6 +796,8 @@ function dind::init {
     # FIXME: CoreDNS should be the default in 1.11
     feature_gates="{CoreDNS: false}"
   fi
+
+  kubeadm_version="$(dind::kubeadm-version)"
   docker exec -i kube-master bash <<EOF
 sed -e "s|{{ADV_ADDR}}|${kube_master_ip}|" \
     -e "s|{{POD_SUBNET_DISABLE}}|${pod_subnet_disable}|" \
@@ -791,6 +805,7 @@ sed -e "s|{{ADV_ADDR}}|${kube_master_ip}|" \
     -e "s|{{SVC_SUBNET}}|${SERVICE_CIDR}|" \
     -e "s|{{BIND_ADDR}}|${bind_address}|" \
     -e "s|{{FEATURE_GATES}}|${feature_gates}|" \
+    -e "s|{{KUBEADM_VERSION}}|${kubeadm_version}|" \
     /etc/kubeadm.conf.tmpl > /etc/kubeadm.conf
 EOF
   # TODO: --skip-preflight-checks needs to be replaced with
