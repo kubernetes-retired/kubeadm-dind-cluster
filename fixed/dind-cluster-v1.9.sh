@@ -60,7 +60,8 @@ fi
 
 CNI_PLUGIN="${CNI_PLUGIN:-bridge}"
 ETCD_HOST="${ETCD_HOST:-127.0.0.1}"
-GCE_HOSTED="${GCE_HOSTED:-false}"
+GCE_HOSTED="${GCE_HOSTED:-}"
+DIND_ALLOW_AAAA_USE="${DIND_ALLOW_AAAA_USE:-}"  # Default is to use DNS64 always for IPv6 mode
 if [[ ${IP_MODE} = "ipv6" ]]; then
     DIND_SUBNET="${DIND_SUBNET:-fd00:10::}"
     dind_ip_base="${DIND_SUBNET}"
@@ -75,7 +76,11 @@ if [[ ${IP_MODE} = "ipv6" ]]; then
     DNS64_PREFIX_CIDR="${DNS64_PREFIX}/${DNS64_PREFIX_SIZE}"
     dns_server="${dind_ip_base}100"
     DEFAULT_POD_NETWORK_CIDR="fd00:10:20::/72"
-    USE_HAIRPIN="${USE_HAIRPIN:-true}"  # defaults on
+    USE_HAIRPIN="${USE_HAIRPIN:-true}"  # Default is to use hairpin for IPv6
+    if [[ ${DIND_ALLOW_AAAA_USE} && ${GCE_HOSTED} ]]; then
+	echo "ERROR! GCE does not support use of IPv6 for external addresses - aborting."
+	exit 1
+    fi
 else
     DIND_SUBNET="${DIND_SUBNET:-10.192.0.0}"
     dind_ip_base="$(echo "${DIND_SUBNET}" | sed 's/0$//')"
@@ -84,7 +89,11 @@ else
     DIND_SUBNET_SIZE="${DIND_SUBNET_SIZE:-16}"
     dns_server="${REMOTE_DNS64_V4SERVER:-8.8.8.8}"
     DEFAULT_POD_NETWORK_CIDR="10.244.0.0/16"
-    USE_HAIRPIN="${USE_HAIRPIN:-false}"  # Defaults off for V4, as issue with Virtlet networking
+    USE_HAIRPIN="${USE_HAIRPIN:-false}"  # Disabled for IPv4, as issue with Virtlet networking
+    if [[ ${DIND_ALLOW_AAAA_USE} ]]; then
+	echo "WARNING! The DIND_ALLOW_AAAA_USE option is for IPv6 mode - ignoring setting."
+	DIND_ALLOW_AAAA_USE=
+    fi
     if [[ ${CNI_PLUGIN} = "calico" || ${CNI_PLUGIN} = "calico-kdd" ]]; then
 	DEFAULT_POD_NETWORK_CIDR="192.168.0.0/16"
     fi
@@ -498,6 +507,15 @@ function dind::ensure-dns {
 	    local bind9_path=/tmp/bind9
 	    rm -rf ${bind9_path}
 	    mkdir -p ${bind9_path}/conf ${bind9_path}/cache
+	    local force_dns64_for=""
+	    if [[ ! ${DIND_ALLOW_AAAA_USE} ]]; then
+		# Normally, if have an AAAA record, it is used. This clause tells
+		# bind9 to do ignore AAAA records for the specified networks
+		# and/or addresses and lookup A records and synthesize new AAAA
+		# records. In this case, we select "any" networks that have AAAA
+		# records meaning we ALWAYS use A records and do NAT64.
+	        force_dns64_for="exclude { any; };"
+	    fi
 	    cat >${bind9_path}/conf/named.conf <<BIND9_EOF
 options {
     directory "/var/bind";
@@ -508,11 +526,11 @@ options {
     auth-nxdomain no;    # conform to RFC1035
     listen-on-v6 { any; };
     dns64 ${DNS64_PREFIX_CIDR} {
-        exclude { any; };
+        ${force_dns64_for}
     };
 };
 BIND9_EOF
-	    if [[ "${GCE_HOSTED}" = true ]]; then
+	    if [[ ${GCE_HOSTED} ]]; then
 		# TODO: Have bind9 create config file, and pass in variables via Env vars.
 		docker-machine scp ${bind9_path}/conf/named.conf k8s-dind:bind9-named.conf
 		docker-machine ssh k8s-dind sudo rm -rf ${bind-path}
@@ -542,12 +560,12 @@ function dind::ensure-nat {
 	    # Need to check/create, as "clean" may remove route
 	    local route="$(ip route | egrep "^172.18.0.128/25")"
 	    if [[ -z "${route}" ]]; then
-		if [[ "${GCE_HOSTED}" = true ]]; then
+		if [[ ${GCE_HOSTED} ]]; then
 		    docker-machine ssh k8s-dind sudo ip route add 172.18.0.128/25 via 172.18.0.200
     elif [[ -z ${using_linuxdocker} ]]; then
         :
 		else
-		    docker run --net=host --rm --privileged busybox ip route add 172.18.0.128/25 via 172.18.0.200
+		    docker run --net=host --rm --privileged ${busybox_image} ip route add 172.18.0.128/25 via 172.18.0.200
 		fi
 	    fi
 	fi
@@ -681,7 +699,7 @@ function dind::configure-kubectl {
   if [[ ${IP_MODE} = "ipv6" ]]; then
       host="[${host}]"
   fi
-  if [[ "${GCE_HOSTED}" = true || ${DOCKER_HOST:-} =~ ^tcp: || ${using_linuxkit} || -n ${using_linuxdocker} ]]; then
+  if [[ ${GCE_HOSTED} || ${DOCKER_HOST:-} =~ ^tcp: || ${using_linuxkit} || -n ${using_linuxdocker} ]]; then
     if [[ "${IP_MODE}" = "ipv4" ]]; then
       host="localhost"
     else
@@ -925,6 +943,50 @@ function dind::create-static-routes-for-bridge {
   done
 }
 
+# If we are allowing AAAA record use, then provide SNAT for IPv6 packets from
+# node containers, and forward packets to bridge used for kubeadm-dind-net.
+# This gives pods access to external IPv6 sites, when using IPv6 addresses.
+function dind::setup_external_access_on_host {
+  if [[ ! ${DIND_ALLOW_AAAA_USE} ]]; then
+    return
+  fi
+  local main_if=`ip route | grep default | awk '{print $5}'`
+  local bridge_if=`ip route | grep 172.18.0.0 | awk '{print $3}'`
+  docker run --entrypoint /sbin/ip6tables --net=host --rm --privileged ${DIND_IMAGE} -t nat -A POSTROUTING -o $main_if -j MASQUERADE
+  if [[ -n "$bridge_if" ]]; then
+    docker run --entrypoint /sbin/ip6tables --net=host --rm --privileged ${DIND_IMAGE} -A FORWARD -i $bridge_if -j ACCEPT
+  else
+    echo "WARNING! No kubeadm-dind-net bridge - unable to setup forwarding/SNAT"
+  fi
+}
+
+# Remove ip6tables rules for SNAT and forwarding, if they exist.
+function dind::remove_external_access_on_host {
+  if [[ ! ${DIND_ALLOW_AAAA_USE} ]]; then
+    return
+  fi
+  local have_rule
+  local main_if="$(ip route | grep default | awk '{print $5}')"
+  local bridge_if="$(ip route | grep 172.18.0.0 | awk '{print $3}')"
+
+  have_rule="$(docker run --entrypoint /sbin/ip6tables --net=host --rm --privileged ${DIND_IMAGE} -S -t nat | grep "\-o $main_if" || true)"
+  if [[ -n "$have_rule" ]]; then
+    docker run --entrypoint /sbin/ip6tables --net=host --rm --privileged ${DIND_IMAGE} -t nat -D POSTROUTING -o $main_if -j MASQUERADE
+  else
+    echo "Skipping delete of ip6tables rule for SNAT, as rule non-existent"
+  fi
+  if [[ -n "$bridge_if" ]]; then
+    have_rule="$(docker run --entrypoint /sbin/ip6tables --net=host --rm --privileged ${DIND_IMAGE} -S | grep "\-i $bridge_if" || true)"
+    if [[ -n "$have_rule" ]]; then
+      docker run --entrypoint /sbin/ip6tables --net=host --rm --privileged ${DIND_IMAGE} -D FORWARD -i $bridge_if -j ACCEPT
+    else
+      echo "Skipping delete of ip6tables rule for forwarding, as rule non-existent"
+    fi
+  else
+    echo "Skipping delete of ip6tables rule for forwarding, as no bridge interface"
+  fi
+}
+
 function dind::wait-for-ready {
   dind::step "Waiting for kube-proxy and the nodes"
   local proxy_ready
@@ -1027,6 +1089,7 @@ function dind::up {
   case "${CNI_PLUGIN}" in
     bridge)
       dind::create-static-routes-for-bridge
+      dind::setup_external_access_on_host
       ;;
     flannel)
       # without --validate=false this will fail on older k8s versions
@@ -1129,6 +1192,7 @@ function dind::restore {
   done
   if [[ "${CNI_PLUGIN}" = "bridge" ]]; then
     dind::create-static-routes-for-bridge
+    dind::setup_external_access_on_host
   fi
   dind::fix-mounts
   # Recheck kubectl config. It's possible that the cluster was started
@@ -1142,6 +1206,9 @@ function dind::down {
     dind::step "Removing container:" "${container_id}"
     docker rm -fv "${container_id}"
   done
+  if [[ "${CNI_PLUGIN}" = "bridge" ]]; then
+    dind::remove_external_access_on_host
+  fi
 }
 
 function dind::remove-volumes {
@@ -1171,7 +1238,7 @@ function dind::do-run-e2e {
   if [[ "${IP_MODE}" = "ipv6" ]]; then
     host="[$host]"
   fi
-  if [[ "${GCE_HOSTED}" = true || ${DOCKER_HOST:-} =~ ^tcp: || -n ${using_linuxdocker} ]]; then
+  if [[ ${GCE_HOSTED} || ${DOCKER_HOST:-} =~ ^tcp: || -n ${using_linuxdocker} ]]; then
     if [[ "${IP_MODE}" = "ipv4" ]]; then
       host="localhost"
     else
