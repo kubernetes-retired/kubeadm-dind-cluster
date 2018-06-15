@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 set -o errexit
 set -o nounset
 set -o pipefail
@@ -167,6 +166,9 @@ DIND_NO_PROXY="${DIND_NO_PROXY:-}"
 DIND_DAEMON_JSON_FILE="${DIND_DAEMON_JSON_FILE:-/etc/docker/daemon.json}"  # can be set to /dev/null
 DIND_REGISTRY_MIRROR="${DIND_REGISTRY_MIRROR:-}"  # plain string format
 DIND_INSECURE_REGISTRIES="${DIND_INSECURE_REGISTRIES:-}"  # json list format
+
+FEATURE_GATES="${FEATURE_GATES:-}"
+KUBELET_FEATURE_GATES="${KUBELET_FEATURE_GATES:-}"
 
 if [[ ! ${LOCAL_KUBECTL_VERSION:-} && ${DIND_IMAGE:-} =~ :(v[0-9]+\.[0-9]+)$ ]]; then
   LOCAL_KUBECTL_VERSION="${BASH_REMATCH[1]}"
@@ -675,7 +677,15 @@ function dind::kubeadm {
   status=0
   # See image/bare/wrapkubeadm.
   # Capturing output is necessary to grab flags for 'kubeadm join'
-  if ! docker exec "${container_id}" /usr/local/bin/wrapkubeadm "$@" 2>&1 | tee /dev/fd/2; then
+  kubelet_feature_gates=""
+  if [ "z${KUBELET_FEATURE_GATES}" != "z" ]; then
+    # delete 'MountPropergation=true, DynamicKubeletConfig=true' because it will be prepended in wrapkubeadm
+    KUBELET_FEATURE_GATES=$(echo $KUBELET_FEATURE_GATES | sed -e 's/MountPropagation=true,\{0,\}//g' -e 's/,\+/,/g' -e 's/,$//g')
+    KUBELET_FEATURE_GATES=$(echo $KUBELET_FEATURE_GATES | sed -e 's/DynamicKubeletConfig=true,\{0,\}//g' -e 's/,\+/,/g' -e 's/,$//g')
+    kubelet_feature_gates="-e KUBELET_EXTRA_FEATURE_GATES=,${KUBELET_FEATURE_GATES}"
+  fi
+
+  if ! docker exec ${kubelet_feature_gates} "${container_id}" /usr/local/bin/wrapkubeadm "$@" 2>&1 | tee /dev/fd/2; then
     echo "*** kubeadm failed" >&2
     return 1
   fi
@@ -815,6 +825,31 @@ function dind::init {
     feature_gates="{CoreDNS: false}"
   fi
 
+  component_feature_gates="feature-gates: \\\"MountPropagation=true\\\""
+  if [ "z${FEATURE_GATES}" != "z" ]; then
+  # prevent from multiple 'MountPropergation=true'
+  FEATURE_GATES=$(echo $FEATURE_GATES | sed -e 's/MountPropagation=true,\{0,\}//g' -e 's/,\+/,/g' -e 's/,$//g')
+  component_feature_gates="feature-gates: \\\"MountPropagation=true,${FEATURE_GATES}\\\""
+  fi
+
+  apiserver_extra_args=""
+  for e in $(set -o posix ; set | grep -E "^APISERVER_[a-z_]+=" | cut -d'=' -f 1); do
+    opt_name=$(echo ${e#APISERVER_} | sed 's/_/-/g')
+    apiserver_extra_args+="  ${opt_name}: \\\"$(eval echo \$$e)\\\"\\n"
+  done
+
+  controllermanager_extra_args=""
+  for e in $(set -o posix ; set | grep -E "^CONTROLLERMANAGER_[a-z_]+=" | cut -d'=' -f 1); do
+    opt_name=$(echo ${e#CONTROLLERMANAGER_} | sed 's/_/-/g')
+    controllermanager_extra_args+="  ${opt_name}: \\\"$(eval echo \$$e)\\\"\\n"
+  done
+
+  scheduler_extra_args=""
+  for e in $(set -o posix ; set | grep -E "^SCHEDULER_[a-z_]+=" | cut -d'=' -f 1); do
+    opt_name=$(echo ${e#SCHEDULER_} | sed 's/_/-/g')
+    scheduler_extra_args+="  ${opt_name}: \\\"$(eval echo \$$e)\\\"\\n"
+  done
+
   kubeadm_version="$(dind::kubeadm-version)"
   docker exec -i kube-master bash <<EOF
 sed -e "s|{{ADV_ADDR}}|${kube_master_ip}|" \
@@ -824,6 +859,10 @@ sed -e "s|{{ADV_ADDR}}|${kube_master_ip}|" \
     -e "s|{{BIND_ADDR}}|${bind_address}|" \
     -e "s|{{FEATURE_GATES}}|${feature_gates}|" \
     -e "s|{{KUBEADM_VERSION}}|${kubeadm_version}|" \
+    -e "s|{{COMPONENT_FEATURE_GATES}}|${component_feature_gates}|" \
+    -e "s|{{APISERVER_EXTRA_ARGS}}|${apiserver_extra_args}|" \
+    -e "s|{{CONTROLLERMANAGER_EXTRA_ARGS}}|${controllermanager_extra_args}|" \
+    -e "s|{{SCHEDULER_EXTRA_ARGS}}|${scheduler_extra_args}|" \
     /etc/kubeadm.conf.tmpl > /etc/kubeadm.conf
 EOF
   # TODO: --skip-preflight-checks needs to be replaced with

@@ -44,10 +44,6 @@ apiserver_insecure_bind_address='.spec.containers[0].command|=map(select(startsw
 # TODO: don't use insecure port
 apiserver_insecure_bind_port='.spec.containers[0].command|=map(select(startswith("--insecure-port=")|not))+["--insecure-port=8080"]'
 
-# Enable MountPropagation in api
-# FIXME: It deletes other enabled gates
-apiserver_mount_propagation='.spec.containers[0].command|=map(select(startswith("--feature-gates=")|not))+["--feature-gates=MountPropagation=true"]'
-
 function dind::cluster-cidr {
   if [[ ! -e "/v6-mode" ]]; then
     ip addr show docker0 | grep -w inet | awk '{ print $2; }'
@@ -277,7 +273,7 @@ function dind::frob-proxy {
 }
 
 function dind::frob-apiserver {
-  local -a filters=("${mount_binaries}" "${apiserver_insecure_bind_address}" "${apiserver_insecure_bind_port}" "${apiserver_mount_propagation}")
+  local -a filters=("${mount_binaries}" "${apiserver_insecure_bind_address}" "${apiserver_insecure_bind_port}")
   dind::frob-file "${apiserver_static_pod}" "${filters[@]}"
 }
 
@@ -320,7 +316,7 @@ function dind::frob-cluster {
 
 kubelet_dind_args=(--fail-swap-on=false
                    --bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf
-                   --feature-gates=DynamicKubeletConfig=true,MountPropagation=true)
+                   --feature-gates=DynamicKubeletConfig=true,MountPropagation=true${KUBELET_EXTRA_FEATURE_GATES:-})
 
 function dind::fix-cgroups {
   # Workaround for https://github.com/kubernetes/kubernetes/issues/43704
