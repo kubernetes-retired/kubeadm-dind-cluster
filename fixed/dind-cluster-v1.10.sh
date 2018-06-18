@@ -435,7 +435,7 @@ function dind::ensure-downloaded-kubectl {
   if [[ ! -f "${path}" ]]; then
     mkdir -p "${KUBECTL_DIR}"
     curl -sSLo "${path}" "https://storage.googleapis.com/kubernetes-release/release/${full_kubectl_version}/bin/${kubectl_os}/amd64/kubectl"
-    echo "${kubectl_sha1} ${path}" | sha1sum -c
+    echo "${kubectl_sha1}  ${path}" | sha1sum -c
     chmod +x "${path}"
   fi
 
