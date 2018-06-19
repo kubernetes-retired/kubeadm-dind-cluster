@@ -12,12 +12,12 @@ ARG HYPERKUBE_SHA1
 RUN if [ -n "${KUBEADM_URL}" ]; then \
       mkdir -p /k8s && \
       curl -sSL "${KUBEADM_URL}" > /k8s/kubeadm && \
-      if [ -n "${KUBEADM_SHA1}" ]; then echo "${KUBEADM_SHA1} /k8s/kubeadm" | sha1sum -c; fi && \
+      if [ -n "${KUBEADM_SHA1}" ]; then echo "${KUBEADM_SHA1}  /k8s/kubeadm" | sha1sum -c; fi && \
       chmod +x /k8s/kubeadm; \
     fi; \
     if [ -n "${HYPERKUBE_URL}" ]; then \
       curl -sSL "${HYPERKUBE_URL}" > /k8s/hyperkube && \
-      if [ -n "${HYPERKUBE_SHA1}" ]; then echo "${HYPERKUBE_SHA1} /k8s/hyperkube" | sha1sum -c; fi && \
+      if [ -n "${HYPERKUBE_SHA1}" ]; then echo "${HYPERKUBE_SHA1}  /k8s/hyperkube" | sha1sum -c; fi && \
       chmod +x /k8s/hyperkube; \
     fi
 COPY save.tar.lz4 /
