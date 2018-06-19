@@ -314,9 +314,15 @@ function dind::frob-cluster {
   dind::frob-proxy
 }
 
-kubelet_dind_args=(--fail-swap-on=false
-                   --bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf
-                   --feature-gates=DynamicKubeletConfig=true,MountPropagation=true${KUBELET_EXTRA_FEATURE_GATES:-})
+KUBELET_FEATURE_GATES=${KUBELET_FEATURE_GATES:-none}
+if [ "${KUBELET_FEATURE_GATES}" != "none" ]; then
+  kubelet_dind_args=(--fail-swap-on=false
+                     --bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf
+                     --feature-gates=${KUBELET_FEATURE_GATES} )
+else 
+  kubelet_dind_args=(--fail-swap-on=false
+                     --bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf )
+fi
 
 function dind::fix-cgroups {
   # Workaround for https://github.com/kubernetes/kubernetes/issues/43704

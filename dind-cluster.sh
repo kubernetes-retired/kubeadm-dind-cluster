@@ -167,8 +167,9 @@ DIND_DAEMON_JSON_FILE="${DIND_DAEMON_JSON_FILE:-/etc/docker/daemon.json}"  # can
 DIND_REGISTRY_MIRROR="${DIND_REGISTRY_MIRROR:-}"  # plain string format
 DIND_INSECURE_REGISTRIES="${DIND_INSECURE_REGISTRIES:-}"  # json list format
 
-FEATURE_GATES="${FEATURE_GATES:-}"
-KUBELET_FEATURE_GATES="${KUBELET_FEATURE_GATES:-}"
+FEATURE_GATES="${FEATURE_GATES:-MountPropagation=true}"
+# you can set special value 'none' not to set any kubelet's feature gates.
+KUBELET_FEATURE_GATES="${KUBELET_FEATURE_GATES:-MountPropagation=true,DynamicKubeletConfig=true}"
 
 if [[ ! ${LOCAL_KUBECTL_VERSION:-} && ${DIND_IMAGE:-} =~ :(v[0-9]+\.[0-9]+)$ ]]; then
   LOCAL_KUBECTL_VERSION="${BASH_REMATCH[1]}"
@@ -677,14 +678,7 @@ function dind::kubeadm {
   status=0
   # See image/bare/wrapkubeadm.
   # Capturing output is necessary to grab flags for 'kubeadm join'
-  kubelet_feature_gates=""
-  if [ "z${KUBELET_FEATURE_GATES}" != "z" ]; then
-    # delete 'MountPropergation=true, DynamicKubeletConfig=true' because it will be prepended in wrapkubeadm
-    KUBELET_FEATURE_GATES=$(echo $KUBELET_FEATURE_GATES | sed -e 's/MountPropagation=true,\{0,\}//g' -e 's/,\+/,/g' -e 's/,$//g')
-    KUBELET_FEATURE_GATES=$(echo $KUBELET_FEATURE_GATES | sed -e 's/DynamicKubeletConfig=true,\{0,\}//g' -e 's/,\+/,/g' -e 's/,$//g')
-    kubelet_feature_gates="-e KUBELET_EXTRA_FEATURE_GATES=,${KUBELET_FEATURE_GATES}"
-  fi
-
+  kubelet_feature_gates="-e KUBELET_FEATURE_GATES=${KUBELET_FEATURE_GATES}"
   if ! docker exec ${kubelet_feature_gates} "${container_id}" /usr/local/bin/wrapkubeadm "$@" 2>&1 | tee /dev/fd/2; then
     echo "*** kubeadm failed" >&2
     return 1
@@ -825,11 +819,9 @@ function dind::init {
     feature_gates="{CoreDNS: false}"
   fi
 
-  component_feature_gates="feature-gates: \\\"MountPropagation=true\\\""
-  if [ "z${FEATURE_GATES}" != "z" ]; then
-  # prevent from multiple 'MountPropergation=true'
-  FEATURE_GATES=$(echo $FEATURE_GATES | sed -e 's/MountPropagation=true,\{0,\}//g' -e 's/,\+/,/g' -e 's/,$//g')
-  component_feature_gates="feature-gates: \\\"MountPropagation=true,${FEATURE_GATES}\\\""
+  component_feature_gates=""
+  if [ "${FEATURE_GATES}" != "none" ]; then
+    component_feature_gates="feature-gates: \\\"${FEATURE_GATES}\\\""
   fi
 
   apiserver_extra_args=""

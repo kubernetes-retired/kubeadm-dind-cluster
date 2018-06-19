@@ -63,9 +63,11 @@ DNS_SERVICE="${DNS_SERVICE:-kube-dns}"
 
 # Feature Gates
 # This value will be passed to kube-apiserver, kube-controller-manager and kube-scheduler
+# you can set special value 'none' not to set any feature gates on them.
 # FEATURE_GATES=""
 
 # Kubelet Feature Gates
+# you can set special value 'none' not to set any feature gates on kubelet.
 # KUBELET_FEATURE_GATES=""
 
 # You can configure extra component args for kube-apiservers
