@@ -16,4 +16,12 @@ nodeName: kube-master
 apiServerExtraArgs:
   insecure-bind-address: "{{BIND_ADDR}}"
   insecure-port: "8080"
+  {{COMPONENT_FEATURE_GATES}}
+{{APISERVER_EXTRA_ARGS}}
+controllerManagerExtraArgs:
+  {{COMPONENT_FEATURE_GATES}}
+{{CONTROLLER_MANAGER_EXTRA_ARGS}}
+schedulerExtraArgs:
+  {{COMPONENT_FEATURE_GATES}}
+{{SCHEDULER_EXTRA_ARGS}}
 featureGates: {{FEATURE_GATES}}

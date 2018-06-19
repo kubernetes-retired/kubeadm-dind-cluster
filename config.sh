@@ -61,3 +61,24 @@ CNI_PLUGIN="${CNI_PLUGIN:-bridge}"
 # possible values are kube-dns (default) and coredns
 DNS_SERVICE="${DNS_SERVICE:-kube-dns}"
 
+# Feature Gates
+# This value will be passed to kube-apiserver, kube-controller-manager and kube-scheduler
+# you can set special value 'none' not to set any feature gates on them.
+# FEATURE_GATES=""
+
+# Kubelet Feature Gates
+# you can set special value 'none' not to set any feature gates on kubelet.
+# KUBELET_FEATURE_GATES=""
+
+# You can configure extra component args for kube-apiservers
+# APISERVER_underscored_option_name will be converted --hyphenated-option-name
+# e.g. APISERVER_admission_control=xxx,yyy -> --admission-control=xxx,yyy
+# APISERVER_xxx_yyy=zzz
+
+# Extra component args for kube-controller-manager
+# CONTROLLER_MANAGER_underscored_option_name will be converted --hyphenated-option-name
+# CONTROLLER_MANAGER_xxx=yyy
+
+# Extra component args for kube-scheduler
+# SCHEDULER_underscored_option_name will be converted --hyphenated-option-name
+# SCHEDULER_xxx=yyy
