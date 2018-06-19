@@ -76,8 +76,8 @@ DNS_SERVICE="${DNS_SERVICE:-kube-dns}"
 # APISERVER_xxx_yyy=zzz
 
 # Extra component args for kube-controller-manager
-# CONTROLLERMANAGER_underscored_option_name will be converted --hyphenated-option-name
-# CONTROLLERMANAGER_xxx=yyy
+# CONTROLLER_MANAGER_underscored_option_name will be converted --hyphenated-option-name
+# CONTROLLER_MANAGER_xxx=yyy
 
 # Extra component args for kube-scheduler
 # SCHEDULER_underscored_option_name will be converted --hyphenated-option-name

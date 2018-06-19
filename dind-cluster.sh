@@ -830,10 +830,10 @@ function dind::init {
     apiserver_extra_args+="  ${opt_name}: \\\"$(eval echo \$$e)\\\"\\n"
   done
 
-  controllermanager_extra_args=""
-  for e in $(set -o posix ; set | grep -E "^CONTROLLERMANAGER_[a-z_]+=" | cut -d'=' -f 1); do
-    opt_name=$(echo ${e#CONTROLLERMANAGER_} | sed 's/_/-/g')
-    controllermanager_extra_args+="  ${opt_name}: \\\"$(eval echo \$$e)\\\"\\n"
+  controller_manager_extra_args=""
+  for e in $(set -o posix ; set | grep -E "^CONTROLLER_MANAGER_[a-z_]+=" | cut -d'=' -f 1); do
+    opt_name=$(echo ${e#CONTROLLER_MANAGER_} | sed 's/_/-/g')
+    controller_manager_extra_args+="  ${opt_name}: \\\"$(eval echo \$$e)\\\"\\n"
   done
 
   scheduler_extra_args=""
@@ -853,7 +853,7 @@ sed -e "s|{{ADV_ADDR}}|${kube_master_ip}|" \
     -e "s|{{KUBEADM_VERSION}}|${kubeadm_version}|" \
     -e "s|{{COMPONENT_FEATURE_GATES}}|${component_feature_gates}|" \
     -e "s|{{APISERVER_EXTRA_ARGS}}|${apiserver_extra_args}|" \
-    -e "s|{{CONTROLLERMANAGER_EXTRA_ARGS}}|${controllermanager_extra_args}|" \
+    -e "s|{{CONTROLLER_MANAGER_EXTRA_ARGS}}|${controller_manager_extra_args}|" \
     -e "s|{{SCHEDULER_EXTRA_ARGS}}|${scheduler_extra_args}|" \
     /etc/kubeadm.conf.tmpl > /etc/kubeadm.conf
 EOF
