@@ -1029,8 +1029,12 @@ function dind::remove_external_access_on_host {
 }
 
 function dind::wait-for-ready {
-  dind::step "Waiting for kube-proxy and the nodes"
-  local proxy_ready
+  local app="kube-proxy"
+  if [[ ${CNI_PLUGIN} = "kube-router" ]]; then
+    app=kube-router
+  fi
+  dind::step "Waiting for ${app} and the nodes"
+  local app_ready
   local nodes_ready
   local n=3
   local ntries=200
@@ -1041,12 +1045,12 @@ function dind::wait-for-ready {
     else
       nodes_ready=y
     fi
-    if dind::component-ready k8s-app=kube-proxy; then
-      proxy_ready=y
+    if dind::component-ready k8s-app=${app}; then
+      app_ready=y
     else
-      proxy_ready=
+      app_ready=
     fi
-    if [[ ${nodes_ready} && ${proxy_ready} ]]; then
+    if [[ ${nodes_ready} && ${app_ready} ]]; then
       if ((--n == 0)); then
         echo "[done]" >&2
         break
@@ -1055,7 +1059,7 @@ function dind::wait-for-ready {
       n=3
     fi
     if ((--ntries == 0)); then
-      echo "Error waiting for kube-proxy and the nodes" >&2
+      echo "Error waiting for ${app} and the nodes" >&2
       exit 1
     fi
     echo -n "." >&2
@@ -1145,6 +1149,11 @@ function dind::up {
       ;;
     weave)
       dind::retry "${kubectl}" apply -f "https://github.com/weaveworks/weave/blob/master/prog/weave-kube/weave-daemonset-k8s-1.6.yaml?raw=true"
+      ;;
+    kube-router)
+      dind::retry "${kubectl}" apply -f "https://raw.githubusercontent.com/cloudnativelabs/kube-router/master/daemonset/kubeadm-kuberouter-all-features.yaml"
+      dind::retry "${kubectl}" -n kube-system delete ds kube-proxy
+      docker run --privileged --net=host k8s.gcr.io/kube-proxy-amd64:v1.10.2 kube-proxy --cleanup
       ;;
     *)
       echo "Unsupported CNI plugin '${CNI_PLUGIN}'" >&2
@@ -1249,6 +1258,8 @@ function dind::down {
   done
   if [[ "${CNI_PLUGIN}" = "bridge" ]]; then
     dind::remove_external_access_on_host
+  elif [[ "${CNI_PLUGIN}" = "kube-router" ]]; then
+    docker run --privileged --net=host cloudnativelabs/kube-router --cleanup-config
   fi
 }
 
