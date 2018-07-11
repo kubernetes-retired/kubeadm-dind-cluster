@@ -12,7 +12,7 @@ networking:
   {{POD_SUBNET_DISABLE}}podSubnet: "{{POD_NETWORK_CIDR}}"
   serviceSubnet: "{{SVC_SUBNET}}"
 tokenTTL: 0s
-nodeName: kube-master
+nodeName: {{KUBE_MASTER_NAME}}
 apiServerExtraArgs:
   insecure-bind-address: "{{BIND_ADDR}}"
   insecure-port: "8080"

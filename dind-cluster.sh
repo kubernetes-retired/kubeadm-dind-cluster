@@ -771,7 +771,7 @@ function dind::ensure-dashboard-clusterrolebinding {
                --clusterrole=cluster-admin \
                --serviceaccount=kube-system:default \
                -o json --dry-run |
-    docker exec -i kube-master jq '.apiVersion="rbac.authorization.k8s.io/v1beta1"|.kind|="ClusterRoleBinding"' |
+    docker exec -i "$(dind::master-name)" jq '.apiVersion="rbac.authorization.k8s.io/v1beta1"|.kind|="ClusterRoleBinding"' |
     "${kubectl}" --context "$ctx" apply -f -
 }
 
@@ -789,7 +789,7 @@ function dind::kubeadm-version {
       grep Client |
       sed 's/^.*: v\([0-9.]*\).*/\1/'
   else
-    docker exec kube-master \
+    docker exec "$(dind::master-name)" \
            /bin/bash -c 'kubeadm version -o json | jq -r .clientVersion.gitVersion' |
       sed 's/^v\([0-9.]*\).*/\1/'
   fi
@@ -802,7 +802,9 @@ function dind::init {
   if [[ ${IP_MODE} = "ipv6" ]]; then
       local_host="[::1]"
   fi
-  local container_id=$(dind::run kube-master "${kube_master_ip}" 1 ${local_host}:${APISERVER_PORT}:8080 ${master_opts[@]+"${master_opts[@]}"})
+  local master_name container_id
+  master_name="$(dind::master-name)"
+  container_id=$(dind::run "${master_name}" "${kube_master_ip}" 1 ${local_host}:${APISERVER_PORT}:8080 ${master_opts[@]+"${master_opts[@]}"})
   # FIXME: I tried using custom tokens with 'kubeadm ex token create' but join failed with:
   # 'failed to parse response as JWS object [square/go-jose: compact JWS format must have three parts]'
   # So we just pick the line from 'kubeadm init' output
@@ -818,13 +820,13 @@ function dind::init {
   if [[ ${IP_MODE} = "ipv6" ]]; then
     bind_address="::"
   fi
-  dind::proxy kube-master
-  dind::custom-docker-opts kube-master
+  dind::proxy "$master_name"
+  dind::custom-docker-opts "$master_name"
 
   # HACK: Indicating mode, so that wrapkubeadm will not set a cluster CIDR for kube-proxy
   # in IPv6 (only) mode.
   if [[ ${IP_MODE} = "ipv6" ]]; then
-    docker exec --privileged -i kube-master touch /v6-mode
+    docker exec --privileged -i "$master_name" touch /v6-mode
   fi
 
   feature_gates="{}"
@@ -833,7 +835,7 @@ function dind::init {
     # it'll break k8s 1.8. FIXME: simplify
     # after 1.8 support is removed
     feature_gates="{CoreDNS: true}"
-  elif docker exec kube-master kubeadm init --help 2>&1 | grep -q CoreDNS; then
+  elif docker exec "$master_name" kubeadm init --help 2>&1 | grep -q CoreDNS; then
     # FIXME: CoreDNS should be the default in 1.11
     feature_gates="{CoreDNS: false}"
   fi
@@ -866,7 +868,7 @@ function dind::init {
   if [[ ${kubeadm_version} =~ 1\.(8|9|10)\. ]]; then
     api_version="kubeadm.k8s.io/v1alpha1"
   fi
-  docker exec -i kube-master bash <<EOF
+  docker exec -i "$master_name" bash <<EOF
 sed -e "s|{{API_VERSION}}|${api_version}|" \
     -e "s|{{ADV_ADDR}}|${kube_master_ip}|" \
     -e "s|{{POD_SUBNET_DISABLE}}|${pod_subnet_disable}|" \
@@ -879,6 +881,7 @@ sed -e "s|{{API_VERSION}}|${api_version}|" \
     -e "s|{{APISERVER_EXTRA_ARGS}}|${apiserver_extra_args}|" \
     -e "s|{{CONTROLLER_MANAGER_EXTRA_ARGS}}|${controller_manager_extra_args}|" \
     -e "s|{{SCHEDULER_EXTRA_ARGS}}|${scheduler_extra_args}|" \
+    -e "s|{{KUBE_MASTER_NAME}}|${master_name}|" \
     /etc/kubeadm.conf.tmpl > /etc/kubeadm.conf
 EOF
   # TODO: --skip-preflight-checks needs to be replaced with
@@ -887,7 +890,7 @@ EOF
   init_args=(--config /etc/kubeadm.conf)
   # required when building from source
   if [[ ${BUILD_KUBEADM} || ${BUILD_HYPERKUBE} ]]; then
-    docker exec kube-master mount --make-shared /k8s
+    docker exec "$master_name" mount --make-shared /k8s
   fi
   kubeadm_join_flags="$(dind::kubeadm "${container_id}" init "${init_args[@]}" --skip-preflight-checks "$@" | grep '^ *kubeadm join' | sed 's/^ *kubeadm join //')"
   dind::configure-kubectl
@@ -934,7 +937,7 @@ function dind::accelerate-kube-dns {
      dind::step "Patching kube-dns deployment to make it start faster"
      # Could do this on the host, too, but we don't want to require jq here
      # TODO: do this in wrapkubeadm
-     docker exec kube-master /bin/bash -c \
+     docker exec "$(dind::master-name)" /bin/bash -c \
         "kubectl get deployment kube-dns -n kube-system -o json | jq '.spec.template.spec.containers[0].readinessProbe.initialDelaySeconds = 3|.spec.template.spec.containers[0].readinessProbe.periodSeconds = 3' | kubectl apply --force -f -"
  fi
 }
@@ -968,7 +971,7 @@ function dind::create-static-routes-for-bridge {
   echo "Creating static routes for bridge plugin"
   for ((i=0; i <= NUM_NODES; i++)); do
     if [[ ${i} -eq 0 ]]; then
-      node="kube-master"
+      node="$(dind::master-name)"
     else
       node="kube-node-${i}"
     fi
@@ -977,7 +980,7 @@ function dind::create-static-routes-for-bridge {
 	continue
       fi
       if [[ ${j} -eq 0 ]]; then
-        dest_node="kube-master"
+        dest_node="$(dind::master-name)"
       else
         dest_node="kube-node-${j}"
       fi
@@ -1144,7 +1147,7 @@ function dind::up {
   else
     # FIXME: this may fail depending on k8s/kubeadm version
     # FIXME: check for taint & retry if it's there
-    "${kubectl}" --context "$ctx" taint nodes kube-master node-role.kubernetes.io/master- || true
+    "${kubectl}" --context "$ctx" taint nodes $(dind::master-name) node-role.kubernetes.io/master- || true
   fi
   case "${CNI_PLUGIN}" in
     bridge)
@@ -1181,8 +1184,9 @@ function dind::up {
 }
 
 function dind::fix-mounts {
+  local node_name
   for ((n=0; n <= NUM_NODES; n++)); do
-    local node_name=kube-master
+    node_name="$(dind::master-name)"
     if ((n > 0)); then
       node_name="kube-node-${n}"
     fi
@@ -1207,7 +1211,7 @@ function dind::snapshot_container {
 
 function dind::snapshot {
   dind::step "Taking snapshot of the cluster"
-  dind::snapshot_container kube-master
+  dind::snapshot_container "$(dind::master-name)"
   for ((n=1; n <= NUM_NODES; n++)); do
     dind::snapshot_container "kube-node-${n}"
   done
@@ -1232,7 +1236,7 @@ function dind::restore {
         if [[ ${IP_MODE} = "ipv6" ]]; then
           local_host="[::1]"
         fi
-        dind::restore_container "$(dind::run -r kube-master "${kube_master_ip}" 1 ${local_host}:${APISERVER_PORT}:8080 ${master_opts[@]+"${master_opts[@]}"})"
+        dind::restore_container "$(dind::run -r "$(dind::master-name)" "${kube_master_ip}" 1 ${local_host}:${APISERVER_PORT}:8080 ${master_opts[@]+"${master_opts[@]}"})"
         dind::step "Master container restored"
       else
         dind::step "Restoring node container:" ${n}
@@ -1271,6 +1275,10 @@ function dind::down {
   fi
 }
 
+function dind::master-name {
+  echo "kube-master-$(dind::sha1 "$DIND_LABEL")"
+}
+
 function dind::context-name {
   echo "dind-$(dind::sha1 "$DIND_LABEL")"
 }
@@ -1292,7 +1300,7 @@ function dind::sha1 {
 }
 
 function dind::check-for-snapshot {
-  if ! dind::volume-exists "kubeadm-dind-kube-master"; then
+  if ! dind::volume-exists "kubeadm-dind-$(dind::master-name)"; then
     return 1
   fi
   for ((n=1; n <= NUM_NODES; n++)); do
@@ -1444,7 +1452,7 @@ function dind::dump {
     docker exec "${node}" ip r
   done
   local ctx master_name
-  master_name="kube-master"
+  master_name="$(dind::master-name)"
   ctx="$(dind::context-name)"
   docker exec "$master_name" kubectl --context "$ctx" get pods --all-namespaces \
           -o go-template='{{range $x := .items}}{{range $x.spec.containers}}{{$x.spec.nodeName}}{{" "}}{{$x.metadata.namespace}}{{" "}}{{$x.metadata.name}}{{" "}}{{.name}}{{"\n"}}{{end}}{{end}}' |
@@ -1462,7 +1470,7 @@ function dind::dump {
 
 function dind::dump64 {
   echo "%%% start-base64 %%%"
-  dind::dump | docker exec -i kube-master /bin/sh -c "lzma | base64 -w 100"
+  dind::dump | docker exec -i "$(dind::master-name)" /bin/sh -c "lzma | base64 -w 100"
   echo "%%% end-base64 %%%"
 }
 
