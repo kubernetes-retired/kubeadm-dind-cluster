@@ -505,7 +505,7 @@ function dind::ensure-volume {
   fi
   local name="$1"
   if dind::volume-exists "${name}"; then
-    if [[ ! {reuse_volume} ]]; then
+    if [[ ! ${reuse_volume} ]]; then
       docker volume rm "${name}" >/dev/null
     fi
   elif [[ ${reuse_volume} ]]; then
