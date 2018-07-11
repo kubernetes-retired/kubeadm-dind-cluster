@@ -279,6 +279,48 @@ function test-case-src-master-coredns {
   )
 }
 
+function test-case-multiple-instances {
+  local defaultLabel='mirantis.kubeadm_dind_cluster_runtime'
+  local customLabel='some.custom-label'
+
+  "${DIND_ROOT}"/dind-cluster.sh up
+  DIND_APISERVER_PORT_FORWARD=8082 DIND_SUBNET='10.199.0.0' DIND_LABEL="$customLabel" "${DIND_ROOT}"/dind-cluster.sh up
+
+  test "$(countContainersWithLabel "$defaultLabel")" -gt 0 || {
+    fail 'Expected containers with default label to exist'
+  }
+  test "$(countContainersWithLabel "$customLabel")"  -gt 0 || {
+    fail 'Expected containers with custom label to exist'
+  }
+
+  "${DIND_ROOT}"/dind-cluster.sh clean
+  test "$(countContainersWithLabel "$defaultLabel")" -eq 0 || {
+    fail 'Expected containters with default label not to exist'
+  }
+  test "$(countContainersWithLabel "$customLabel")" -gt 0 || {
+    fail 'Expected containters with custom label to exist'
+  }
+
+  DIND_LABEL="$customLabel" "${DIND_ROOT}"/dind-cluster.sh clean
+  test "$(countContainersWithLabel "$defaultLabel")" -eq 0 || {
+    fail 'Expected containters with default label not to exist'
+  }
+  test "$(countContainersWithLabel "$customLabel")" -eq 0 || {
+    fail 'Expected containters with custom label not to exist'
+  }
+}
+
+function fail() {
+  local msg="$1"
+  echo -e "\033[1;31m${msg}\033[0m" >&2
+  return 1
+}
+
+function countContainersWithLabel() {
+  local numOfHeaderLines=1
+  local label="$1"
+  echo $(( $(docker ps --filter="label=${label}" | wc -l) - numOfHeaderLines ))
+}
 
 if [[ ! ${TEST_CASE} ]]; then
   test-case-1.8
@@ -298,6 +340,7 @@ if [[ ! ${TEST_CASE} ]]; then
   # test-case-src-calico-kdd
   # test-case-src-master-weave
   # test-case-src-master-coredns
+  test-case-multiple-instances
 else
   "test-case-${TEST_CASE}"
 fi

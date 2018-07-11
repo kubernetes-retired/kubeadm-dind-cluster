@@ -175,6 +175,10 @@ if [[ ! ${LOCAL_KUBECTL_VERSION:-} && ${DIND_IMAGE:-} =~ :(v[0-9]+\.[0-9]+)$ ]];
   LOCAL_KUBECTL_VERSION="${BASH_REMATCH[1]}"
 fi
 
+DEFAULT_DIND_LABEL='mirantis.kubeadm_dind_cluster_runtime'
+: "${DIND_LABEL:=${DEFAULT_DIND_LABEL}}"
+: "${DIND_APISERVER_PORT_FORWARD:=8080}"
+
 function dind::need-source {
   if [[ ! -f cluster/kubectl.sh ]]; then
     echo "$0 must be called from the Kubernetes repository root directory" 1>&2
@@ -240,7 +244,7 @@ function dind::volume-exists {
 
 function dind::create-volume {
   local name="$1"
-  docker volume create --label mirantis.kubeadm_dind_cluster --name "${name}" >/dev/null
+  docker volume create --label "${DIND_LABEL}" --name "${name}" >/dev/null
 }
 
 # We mount /boot and /lib/modules into the container
@@ -545,7 +549,7 @@ BIND9_EOF
 		docker-machine ssh k8s-dind sudo mkdir -p ${bind9_path}/conf ${bind9_path}/cache
 		docker-machine ssh k8s-dind sudo cp /home/docker-user/bind9-named.conf ${bind9_path}/conf/named.conf
 	    fi
-	    docker run -d --name bind9 --hostname bind9 --net kubeadm-dind-net --label mirantis.kubeadm_dind_cluster \
+	    docker run -d --name bind9 --hostname bind9 --net kubeadm-dind-net --label "${DIND_LABEL}" \
 		   --sysctl net.ipv6.conf.all.disable_ipv6=0 --sysctl net.ipv6.conf.all.forwarding=1 \
 		   --privileged=true --ip6 ${dns_server} --dns ${dns_server} \
 		   -v ${bind9_path}/conf/named.conf:/etc/bind/named.conf \
@@ -560,7 +564,7 @@ BIND9_EOF
 function dind::ensure-nat {
     if [[  ${IP_MODE} = "ipv6" ]]; then
         if ! docker ps | grep tayga >&/dev/null; then
-            docker run -d --name tayga --hostname tayga --net kubeadm-dind-net --label mirantis.kubeadm_dind_cluster \
+            docker run -d --name tayga --hostname tayga --net kubeadm-dind-net --label "${DIND_LABEL}" \
 		   --sysctl net.ipv6.conf.all.disable_ipv6=0 --sysctl net.ipv6.conf.all.forwarding=1 \
 		   --privileged=true --ip 172.18.0.200 --ip6 ${LOCAL_NAT64_SERVER} --dns ${REMOTE_DNS64_V4SERVER} --dns ${dns_server} \
 		   -e TAYGA_CONF_PREFIX=${DNS64_PREFIX_CIDR} -e TAYGA_CONF_IPV4_ADDR=172.18.0.200 \
@@ -669,7 +673,7 @@ function dind::run {
          --net kubeadm-dind-net \
          --name "${container_name}" \
          --hostname "${container_name}" \
-         -l mirantis.kubeadm_dind_cluster \
+         -l "${DIND_LABEL}" \
          -v ${volume_name}:/dind \
          ${opts[@]+"${opts[@]}"} \
          "${DIND_IMAGE}" \
@@ -888,7 +892,7 @@ function dind::create-node-container {
   # if there's just one node currently, it's master, thus we need to use
   # kube-node-1 hostname, if there are two nodes, we should pick
   # kube-node-2 and so on
-  local next_node_index=${1:-$(docker ps -q --filter=label=mirantis.kubeadm_dind_cluster | wc -l | sed 's/^ *//g')}
+  local next_node_index=${1:-$(docker ps -q --filter=label="${DIND_LABEL}" | wc -l | sed 's/^ *//g')}
   local node_ip="${dind_ip_base}$((next_node_index + 2))"
   local -a opts
   if [[ ${BUILD_KUBEADM} || ${BUILD_HYPERKUBE} ]]; then
@@ -1243,7 +1247,7 @@ function dind::restore {
 }
 
 function dind::down {
-  docker ps -a -q --filter=label=mirantis.kubeadm_dind_cluster | while read container_id; do
+  docker ps -a -q --filter=label="${DIND_LABEL}" | while read container_id; do
     dind::step "Removing container:" "${container_id}"
     docker rm -fv "${container_id}"
   done
@@ -1341,7 +1345,7 @@ function dind::copy-image {
     rm -fr "${image_path}"
   fi
   docker save "${image}" -o "${image_path}"
-  docker ps -a -q --filter=label=mirantis.kubeadm_dind_cluster | while read container_id; do
+  docker ps -a -q --filter=label="${DIND_LABEL}" | while read container_id; do
     cat "${image_path}" | docker exec -i "${container_id}" docker load
   done
   rm -fr "${image_path}"
@@ -1395,7 +1399,7 @@ function dind::step {
 function dind::dump {
   set +e
   echo "*** Dumping cluster state ***"
-  for node in $(docker ps --format '{{.Names}}' --filter label=mirantis.kubeadm_dind_cluster); do
+  for node in $(docker ps --format '{{.Names}}' --filter label="${DIND_LABEL}"); do
     for service in kubelet.service dindnet.service criproxy.service dockershim.service; do
       if docker exec "${node}" systemctl is-enabled "${service}" >&/dev/null; then
         echo "@@@ service-${node}-${service}.log @@@"
