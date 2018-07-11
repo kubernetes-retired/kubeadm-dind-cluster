@@ -63,10 +63,10 @@ $ # add kubectl directory to PATH
 $ export PATH="$HOME/.kubeadm-dind-cluster:$PATH"
 
 $ kubectl get nodes
-NAME          STATUS    AGE       VERSION
-kube-master   Ready     6m        v1.8.6
-kube-node-1   Ready     5m        v1.8.6
-kube-node-2   Ready     5m        v1.8.6
+NAME                      STATUS    AGE       VERSION
+kube-master-<sha1-hash>   Ready     6m        v1.8.6
+kube-node-1-<sha1-hash>   Ready     5m        v1.8.6
+kube-node-2-<sha1-hash>   Ready     5m        v1.8.6
 
 $ # k8s dashboard available at http://localhost:8080/api/v1/namespaces/kube-system/services/kubernetes-dashboard:/proxy
 
@@ -98,10 +98,10 @@ $ # build binaries+images and start the cluster
 $ ~/dind/dind-cluster.sh up
 
 $ kubectl get nodes
-NAME          STATUS         AGE
-kube-master   Ready,master   1m
-kube-node-1   Ready          34s
-kube-node-2   Ready          34s
+NAME                      STATUS         AGE
+kube-master-<sha1-hash>   Ready,master   1m
+kube-node-1-<sha1-hash>   Ready          34s
+kube-node-2-<sha1-hash>   Ready          34s
 
 $ # k8s dashboard available at http://localhost:8080/ui
 
@@ -221,6 +221,34 @@ The following information is currently stored in the dump:
 * the logs of all the containers of each pod in the cluster
 * the output of `kubectl get all --all-namespaces -o wide`,
   `kubectl describe all --all-namespaces` and `kubectl get nodes -o wide`
+
+## Running multiple clusters in parallel
+
+`dind-cluster.sh` can be used to create and manage multiple dind clusters.
+For the first cluster, no extra variables need to be set, but the variables listed below can optionally be configured.
+
+For every additional cluster, set the following environment variables:
+
+| Environment Variable        | What does it control?                                                                                                                             |
+|-----------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
+| DIND_LABEL                  | The container label, used by `dind-cluster.sh` to label Docker resources and manage the lifecycle of the cluster's containers.                    |
+| DIND_SUBNET                 | The subnet in which the cluster is placed. It must be a subnet that's not already used by the Docker engine.                                      |
+| DIND_APISERVER_PORT_FORWARD | The port on the Docker host machine, that will be forwarded to the apiserver. It must not be in use by any other application on the host machine. |
+
+Example usage:
+
+```shell
+$ DIND_APISERVER_PORT_FORWARD=8082 DIND_SUBNET='10.199.0.0' DIND_LABEL="example-custom-label" ./dind-cluster.sh up
+```
+
+Example output:
+
+```shell
+$ docker ps  --format '{{ .ID }} - {{ .Names }} -- {{ .Labels }}'                                                                                                                                           │
+fd566cd6c41e - kube-node-2-a851cc1971ecacfea75609d7267e9b30231f4270 -- mirantis.kubeadm_dind_cluster=1,example-custom-label=
+baaca6df2300 - kube-node-1-a851cc1971ecacfea75609d7267e9b30231f4270 -- example-custom-label=,mirantis.kubeadm_dind_cluster=1
+b15b957a6554 - kube-master-a851cc1971ecacfea75609d7267e9b30231f4270 -- example-custom-label=,mirantis.kubeadm_dind_cluster=1
+```
 
 ## Motivation
 `hack/local-up-cluster.sh` is widely used for k8s development. It has
