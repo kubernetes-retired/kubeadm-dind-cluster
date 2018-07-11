@@ -657,7 +657,7 @@ function dind::run {
     opts+=(-v /boot:/boot -v /lib/modules:/lib/modules)
   fi
 
-  volume_name="kubeadm-dind-${container_name}"
+  local volume_name="kubeadm-dind-${container_name}"
   dind::ensure-network
   dind::ensure-volume ${reuse_volume} "${volume_name}"
   dind::ensure-nat
@@ -676,7 +676,7 @@ function dind::run {
          --name "${container_name}" \
          --hostname "${container_name}" \
          -l "${DIND_LABEL}" \
-         -v ${volume_name}:/dind \
+         -v "${volume_name}:/dind" \
          ${opts[@]+"${opts[@]}"} \
          "${DIND_IMAGE}" \
          ${args[@]+"${args[@]}"}
