@@ -334,7 +334,7 @@ if [[ ! ${TEST_CASE} ]]; then
   test-case-1.9-calico
   test-case-1.9-calico-kdd
   test-case-1.9-weave
-  test-case-src-1.8
+  test-case-src-1.10
   test-case-src-master
   # test-case-src-master-flannel
   # test-case-src-master-calico
