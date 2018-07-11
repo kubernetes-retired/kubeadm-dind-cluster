@@ -917,7 +917,9 @@ function dind::create-node-container {
       opts+=(-e HYPERKUBE_SOURCE=build://)
     fi
   fi
-  dind::run ${reuse_volume} kube-node-${next_node_index} ${node_ip} $((next_node_index + 1)) "${EXTRA_PORTS}" ${opts[@]+"${opts[@]}"}
+  local node_name
+  node_name="$(dind::node-name ${next_node_index})"
+  dind::run ${reuse_volume} "$node_name" ${node_ip} $((next_node_index + 1)) "${EXTRA_PORTS}" ${opts[@]+"${opts[@]}"}
 }
 
 function dind::join {
@@ -973,7 +975,7 @@ function dind::create-static-routes-for-bridge {
     if [[ ${i} -eq 0 ]]; then
       node="$(dind::master-name)"
     else
-      node="kube-node-${i}"
+      node="$(dind::node-name $i)"
     fi
     for ((j=0; j <= NUM_NODES; j++)); do
       if [[ ${i} -eq ${j} ]]; then
@@ -982,7 +984,7 @@ function dind::create-static-routes-for-bridge {
       if [[ ${j} -eq 0 ]]; then
         dest_node="$(dind::master-name)"
       else
-        dest_node="kube-node-${j}"
+        dest_node="$(dind::node-name $j)"
       fi
       id=$((${j}+1))
       if [[ ${IP_MODE} = "ipv4" ]]; then
@@ -1188,7 +1190,7 @@ function dind::fix-mounts {
   for ((n=0; n <= NUM_NODES; n++)); do
     node_name="$(dind::master-name)"
     if ((n > 0)); then
-      node_name="kube-node-${n}"
+      node_name="$(dind::node-name $n)"
     fi
     docker exec "${node_name}" mount --make-shared /run
     if [[ ! ${using_linuxkit} ]]; then
@@ -1213,7 +1215,7 @@ function dind::snapshot {
   dind::step "Taking snapshot of the cluster"
   dind::snapshot_container "$(dind::master-name)"
   for ((n=1; n <= NUM_NODES; n++)); do
-    dind::snapshot_container "kube-node-${n}"
+    dind::snapshot_container "$(dind::node-name $n)"
   done
   dind::wait-for-ready
 }
@@ -1279,6 +1281,11 @@ function dind::master-name {
   echo "kube-master-$(dind::sha1 "$DIND_LABEL")"
 }
 
+function dind::node-name {
+  local nr="$1"
+  echo "kube-node-${nr}-$(dind::sha1 "$DIND_LABEL")"
+}
+
 function dind::context-name {
   echo "dind-$(dind::sha1 "$DIND_LABEL")"
 }
@@ -1308,7 +1315,7 @@ function dind::check-for-snapshot {
     return 1
   fi
   for ((n=1; n <= NUM_NODES; n++)); do
-    if ! dind::volume-exists "kubeadm-dind-kube-node-${n}"; then
+    if ! dind::volume-exists "kubeadm-dind-$(dind::node-name ${n})"; then
       return 1
     fi
   done
