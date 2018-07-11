@@ -266,22 +266,24 @@ function dind::prepare-sys-mounts {
     fi
     return 0
   fi
-  if ! dind::volume-exists kubeadm-dind-sys; then
+  local dind_sys_vol_name
+  dind_sys_vol_name="kubeadm-dind-sys-$( dind::sha1 "$DIND_LABEL" )"
+  if ! dind::volume-exists "$dind_sys_vol_name"; then
     dind::step "Saving a copy of docker host's /lib/modules"
-    dind::create-volume kubeadm-dind-sys
+    dind::create-volume "$dind_sys_vol_name"
     # Use a dirty nsenter trick to fool Docker on Mac and grab system
     # /lib/modules into sys.tar file on kubeadm-dind-sys volume.
     local nsenter="nsenter --mount=/proc/1/ns/mnt --"
     docker run \
            --rm \
            --privileged \
-           -v kubeadm-dind-sys:/dest \
+           -v "$dind_sys_vol_name":/dest \
            --pid=host \
            "${busybox_image}" \
            /bin/sh -c \
            "if ${nsenter} test -d /lib/modules; then ${nsenter} tar -C / -c lib/modules >/dest/sys.tar; fi"
   fi
-  sys_volume_args=(-v kubeadm-dind-sys:/dind-sys)
+  sys_volume_args=(-v "$dind_sys_vol_name":/dind-sys)
 }
 
 tmp_containers=()
@@ -729,9 +731,11 @@ function dind::set-master-opts {
   master_opts=()
   if [[ ${BUILD_KUBEADM} || ${BUILD_HYPERKUBE} ]]; then
     # share binaries pulled from the build container between nodes
-    dind::ensure-volume "dind-k8s-binaries"
+    local dind_k8s_bin_vol_name
+    dind_k8s_bin_vol_name="dind-k8s-binaries-$(dind::sha1 "$DIND_LABEL")"
+    dind::ensure-volume "${dind_k8s_bin_vol_name}"
     dind::set-build-volume-args
-    master_opts+=("${build_volume_args[@]}" -v dind-k8s-binaries:/k8s)
+    master_opts+=("${build_volume_args[@]}" -v "${dind_k8s_bin_vol_name}:/k8s")
     local -a bins
     if [[ ${BUILD_KUBEADM} ]]; then
       master_opts+=(-e KUBEADM_SOURCE=build://)
@@ -896,7 +900,7 @@ function dind::create-node-container {
   local node_ip="${dind_ip_base}$((next_node_index + 2))"
   local -a opts
   if [[ ${BUILD_KUBEADM} || ${BUILD_HYPERKUBE} ]]; then
-    opts+=(-v dind-k8s-binaries:/k8s)
+    opts+=(-v "dind-k8s-binaries-$(dind::sha1 "$DIND_LABEL")":/k8s)
     if [[ ${BUILD_KUBEADM} ]]; then
       opts+=(-e KUBEADM_SOURCE=build://)
     fi
@@ -1257,11 +1261,19 @@ function dind::down {
 }
 
 function dind::remove-volumes {
-  # docker 1.13+: docker volume ls -q -f label=mirantis.kubeadm_dind_cluster
-  docker volume ls -q | (grep '^kubeadm-dind' || true) | while read volume_id; do
+  # docker 1.13+: docker volume ls -q -f label="${DIND_LABEL}"
+  local nameRE
+  nameRE='^kubeadm-dind-.*-'"$(dind::sha1 "$DIND_LABEL")"
+  docker volume ls -q | (grep "$nameRE" || true) | while read volume_id; do
     dind::step "Removing volume:" "${volume_id}"
     docker volume rm "${volume_id}"
   done
+}
+
+function dind::sha1 {
+  # shellcheck disable=SC2046
+  set -- $( echo "$@" | sha1sum )
+  echo "$1"
 }
 
 function dind::check-for-snapshot {
