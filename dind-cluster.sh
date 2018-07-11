@@ -487,13 +487,13 @@ function dind::ensure-binaries {
 }
 
 function dind::ensure-network {
-  if ! docker network inspect kubeadm-dind-net >&/dev/null; then
+  if ! docker network inspect $(dind::net-name) >&/dev/null; then
     local v6settings=""
     if [[ ${IP_MODE} = "ipv6" ]]; then
       # Need second network for NAT64
       v6settings="--subnet=172.18.0.0/16 --ipv6"
     fi
-    docker network create ${v6settings} --subnet="${DIND_SUBNET}/${DIND_SUBNET_SIZE}" --gateway="${dind_ip_base}1" kubeadm-dind-net >/dev/null
+    docker network create ${v6settings} --subnet="${DIND_SUBNET}/${DIND_SUBNET_SIZE}" --gateway="${dind_ip_base}1" $(dind::net-name) >/dev/null
   fi
 }
 
@@ -551,7 +551,7 @@ BIND9_EOF
 		docker-machine ssh k8s-dind sudo mkdir -p ${bind9_path}/conf ${bind9_path}/cache
 		docker-machine ssh k8s-dind sudo cp /home/docker-user/bind9-named.conf ${bind9_path}/conf/named.conf
 	    fi
-	    docker run -d --name bind9 --hostname bind9 --net kubeadm-dind-net --label "${DIND_LABEL}" \
+	    docker run -d --name bind9 --hostname bind9 --net "$(dind::net-name)" --label "${DIND_LABEL}" \
 		   --sysctl net.ipv6.conf.all.disable_ipv6=0 --sysctl net.ipv6.conf.all.forwarding=1 \
 		   --privileged=true --ip6 ${dns_server} --dns ${dns_server} \
 		   -v ${bind9_path}/conf/named.conf:/etc/bind/named.conf \
@@ -566,7 +566,7 @@ BIND9_EOF
 function dind::ensure-nat {
     if [[  ${IP_MODE} = "ipv6" ]]; then
         if ! docker ps | grep tayga >&/dev/null; then
-            docker run -d --name tayga --hostname tayga --net kubeadm-dind-net --label "${DIND_LABEL}" \
+            docker run -d --name tayga --hostname tayga --net "$(dind::net-name)" --label "${DIND_LABEL}" \
 		   --sysctl net.ipv6.conf.all.disable_ipv6=0 --sysctl net.ipv6.conf.all.forwarding=1 \
 		   --privileged=true --ip 172.18.0.200 --ip6 ${LOCAL_NAT64_SERVER} --dns ${REMOTE_DNS64_V4SERVER} --dns ${dns_server} \
 		   -e TAYGA_CONF_PREFIX=${DNS64_PREFIX_CIDR} -e TAYGA_CONF_IPV4_ADDR=172.18.0.200 \
@@ -672,7 +672,7 @@ function dind::run {
          -e KUBEADM_SOURCE="${KUBEADM_SOURCE}" \
          -e HYPERKUBE_SOURCE="${HYPERKUBE_SOURCE}" \
          -d --privileged \
-         --net kubeadm-dind-net \
+         --net "$(dind::net-name)" \
          --name "${container_name}" \
          --hostname "${container_name}" \
          -l "${DIND_LABEL}" \
@@ -1003,7 +1003,7 @@ function dind::create-static-routes-for-bridge {
 }
 
 # If we are allowing AAAA record use, then provide SNAT for IPv6 packets from
-# node containers, and forward packets to bridge used for kubeadm-dind-net.
+# node containers, and forward packets to bridge used for $(dind::net-name).
 # This gives pods access to external IPv6 sites, when using IPv6 addresses.
 function dind::setup_external_access_on_host {
   if [[ ! ${DIND_ALLOW_AAAA_USE} ]]; then
@@ -1015,7 +1015,7 @@ function dind::setup_external_access_on_host {
   if [[ -n "$bridge_if" ]]; then
     docker run --entrypoint /sbin/ip6tables --net=host --rm --privileged ${DIND_IMAGE} -A FORWARD -i $bridge_if -j ACCEPT
   else
-    echo "WARNING! No kubeadm-dind-net bridge - unable to setup forwarding/SNAT"
+    echo "WARNING! No $(dind::net-name) bridge - unable to setup forwarding/SNAT"
   fi
 }
 
@@ -1283,6 +1283,10 @@ function dind::context-name {
   echo "dind-$(dind::sha1 "$DIND_LABEL")"
 }
 
+function dind::net-name {
+  echo "kubeadm-dind-net-$(dind::sha1 "$DIND_LABEL")"
+}
+
 function dind::remove-volumes {
   # docker 1.13+: docker volume ls -q -f label="${DIND_LABEL}"
   local nameRE
@@ -1368,8 +1372,10 @@ function dind::clean {
   dind::down
   # dind::remove-images
   dind::remove-volumes
-  if docker network inspect kubeadm-dind-net >&/dev/null; then
-    docker network rm kubeadm-dind-net
+  local net_name
+  net_name="$(dind::net-name)"
+  if docker network inspect "$net_name" >&/dev/null; then
+    docker network rm "$net_name"
   fi
 }
 
