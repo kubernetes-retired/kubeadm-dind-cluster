@@ -721,9 +721,13 @@ function dind::configure-kubectl {
       host="[::1]"
     fi
   fi
-  "${kubectl}" config set-cluster dind --server="http://${host}:${APISERVER_PORT}" --insecure-skip-tls-verify=true
-  "${kubectl}" config set-context dind --cluster=dind
-  "${kubectl}" config use-context dind
+  local context_name cluster_name
+  context_name="$(dind::context-name)"
+  cluster_name="$(dind::context-name)"
+  "${kubectl}" config set-cluster "$cluster_name" \
+    --server="http://${host}:${DIND_APISERVER_PORT_FORWARD}" \
+    --insecure-skip-tls-verify=true
+  "${kubectl}" config set-context "$context_name" --cluster="$cluster_name"
 }
 
 force_make_binaries=
@@ -759,19 +763,21 @@ function dind::set-master-opts {
 }
 
 function dind::ensure-dashboard-clusterrolebinding {
+  local ctx
+  ctx="$(dind::context-name)"
   # 'create' may cause etcd timeout, yet create the clusterrolebinding.
   # So use 'apply' to actually create it
-  "${kubectl}" create clusterrolebinding add-on-cluster-admin \
+  "${kubectl}" --context "$ctx" create clusterrolebinding add-on-cluster-admin \
                --clusterrole=cluster-admin \
                --serviceaccount=kube-system:default \
                -o json --dry-run |
     docker exec -i kube-master jq '.apiVersion="rbac.authorization.k8s.io/v1beta1"|.kind|="ClusterRoleBinding"' |
-    "${kubectl}" apply -f -
+    "${kubectl}" --context "$ctx" apply -f -
 }
 
 function dind::deploy-dashboard {
   dind::step "Deploying k8s dashboard"
-  dind::retry "${kubectl}" apply -f "${DASHBOARD_URL}"
+  dind::retry "${kubectl}" --context "$(dind::context-name)" apply -f "${DASHBOARD_URL}"
   # https://kubernetes-io-vnext-staging.netlify.com/docs/admin/authorization/rbac/#service-account-permissions
   # Thanks @liggitt for the hint
   dind::retry dind::ensure-dashboard-clusterrolebinding
@@ -936,7 +942,7 @@ function dind::accelerate-kube-dns {
 function dind::component-ready {
   local label="$1"
   local out
-  if ! out="$("${kubectl}" get pod -l "${label}" -n kube-system \
+  if ! out="$("${kubectl}" --context "$(dind::context-name)" get pod -l "${label}" -n kube-system \
                            -o jsonpath='{ .items[*].status.conditions[?(@.type == "Ready")].status }' 2>/dev/null)"; then
     return 1
   fi
@@ -947,13 +953,14 @@ function dind::component-ready {
 }
 
 function dind::kill-failed-pods {
-  local pods
+  local pods ctx
+  ctx="$(dind::context-name)"
   # workaround for https://github.com/kubernetes/kubernetes/issues/36482
-  if ! pods="$(kubectl get pod -n kube-system -o jsonpath='{ .items[?(@.status.phase == "Failed")].metadata.name }' 2>/dev/null)"; then
+  if ! pods="$(kubectl --context "$ctx" get pod -n kube-system -o jsonpath='{ .items[?(@.status.phase == "Failed")].metadata.name }' 2>/dev/null)"; then
     return
   fi
   for name in ${pods}; do
-    kubectl delete pod --now -n kube-system "${name}" >&/dev/null || true
+    kubectl --context "$ctx" delete pod --now -n kube-system "${name}" >&/dev/null || true
   done
 }
 
@@ -1042,9 +1049,11 @@ function dind::wait-for-ready {
   local nodes_ready
   local n=3
   local ntries=200
+  local ctx
+  ctx="$(dind::context-name)"
   while true; do
     dind::kill-failed-pods
-    if "${kubectl}" get nodes 2>/dev/null | grep -q NotReady; then
+    if "${kubectl}" --context "$ctx" get nodes 2>/dev/null | grep -q NotReady; then
       nodes_ready=
     else
       nodes_ready=y
@@ -1072,8 +1081,8 @@ function dind::wait-for-ready {
 
   dind::step "Bringing up ${DNS_SERVICE} and kubernetes-dashboard"
   # on Travis 'scale' sometimes fails with 'error: Scaling the resource failed with: etcdserver: request timed out; Current resource version 442' here
-  dind::retry "${kubectl}" scale deployment --replicas=1 -n kube-system ${DNS_SERVICE}
-  dind::retry "${kubectl}" scale deployment --replicas=1 -n kube-system kubernetes-dashboard
+  dind::retry "${kubectl}" --context "$ctx" scale deployment --replicas=1 -n kube-system ${DNS_SERVICE}
+  dind::retry "${kubectl}" --context "$ctx" scale deployment --replicas=1 -n kube-system kubernetes-dashboard
 
   ntries=200
   while ! dind::component-ready k8s-app=kube-dns || ! dind::component-ready app=kubernetes-dashboard; do
@@ -1087,7 +1096,7 @@ function dind::wait-for-ready {
   done
   echo "[done]" >&2
 
-  dind::retry "${kubectl}" get nodes >&2
+  dind::retry "${kubectl}" --context "$ctx" get nodes >&2
   local_host="localhost"
   if [[ ${IP_MODE} = "ipv6" ]]; then
       local_host="[::1]"
@@ -1098,6 +1107,8 @@ function dind::wait-for-ready {
 function dind::up {
   dind::down
   dind::init
+  local ctx
+  ctx="$(dind::context-name)"
   # pre-create node containers sequentially so they get predictable IPs
   local -a node_containers
   for ((n=1; n <= NUM_NODES; n++)); do
@@ -1133,7 +1144,7 @@ function dind::up {
   else
     # FIXME: this may fail depending on k8s/kubeadm version
     # FIXME: check for taint & retry if it's there
-    "${kubectl}" taint nodes kube-master node-role.kubernetes.io/master- || true
+    "${kubectl}" --context "$ctx" taint nodes kube-master node-role.kubernetes.io/master- || true
   fi
   case "${CNI_PLUGIN}" in
     bridge)
@@ -1142,17 +1153,17 @@ function dind::up {
       ;;
     flannel)
       # without --validate=false this will fail on older k8s versions
-      dind::retry "${kubectl}" apply --validate=false -f "https://github.com/coreos/flannel/blob/master/Documentation/kube-flannel.yml?raw=true"
+      dind::retry "${kubectl}" --context "$ctx" apply --validate=false -f "https://github.com/coreos/flannel/blob/master/Documentation/kube-flannel.yml?raw=true"
       ;;
     calico)
-      dind::retry "${kubectl}" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/kubeadm/1.6/calico.yaml
+      dind::retry "${kubectl}" --context "$ctx" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/kubeadm/1.6/calico.yaml
       ;;
     calico-kdd)
-      dind::retry "${kubectl}" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/rbac-kdd.yaml
-      dind::retry "${kubectl}" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/kubernetes-datastore/calico-networking/1.7/calico.yaml
+      dind::retry "${kubectl}" --context "$ctx" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/rbac-kdd.yaml
+      dind::retry "${kubectl}" --context "$ctx" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/kubernetes-datastore/calico-networking/1.7/calico.yaml
       ;;
     weave)
-      dind::retry "${kubectl}" apply -f "https://github.com/weaveworks/weave/blob/master/prog/weave-kube/weave-daemonset-k8s-1.6.yaml?raw=true"
+      dind::retry "${kubectl}" --context "$ctx" apply -f "https://github.com/weaveworks/weave/blob/master/prog/weave-kube/weave-daemonset-k8s-1.6.yaml?raw=true"
       ;;
     *)
       echo "Unsupported CNI plugin '${CNI_PLUGIN}'" >&2
@@ -1258,6 +1269,10 @@ function dind::down {
   if [[ "${CNI_PLUGIN}" = "bridge" ]]; then
     dind::remove_external_access_on_host
   fi
+}
+
+function dind::context-name {
+  echo "dind-$(dind::sha1 "$DIND_LABEL")"
 }
 
 function dind::remove-volumes {
@@ -1428,18 +1443,21 @@ function dind::dump {
     echo "@@@ ip-r-${node}.txt @@@"
     docker exec "${node}" ip r
   done
-  docker exec kube-master kubectl get pods --all-namespaces \
+  local ctx master_name
+  master_name="kube-master"
+  ctx="$(dind::context-name)"
+  docker exec "$master_name" kubectl --context "$ctx" get pods --all-namespaces \
           -o go-template='{{range $x := .items}}{{range $x.spec.containers}}{{$x.spec.nodeName}}{{" "}}{{$x.metadata.namespace}}{{" "}}{{$x.metadata.name}}{{" "}}{{.name}}{{"\n"}}{{end}}{{end}}' |
     while read node ns pod container; do
       echo "@@@ pod-${node}-${ns}-${pod}--${container}.log @@@"
-      docker exec kube-master kubectl logs -n "${ns}" -c "${container}" "${pod}"
+      docker exec "$master_name" kubectl --context "$ctx" logs -n "${ns}" -c "${container}" "${pod}"
     done
   echo "@@@ kubectl-all.txt @@@"
-  docker exec kube-master kubectl get all --all-namespaces -o wide
+  docker exec "$master_name" kubectl --context "$ctx" get all --all-namespaces -o wide
   echo "@@@ describe-all.txt @@@"
-  docker exec kube-master kubectl describe all --all-namespaces
+  docker exec "$master_name" kubectl --context "$ctx" describe all --all-namespaces
   echo "@@@ nodes.txt @@@"
-  docker exec kube-master kubectl get nodes -o wide
+  docker exec "$master_name" kubectl --context "$ctx" get nodes -o wide
 }
 
 function dind::dump64 {

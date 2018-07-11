@@ -59,6 +59,7 @@ fi
 
 function test-cluster {
   local kubectl="${KUBECTL_DIR}/kubectl"
+  local defaultServer='localhost:8080'
   if [[ ${BUILD_HYPERKUBE:-} ]]; then
     kubectl="${PWD}/cluster/kubectl.sh"
   fi
@@ -70,9 +71,9 @@ function test-cluster {
   fi
   bash -x "${DIND_ROOT}"/dind-cluster.sh clean
   time bash -x "${DIND_ROOT}"/dind-cluster.sh up
-  "${kubectl}" get pods -n kube-system | grep kube-dns
+  "${kubectl}" --server="$defaultServer" get pods -n kube-system | grep kube-dns
   time bash -x "${DIND_ROOT}"/dind-cluster.sh up
-  "${kubectl}" get pods -n kube-system | grep kube-dns
+  "${kubectl}" --server="$defaultServer" get pods -n kube-system | grep kube-dns
   bash -x "${DIND_ROOT}"/dind-cluster.sh down
   bash -x "${DIND_ROOT}"/dind-cluster.sh clean
 }
