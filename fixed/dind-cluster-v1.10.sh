@@ -1467,18 +1467,18 @@ function dind::dump {
   local ctx master_name
   master_name="$(dind::master-name)"
   ctx="$(dind::context-name)"
-  docker exec "$master_name" kubectl --context "$ctx" get pods --all-namespaces \
+  docker exec "$master_name" kubectl get pods --all-namespaces \
           -o go-template='{{range $x := .items}}{{range $x.spec.containers}}{{$x.spec.nodeName}}{{" "}}{{$x.metadata.namespace}}{{" "}}{{$x.metadata.name}}{{" "}}{{.name}}{{"\n"}}{{end}}{{end}}' |
     while read node ns pod container; do
       echo "@@@ pod-${node}-${ns}-${pod}--${container}.log @@@"
-      docker exec "$master_name" kubectl --context "$ctx" logs -n "${ns}" -c "${container}" "${pod}"
+      docker exec "$master_name" kubectl logs -n "${ns}" -c "${container}" "${pod}"
     done
   echo "@@@ kubectl-all.txt @@@"
-  docker exec "$master_name" kubectl --context "$ctx" get all --all-namespaces -o wide
+  docker exec "$master_name" kubectl get all --all-namespaces -o wide
   echo "@@@ describe-all.txt @@@"
-  docker exec "$master_name" kubectl --context "$ctx" describe all --all-namespaces
+  docker exec "$master_name" kubectl describe all --all-namespaces
   echo "@@@ nodes.txt @@@"
-  docker exec "$master_name" kubectl --context "$ctx" get nodes -o wide
+  docker exec "$master_name" kubectl get nodes -o wide
 }
 
 function dind::dump64 {
