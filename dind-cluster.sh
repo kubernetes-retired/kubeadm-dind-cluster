@@ -146,7 +146,6 @@ BUILD_KUBEADM="${BUILD_KUBEADM:-}"
 BUILD_HYPERKUBE="${BUILD_HYPERKUBE:-}"
 KUBEADM_SOURCE="${KUBEADM_SOURCE-}"
 HYPERKUBE_SOURCE="${HYPERKUBE_SOURCE-}"
-APISERVER_PORT=${APISERVER_PORT:-8080}
 NUM_NODES=${NUM_NODES:-2}
 EXTRA_PORTS="${EXTRA_PORTS:-}"
 LOCAL_KUBECTL_VERSION=${LOCAL_KUBECTL_VERSION:-}
@@ -177,7 +176,11 @@ fi
 
 DEFAULT_DIND_LABEL='mirantis.kubeadm_dind_cluster_runtime'
 : "${DIND_LABEL:=${DEFAULT_DIND_LABEL}}"
-: "${DIND_APISERVER_PORT_FORWARD:=8080}"
+: "${APISERVER_PORT:=8080}"
+
+# not configurable for now, would need to setup context for kubectl _inside_ the cluster
+readonly INTERNAL_APISERVER_PORT=8080
+
 
 function dind::need-source {
   if [[ ! -f cluster/kubectl.sh ]]; then
@@ -725,7 +728,7 @@ function dind::configure-kubectl {
   context_name="$(dind::context-name)"
   cluster_name="$(dind::context-name)"
   "${kubectl}" config set-cluster "$cluster_name" \
-    --server="http://${host}:${DIND_APISERVER_PORT_FORWARD}" \
+    --server="http://${host}:${APISERVER_PORT}" \
     --insecure-skip-tls-verify=true
   "${kubectl}" config set-context "$context_name" --cluster="$cluster_name"
 }
@@ -804,7 +807,7 @@ function dind::init {
   fi
   local master_name container_id
   master_name="$(dind::master-name)"
-  container_id=$(dind::run "${master_name}" "${kube_master_ip}" 1 ${local_host}:${DIND_APISERVER_PORT_FORWARD}:${APISERVER_PORT} ${master_opts[@]+"${master_opts[@]}"})
+  container_id=$(dind::run "${master_name}" "${kube_master_ip}" 1 ${local_host}:${APISERVER_PORT}:${INTERNAL_APISERVER_PORT} ${master_opts[@]+"${master_opts[@]}"})
   # FIXME: I tried using custom tokens with 'kubeadm ex token create' but join failed with:
   # 'failed to parse response as JWS object [square/go-jose: compact JWS format must have three parts]'
   # So we just pick the line from 'kubeadm init' output
@@ -875,6 +878,7 @@ sed -e "s|{{API_VERSION}}|${api_version}|" \
     -e "s|{{POD_NETWORK_CIDR}}|${POD_NETWORK_CIDR}|" \
     -e "s|{{SVC_SUBNET}}|${SERVICE_CIDR}|" \
     -e "s|{{BIND_ADDR}}|${bind_address}|" \
+    -e "s|{{BIND_PORT}}|${INTERNAL_APISERVER_PORT}|" \
     -e "s|{{FEATURE_GATES}}|${feature_gates}|" \
     -e "s|{{KUBEADM_VERSION}}|${kubeadm_version}|" \
     -e "s|{{COMPONENT_FEATURE_GATES}}|${component_feature_gates}|" \
@@ -1106,7 +1110,7 @@ function dind::wait-for-ready {
   if [[ ${IP_MODE} = "ipv6" ]]; then
       local_host="[::1]"
   fi
-  dind::step "Access dashboard at:" "http://${local_host}:${DIND_APISERVER_PORT_FORWARD}/api/v1/namespaces/kube-system/services/kubernetes-dashboard:/proxy"
+  dind::step "Access dashboard at:" "http://${local_host}:${APISERVER_PORT}/api/v1/namespaces/kube-system/services/kubernetes-dashboard:/proxy"
 }
 
 function dind::up {
@@ -1238,7 +1242,7 @@ function dind::restore {
         if [[ ${IP_MODE} = "ipv6" ]]; then
           local_host="[::1]"
         fi
-        dind::restore_container "$(dind::run -r "$(dind::master-name)" "${kube_master_ip}" 1 ${local_host}:${DIND_APISERVER_PORT_FORWARD}:${APISERVER_PORT} ${master_opts[@]+"${master_opts[@]}"})"
+        dind::restore_container "$(dind::run -r "$(dind::master-name)" "${kube_master_ip}" 1 ${local_host}:${APISERVER_PORT}:${APISERVER_PORT} ${master_opts[@]+"${master_opts[@]}"})"
         dind::step "Master container restored"
       else
         dind::step "Restoring node container:" ${n}
@@ -1337,7 +1341,7 @@ function dind::do-run-e2e {
     fi
   fi
   dind::need-source
-  local test_args="--host=http://${host}:${APISERVER_PORT}"
+  local test_args="--host=http://${host}:${INTERNAL_APISERVER_PORT}"
   local -a e2e_volume_opts=()
   local term=
   if [[ ${focus} ]]; then
@@ -1362,14 +1366,14 @@ function dind::do-run-e2e {
          --net=host \
          "${build_volume_args[@]}" \
          -e KUBERNETES_PROVIDER=dind \
-         -e KUBE_MASTER_IP=http://${host}:${APISERVER_PORT} \
+         -e KUBE_MASTER_IP=http://${host}:${INTERNAL_APISERVER_PORT} \
          -e KUBE_MASTER=local \
          -e KUBERNETES_CONFORMANCE_TEST=y \
          -e GINKGO_PARALLEL=${parallel} \
          ${e2e_volume_opts[@]+"${e2e_volume_opts[@]}"} \
          -w /go/src/k8s.io/kubernetes \
          "${e2e_base_image}" \
-         bash -c "cluster/kubectl.sh config set-cluster dind --server='http://${host}:${APISERVER_PORT}' --insecure-skip-tls-verify=true &&
+         bash -c "cluster/kubectl.sh config set-cluster dind --server='http://${host}:${INTERNAL_APISERVER_PORT}' --insecure-skip-tls-verify=true &&
          cluster/kubectl.sh config set-context dind --cluster=dind &&
          cluster/kubectl.sh config use-context dind &&
          go run hack/e2e.go -- --v 6 --test --check-version-skew=false --test_args='${test_args}'"

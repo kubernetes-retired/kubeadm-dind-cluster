@@ -229,16 +229,16 @@ For the first cluster, no extra variables need to be set, but the variables list
 
 For every additional cluster, set the following environment variables:
 
-| Environment Variable        | What does it control?                                                                                                                             |
-|-----------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
-| DIND_LABEL                  | The container label, used by `dind-cluster.sh` to label Docker resources and manage the lifecycle of the cluster's containers.                    |
-| DIND_SUBNET                 | The subnet in which the cluster is placed. It must be a subnet that's not already used by the Docker engine.                                      |
-| DIND_APISERVER_PORT_FORWARD | The port on the Docker host machine, that will be forwarded to the apiserver. It must not be in use by any other application on the host machine. |
+| Environment Variable | What does it control?                                                                                                                             |
+|----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
+| DIND_LABEL           | The container label, used by `dind-cluster.sh` to label Docker resources and manage the lifecycle of the cluster's containers.                    |
+| DIND_SUBNET          | The subnet in which the cluster is placed. It must be a subnet that's not already used by the Docker engine.                                      |
+| APISERVER_PORT       | The port on the Docker host machine, that will be forwarded to the apiserver. It must not be in use by any other application on the host machine. |
 
 Example usage:
 
 ```shell
-$ DIND_APISERVER_PORT_FORWARD=8082 DIND_SUBNET='10.199.0.0' DIND_LABEL="example-custom-label" ./dind-cluster.sh up
+$ APISERVER_PORT=8082 DIND_SUBNET='10.199.0.0' DIND_LABEL="example-custom-label" ./dind-cluster.sh up
 ```
 
 Example output:

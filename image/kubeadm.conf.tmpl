@@ -15,7 +15,7 @@ tokenTTL: 0s
 nodeName: {{KUBE_MASTER_NAME}}
 apiServerExtraArgs:
   insecure-bind-address: "{{BIND_ADDR}}"
-  insecure-port: "8080"
+  insecure-port: "{{BIND_PORT}}"
   {{COMPONENT_FEATURE_GATES}}
 {{APISERVER_EXTRA_ARGS}}
 controllerManagerExtraArgs:

@@ -285,7 +285,7 @@ function test-case-multiple-instances {
   local customLabel='some.custom-label'
 
   "${DIND_ROOT}"/dind-cluster.sh up
-  DIND_APISERVER_PORT_FORWARD=8082 DIND_SUBNET='10.199.0.0' DIND_LABEL="$customLabel" "${DIND_ROOT}"/dind-cluster.sh up
+  APISERVER_PORT=8082 DIND_SUBNET='10.199.0.0' DIND_LABEL="$customLabel" "${DIND_ROOT}"/dind-cluster.sh up
 
   test "$(countContainersWithLabel "$defaultLabel")" -gt 0 || {
     fail 'Expected containers with default label to exist'
