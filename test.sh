@@ -311,6 +311,15 @@ function test-case-multiple-instances {
   }
 }
 
+function test-case-dump-succeeds() {
+  local d="${DIND_ROOT}/dind-cluster.sh"
+
+  "$d" up
+  "$d" dump >/dev/null || {
+    fail "Expected '$d dump' to succeed"
+  }
+}
+
 function fail() {
   local msg="$1"
   echo -e "\033[1;31m${msg}\033[0m" >&2
@@ -342,6 +351,7 @@ if [[ ! ${TEST_CASE} ]]; then
   # test-case-src-master-weave
   # test-case-src-master-coredns
   test-case-multiple-instances
+  test-case-dump-succeeds
 else
   "test-case-${TEST_CASE}"
 fi
