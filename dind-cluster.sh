@@ -119,20 +119,6 @@ if [[ ${IP_MODE} = "ipv6" ]]; then
 	exit 1
     fi
 else
-    if [ -z "${DIND_SUBNET_SIZE:-}" ] && [ -z "${DIND_SUBNET:-}" ]
-    then
-      DIND_SUBNET_SIZE=16
-      DIND_SUBNET="$( dind::find-free-ipv4-subnet )"
-    else
-      if [ -z "${DIND_SUBNET_SIZE:-}" ] || [ -z "${DIND_SUBNET}" ]
-      then
-        # shellcheck disable=SC2016
-        echo 'You need to set either both $DIND_SUBENT & $DIND_SUBNET_SIZE or none' >&2
-        exit 3
-      fi
-    fi
-
-    dind_ip_base="$(echo "${DIND_SUBNET}" | sed 's/0$//')"
     KUBE_RSYNC_ADDR="${KUBE_RSYNC_ADDR:-127.0.0.1}"
     SERVICE_CIDR="${SERVICE_CIDR:-10.96.0.0/12}"
     dns_server="${REMOTE_DNS64_V4SERVER:-8.8.8.8}"
@@ -153,7 +139,6 @@ if [[ ${IP_MODE} != "ipv6" ]]; then
 else
     DNS_SVC_IP="${dns_prefix}a"
 fi
-kube_master_ip="${dind_ip_base}2"
 
 POD_NETWORK_CIDR="${POD_NETWORK_CIDR:-${DEFAULT_POD_NETWORK_CIDR}}"
 if [[ ${IP_MODE} = "ipv6" ]]; then
@@ -542,7 +527,10 @@ function dind::ensure-network {
   local netName
   netName="$(dind::net-name)"
 
-  if ! docker network inspect "${netName}" >&/dev/null; then
+  read -r net mask exists <<<"$( dind::get-subnet )"
+
+  if [ "$exists" -ne 1 ]
+  then
     local v6settings=""
     if [[ ${IP_MODE} = "ipv6" ]]; then
       # Need second network for NAT64
@@ -550,8 +538,8 @@ function dind::ensure-network {
     fi
     docker network create \
       ${v6settings} \
-      --subnet="${DIND_SUBNET}/${DIND_SUBNET_SIZE}" \
-      --gateway="${dind_ip_base}1" \
+      --subnet="${net}/${mask}" \
+      --gateway="$(dind::get-ip-from-range 1)" \
       "${netName}" >/dev/null
   fi
 }
@@ -769,7 +757,8 @@ function dind::kubeadm {
 
 function dind::configure-kubectl {
   dind::step "Setting cluster config"
-  local host="${dind_ip_base}2"
+  local host
+  host="$(dind::master-ip)"
   if [[ ${IP_MODE} = "ipv6" ]]; then
       host="[${host}]"
   fi
@@ -863,7 +852,7 @@ function dind::init {
   fi
   local master_name container_id
   master_name="$(dind::master-name)"
-  container_id=$(dind::run "${master_name}" "${kube_master_ip}" 1 ${local_host}:${APISERVER_PORT}:${INTERNAL_APISERVER_PORT} ${master_opts[@]+"${master_opts[@]}"})
+  container_id=$(dind::run "${master_name}" "$(dind::master-ip)" 1 ${local_host}:${APISERVER_PORT}:${INTERNAL_APISERVER_PORT} ${master_opts[@]+"${master_opts[@]}"})
   # FIXME: I tried using custom tokens with 'kubeadm ex token create' but join failed with:
   # 'failed to parse response as JWS object [square/go-jose: compact JWS format must have three parts]'
   # So we just pick the line from 'kubeadm init' output
@@ -929,7 +918,7 @@ function dind::init {
   fi
   docker exec -i "$master_name" bash <<EOF
 sed -e "s|{{API_VERSION}}|${api_version}|" \
-    -e "s|{{ADV_ADDR}}|${kube_master_ip}|" \
+    -e "s|{{ADV_ADDR}}|$(dind::master-ip)|" \
     -e "s|{{POD_SUBNET_DISABLE}}|${pod_subnet_disable}|" \
     -e "s|{{POD_NETWORK_CIDR}}|${POD_NETWORK_CIDR}|" \
     -e "s|{{SVC_SUBNET}}|${SERVICE_CIDR}|" \
@@ -1307,7 +1296,7 @@ function dind::restore {
         if [[ ${IP_MODE} = "ipv6" ]]; then
           local_host="[::1]"
         fi
-        dind::restore_container "$(dind::run -r "$(dind::master-name)" "${kube_master_ip}" 1 ${local_host}:${APISERVER_PORT}:${INTERNAL_APISERVER_PORT} ${master_opts[@]+"${master_opts[@]}"})"
+        dind::restore_container "$(dind::run -r "$(dind::master-name)" "$(dind::master-ip)" 1 ${local_host}:${APISERVER_PORT}:${INTERNAL_APISERVER_PORT} ${master_opts[@]+"${master_opts[@]}"})"
         dind::step "Master container restored"
       else
         dind::step "Restoring node container:" ${n}
@@ -1373,6 +1362,48 @@ function dind::net-name {
   echo "kubeadm-dind-net$( dind::clusterSuffix )"
 }
 
+function dind::master-ip {
+  dind::get-ip-from-range 2
+}
+
+function dind::node-ip {
+  local nodeId="$1"
+  dind::get-ip-from-range "$nodeId"
+}
+
+function dind::get-ip-from-range() {
+  local idx="$1"
+
+  read -r range _ <<<"$( dind::get-subnet )"
+
+  printf '%s.%s\n' \
+    "$( echo "$range" | cut -d. -f1-3 )" \
+    "$idx"
+}
+
+function dind::get-subnet {
+  local netName netData netDataErr net mask exists
+
+  netName="$(dind::net-name)"
+  netDataErr=0
+  netData="$(
+    docker network inspect "$netName" --format '{{ range .IPAM.Config }}{{ .Subnet }}{{ end }}' 2>/dev/null \
+      | head -1
+  )" || netDataErr=$?
+
+  if [ "$netDataErr" -ne 0 ]
+  then
+    net="${DIND_SUBNET:-$(dind::find-free-ipv4-subnet)}"
+    mask="${DIND_SUBNET_SIZE:-16}"
+    exists=0
+  else
+    IFS=/ read -r net mask <<<"$netData"
+    exists=1
+  fi
+
+  echo "$net" "$mask" "$exists"
+}
+
 function dind::remove-volumes {
   # docker 1.13+: docker volume ls -q -f label="${DIND_LABEL}"
   local nameRE
@@ -1404,7 +1435,7 @@ function dind::do-run-e2e {
   local parallel="${1:-}"
   local focus="${2:-}"
   local skip="${3:-}"
-  local host="${kube_master_ip}"
+  local host="$(dind::master-ip)"
   if [[ "${IP_MODE}" = "ipv6" ]]; then
     host="[$host]"
   fi
