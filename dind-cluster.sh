@@ -83,11 +83,13 @@ function dind::find-free-local-apiserver-port() {
     ( echo "" >"/dev/tcp/127.0.0.1/${port}" ) >/dev/null 2>&1
     rc=$?
     set -e
-    if [ $rc -ne 0 ]; then
-        echo "$port";
-        return 0;
+    if [ $rc -ne 0 ]
+    then
+      echo "$port"
+      return 0
     fi
   done
+  return 1
 }
 
 IP_MODE="${IP_MODE:-ipv4}"  # ipv4, ipv6, (future) dualstack
@@ -946,7 +948,8 @@ EOF
 }
 
 function dind::create-node-container {
-  local reuse_volume=
+  local reuse_volume next_node_index node_ip node_name
+  reuse_volume=''
   if [[ $1 = -r ]]; then
     reuse_volume="-r"
     shift
@@ -954,8 +957,8 @@ function dind::create-node-container {
   # if there's just one node currently, it's master, thus we need to use
   # kube-node-1 hostname, if there are two nodes, we should pick
   # kube-node-2 and so on
-  local next_node_index=${1:-$(docker ps -q --filter=label="${DIND_LABEL}" | wc -l | sed 's/^ *//g')}
-  local node_ip="${dind_ip_base}$((next_node_index + 2))"
+  next_node_index=${1:-$(docker ps -q --filter=label="${DIND_LABEL}" | wc -l | sed 's/^ *//g')}
+  node_ip="$(dind::node-ip $((next_node_index + 2)) )"
   local -a opts
   if [[ ${BUILD_KUBEADM} || ${BUILD_HYPERKUBE} ]]; then
     opts+=(-v "dind-k8s-binaries$(dind::clusterSuffix)":/k8s)
@@ -966,7 +969,6 @@ function dind::create-node-container {
       opts+=(-e HYPERKUBE_SOURCE=build://)
     fi
   fi
-  local node_name
   node_name="$(dind::node-name ${next_node_index})"
   dind::run ${reuse_volume} "$node_name" ${node_ip} $((next_node_index + 1)) "${EXTRA_PORTS}" ${opts[@]+"${opts[@]}"}
 }
