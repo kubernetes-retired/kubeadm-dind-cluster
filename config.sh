@@ -1,13 +1,14 @@
 if [[ ${IP_MODE} = "ipv4" ]]; then
-    # DinD subnet (expected to be /16)
-    DIND_SUBNET="${DIND_SUBNET:-10.192.0.0}"
+    # DIND_SUBNET="10.192.0.0"
+    # DIND_SUBNET_SIZE=16
+    :
 else
     # DinD subnet (expected to be /64)
     DIND_SUBNET="${DIND_SUBNET:-fd00:10::}"
 fi
 
 # Apiserver port
-APISERVER_PORT=${APISERVER_PORT:-8080}
+# APISERVER_PORT=${APISERVER_PORT:-8080}
 
 # Number of nodes. 0 nodes means just one master node.
 # In case of NUM_NODES=0 'node-role.kubernetes.io/master' taint is removed
