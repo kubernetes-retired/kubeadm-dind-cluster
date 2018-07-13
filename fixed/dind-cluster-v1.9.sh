@@ -52,6 +52,44 @@ fi
 
 EMBEDDED_CONFIG=y;DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.9
 
+function dind::find-free-ipv4-subnet() {
+  local allocatedNets curNet
+  allocatedNets="$(
+    docker network ls --format '{{ .Name }}' | while read -r nw
+    do
+      docker network inspect "$nw" --format "{{ range .IPAM.Config }}{{ .Subnet }}{{ end }}"
+    done
+  )"
+
+  # this is a very naive implementations which ignores any netmask and
+  # basically assumes each net to be /16.
+  for i in $(seq 192 254) $(seq 0 191)
+  do
+    curNet="10.${i}.0.0"
+    if ! echo "$allocatedNets" | grep -q "^${curNet}"
+    then
+      echo "$curNet"
+      return 0
+    fi
+  done
+  return 1
+}
+
+function dind::find-free-local-apiserver-port() {
+  local port rc
+  for port in $(seq 8080 9090)
+  do
+    set +e
+    ( echo "" >"/dev/tcp/127.0.0.1/${port}" ) >/dev/null 2>&1
+    rc=$?
+    set -e
+    if [ $rc -ne 0 ]; then
+        echo "$port";
+        return 0;
+    fi
+  done
+}
+
 IP_MODE="${IP_MODE:-ipv4}"  # ipv4, ipv6, (future) dualstack
 if [[ ! ${EMBEDDED_CONFIG:-} ]]; then
   source "${DIND_ROOT}/config.sh"
@@ -81,11 +119,22 @@ if [[ ${IP_MODE} = "ipv6" ]]; then
 	exit 1
     fi
 else
-    DIND_SUBNET="${DIND_SUBNET:-10.192.0.0}"
+    if [ -z "${DIND_SUBNET_SIZE:-}" ] && [ -z "${DIND_SUBNET:-}" ]
+    then
+      DIND_SUBNET_SIZE=16
+      DIND_SUBNET="$( dind::find-free-ipv4-subnet )"
+    else
+      if [ -z "${DIND_SUBNET_SIZE:-}" ] || [ -z "${DIND_SUBNET}" ]
+      then
+        # shellcheck disable=SC2016
+        echo 'You need to set either both $DIND_SUBENT & $DIND_SUBNET_SIZE or none' >&2
+        exit 3
+      fi
+    fi
+
     dind_ip_base="$(echo "${DIND_SUBNET}" | sed 's/0$//')"
     KUBE_RSYNC_ADDR="${KUBE_RSYNC_ADDR:-127.0.0.1}"
     SERVICE_CIDR="${SERVICE_CIDR:-10.96.0.0/12}"
-    DIND_SUBNET_SIZE="${DIND_SUBNET_SIZE:-16}"
     dns_server="${REMOTE_DNS64_V4SERVER:-8.8.8.8}"
     DEFAULT_POD_NETWORK_CIDR="10.244.0.0/16"
     USE_HAIRPIN="${USE_HAIRPIN:-false}"  # Disabled for IPv4, as issue with Virtlet networking
@@ -176,7 +225,7 @@ fi
 
 DEFAULT_DIND_LABEL='mirantis.kubeadm_dind_cluster_runtime'
 : "${DIND_LABEL:=${DEFAULT_DIND_LABEL}}"
-: "${APISERVER_PORT:=8080}"
+: "${APISERVER_PORT:=$(dind::find-free-local-apiserver-port)}"
 
 # not configurable for now, would need to setup context for kubectl _inside_ the cluster
 readonly INTERNAL_APISERVER_PORT=8080
@@ -490,13 +539,20 @@ function dind::ensure-binaries {
 }
 
 function dind::ensure-network {
-  if ! docker network inspect $(dind::net-name) >&/dev/null; then
+  local netName
+  netName="$(dind::net-name)"
+
+  if ! docker network inspect "${netName}" >&/dev/null; then
     local v6settings=""
     if [[ ${IP_MODE} = "ipv6" ]]; then
       # Need second network for NAT64
       v6settings="--subnet=172.18.0.0/16 --ipv6"
     fi
-    docker network create ${v6settings} --subnet="${DIND_SUBNET}/${DIND_SUBNET_SIZE}" --gateway="${dind_ip_base}1" $(dind::net-name) >/dev/null
+    docker network create \
+      ${v6settings} \
+      --subnet="${DIND_SUBNET}/${DIND_SUBNET_SIZE}" \
+      --gateway="${dind_ip_base}1" \
+      "${netName}" >/dev/null
   fi
 }
 
