@@ -59,7 +59,10 @@ fi
 
 function test-cluster {
   local kubectl="${KUBECTL_DIR}/kubectl"
-  local defaultServer='localhost:8080'
+  # context name for the default cluster
+  #   (hashed 'mirantis.kubeadm_dind_cluster_runtime')
+  local defaultContext='dind-8b6554faeab30c4beae1f439af392901406ba5a2'
+
   if [[ ${BUILD_HYPERKUBE:-} ]]; then
     kubectl="${PWD}/cluster/kubectl.sh"
   fi
@@ -71,9 +74,9 @@ function test-cluster {
   fi
   bash -x "${DIND_ROOT}"/dind-cluster.sh clean
   time bash -x "${DIND_ROOT}"/dind-cluster.sh up
-  "${kubectl}" --server="$defaultServer" get pods -n kube-system | grep kube-dns
+  "${kubectl}" --context="$defaultContext" get pods -n kube-system | grep kube-dns
   time bash -x "${DIND_ROOT}"/dind-cluster.sh up
-  "${kubectl}" --server="$defaultServer" get pods -n kube-system | grep kube-dns
+  "${kubectl}" --context="$defaultContext" get pods -n kube-system | grep kube-dns
   bash -x "${DIND_ROOT}"/dind-cluster.sh down
   bash -x "${DIND_ROOT}"/dind-cluster.sh clean
 }
