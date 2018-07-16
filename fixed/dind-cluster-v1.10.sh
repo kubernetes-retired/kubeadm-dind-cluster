@@ -848,8 +848,13 @@ function dind::init {
   done
 
   kubeadm_version="$(dind::kubeadm-version)"
+  api_version="kubeadm.k8s.io/v1alpha2"
+  if [[ ${kubeadm_version} =~ 1\.(8|9|10)\. ]]; then
+    api_version="kubeadm.k8s.io/v1alpha1"
+  fi
   docker exec -i kube-master bash <<EOF
-sed -e "s|{{ADV_ADDR}}|${kube_master_ip}|" \
+sed -e "s|{{API_VERSION}}|${api_version}|" \
+    -e "s|{{ADV_ADDR}}|${kube_master_ip}|" \
     -e "s|{{POD_SUBNET_DISABLE}}|${pod_subnet_disable}|" \
     -e "s|{{POD_NETWORK_CIDR}}|${POD_NETWORK_CIDR}|" \
     -e "s|{{SVC_SUBNET}}|${SERVICE_CIDR}|" \
