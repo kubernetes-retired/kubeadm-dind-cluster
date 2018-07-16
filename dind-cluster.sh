@@ -1310,7 +1310,7 @@ function dind::remove-volumes {
 
 function dind::sha1 {
   # shellcheck disable=SC2046
-  set -- $( echo "$@" | sha1sum )
+  set -- $( echo -n "$@" | sha1sum )
   echo "$1"
 }
 
