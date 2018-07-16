@@ -311,6 +311,38 @@ function test-case-multiple-instances {
   }
 }
 
+
+function test-case-cluster-names() {
+  local defaultLabel='mirantis.kubeadm_dind_cluster_runtime'
+  local customLabel='some.custom-label'
+  local customSha='e0f1032f845a2ea6653db1f9a997ac9572d4bc65'
+  local d="${DIND_ROOT}/dind-cluster.sh"
+
+  export KUBECONFIG="$(mktemp)"
+  trap 'rm -- "$KUBECONFIG"' EXIT
+
+  "${d}" up
+  APISERVER_PORT=8082 DIND_SUBNET='10.199.0.0' DIND_LABEL="$customLabel" "${d}" up
+
+  test "$(countContainersWithExactName "kube-master")" -eq 1 || {
+    fail 'Expected exactly one container with name "kube-master" to exist - cluster created with default label'
+  }
+  test "$(countContainersWithExactName "kube-master-${customSha}")" -eq 1 || {
+    fail 'Expected exactly one container with name "kube-master-e0f1032f845a2ea6653db1f9a997ac9572d4bc65" to exist - cluster created with custom label'
+  }
+
+  # nodes
+  test "$(countContainersWithExactName "kube-node-\\d{1}")" -ge 1 || {
+    fail 'Expected at least one container with name "kube-node-<nr>" to exist - cluster created with default label'
+  }
+  test "$(countContainersWithExactName "kube-node-\\d{1}-${customSha}")" -ge 1 || {
+    fail 'Expected at least one container with name "kube-node-<nr>-e0f1032f845a2ea6653db1f9a997ac9572d4bc65" to exist - cluster created with custom label'
+  }
+
+  "${d}" clean
+  DIND_LABEL="$customLabel" "${d}" clean
+}
+
 function test-case-dump-succeeds() {
   local d="${DIND_ROOT}/dind-cluster.sh"
 
@@ -326,10 +358,18 @@ function fail() {
   return 1
 }
 
+function countContainersWithExactName() {
+  countContainersWithFilter "name=${1}$"
+}
+
 function countContainersWithLabel() {
+  countContainersWithFilter "label=${1}"
+}
+
+function countContainersWithFilter() {
   local numOfHeaderLines=1
-  local label="$1"
-  echo $(( $(docker ps --filter="label=${label}" | wc -l) - numOfHeaderLines ))
+  local filter="$1"
+  echo $(( $(docker ps --filter="${filter}" | wc -l) - numOfHeaderLines ))
 }
 
 if [[ ! ${TEST_CASE} ]]; then
@@ -352,6 +392,7 @@ if [[ ! ${TEST_CASE} ]]; then
   # test-case-src-master-coredns
   test-case-multiple-instances
   test-case-dump-succeeds
+  test-case-cluster-names
 else
   "test-case-${TEST_CASE}"
 fi

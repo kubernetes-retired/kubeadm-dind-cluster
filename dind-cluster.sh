@@ -1282,12 +1282,20 @@ function dind::down {
 }
 
 function dind::master-name {
-  echo "kube-master-$(dind::sha1 "$DIND_LABEL")"
+  echo "kube-master$( dind::clusterSuffix )"
 }
 
 function dind::node-name {
   local nr="$1"
-  echo "kube-node-${nr}-$(dind::sha1 "$DIND_LABEL")"
+  echo "kube-node-${nr}$( dind::clusterSuffix )"
+}
+
+function dind::clusterSuffix {
+  if [ "$DIND_LABEL" != "$DEFAULT_DIND_LABEL" ]; then
+    echo "-$( dind::sha1 "$DIND_LABEL" )"
+  else
+    echo ''
+  fi
 }
 
 function dind::context-name {
