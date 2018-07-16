@@ -392,9 +392,7 @@ function countContainersWithLabel() {
 }
 
 function countContainersWithFilter() {
-  local numOfHeaderLines=1
-  local filter="$1"
-  echo $(( $(docker ps --filter="${filter}" | wc -l) - numOfHeaderLines ))
+  docker ps -q --filter="${1}" | wc -l | xargs
 }
 
 if [[ ! ${TEST_CASE} ]]; then
