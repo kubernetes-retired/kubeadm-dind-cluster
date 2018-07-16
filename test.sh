@@ -360,6 +360,14 @@ function test-case-cluster-names() {
     fail 'Expected one volume for the sys to exist - cluster created with custom label'
   }
 
+  # networks
+  test "$(countNetworksWithFilter "name=kubeadm-dind-net$")" -eq 1 || {
+    fail 'Expected one network to exist - cluster created with default label'
+  }
+  test "$(countNetworksWithFilter "name=kubeadm-dind-net-${customSha}$")" -eq 1 || {
+    fail 'Expected one network to exist - cluster created with custom label'
+  }
+
   "${d}" clean
   DIND_LABEL="$customLabel" "${d}" clean
 }
@@ -377,6 +385,10 @@ function fail() {
   local msg="$1"
   echo -e "\033[1;31m${msg}\033[0m" >&2
   return 1
+}
+
+function countNetworksWithFilter() {
+  docker network ls -q --filter="$1" | wc -l | xargs
 }
 
 function countVolumesWithFilter() {

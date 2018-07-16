@@ -1303,7 +1303,7 @@ function dind::context-name {
 }
 
 function dind::net-name {
-  echo "kubeadm-dind-net-$(dind::sha1 "$DIND_LABEL")"
+  echo "kubeadm-dind-net$( dind::clusterSuffix )"
 }
 
 function dind::remove-volumes {
