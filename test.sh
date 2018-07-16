@@ -339,6 +339,27 @@ function test-case-cluster-names() {
     fail 'Expected at least one container with name "kube-node-<nr>-e0f1032f845a2ea6653db1f9a997ac9572d4bc65" to exist - cluster created with custom label'
   }
 
+  # volumes
+  test "$(countVolumesWithFilter "name=kubeadm-dind-kube-master$")" -eq 1 || {
+    fail 'Expected one volume for the kube master to exist - cluster created with default label'
+  }
+  test "$(countVolumesWithFilter "name=kubeadm-dind-kube-node-\\d+$")" -ge 1 || {
+    fail 'Expected one volume for the kube nodes to exist - cluster created with default label'
+  }
+  test "$(countVolumesWithFilter "name=kubeadm-dind-sys$")" -eq 1 || {
+    fail 'Expected one volume for the sys to exist - cluster created with default label'
+  }
+
+  test "$(countVolumesWithFilter "name=kubeadm-dind-kube-master-${customSha}$")" -eq 1 || {
+    fail 'Expected one volume for the kube master to exist - cluster created with custom label'
+  }
+  test "$(countVolumesWithFilter "name=kubeadm-dind-kube-node-\\d+-${customSha}$")" -ge 1 || {
+    fail 'Expected one volume for the kube nodes to exist - cluster created with custom label'
+  }
+  test "$(countVolumesWithFilter "name=kubeadm-dind-sys-${customSha}$")" -eq 1 || {
+    fail 'Expected one volume for the sys to exist - cluster created with custom label'
+  }
+
   "${d}" clean
   DIND_LABEL="$customLabel" "${d}" clean
 }
@@ -356,6 +377,10 @@ function fail() {
   local msg="$1"
   echo -e "\033[1;31m${msg}\033[0m" >&2
   return 1
+}
+
+function countVolumesWithFilter() {
+  docker volume ls -q --filter="$1" | wc -l | xargs
 }
 
 function countContainersWithExactName() {
