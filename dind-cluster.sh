@@ -1299,7 +1299,7 @@ function dind::clusterSuffix {
 }
 
 function dind::context-name {
-  echo "dind-$(dind::sha1 "$DIND_LABEL")"
+  echo "dind$( dind::clusterSuffix )"
 }
 
 function dind::net-name {

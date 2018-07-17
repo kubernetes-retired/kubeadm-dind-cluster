@@ -324,6 +324,7 @@ function test-case-cluster-names() {
   "${d}" up
   APISERVER_PORT=8082 DIND_SUBNET='10.199.0.0' DIND_LABEL="$customLabel" "${d}" up
 
+  # masters
   test "$(countContainersWithExactName "kube-master")" -eq 1 || {
     fail 'Expected exactly one container with name "kube-master" to exist - cluster created with default label'
   }
@@ -368,6 +369,14 @@ function test-case-cluster-names() {
     fail 'Expected one network to exist - cluster created with custom label'
   }
 
+  # contexts
+  hasKubeContext "dind" || {
+    fail 'Expected to have context - cluster created with default label'
+  }
+  hasKubeContext "dind-${customSha}" || {
+    fail 'Expected to have context - cluster created with custom label'
+  }
+
   "${d}" clean
   DIND_LABEL="$customLabel" "${d}" clean
 }
@@ -379,6 +388,12 @@ function test-case-dump-succeeds() {
   "$d" dump >/dev/null || {
     fail "Expected '$d dump' to succeed"
   }
+}
+
+function hasKubeContext() {
+  kubectl config get-contexts --no-headers \
+    | sed 's/^\s*\**\s*//g' \
+    | grep -q "^${1}\\s"
 }
 
 function fail() {
