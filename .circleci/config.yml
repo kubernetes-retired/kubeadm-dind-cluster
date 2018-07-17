@@ -191,6 +191,8 @@ test_multiple_clusters: &test_multiple_clusters
     - run:
         name: Test multiple parallel clusters
         command: |
+          build/portforward.sh -wait 8080
+          build/portforward.sh -wait 8082
           NOBUILD=1 TEST_CASE=multiple-instances ./test.sh
 
 version: 2
