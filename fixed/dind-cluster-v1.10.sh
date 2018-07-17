@@ -270,7 +270,7 @@ function dind::prepare-sys-mounts {
     return 0
   fi
   local dind_sys_vol_name
-  dind_sys_vol_name="kubeadm-dind-sys-$( dind::sha1 "$DIND_LABEL" )"
+  dind_sys_vol_name="kubeadm-dind-sys$( dind::clusterSuffix )"
   if ! dind::volume-exists "$dind_sys_vol_name"; then
     dind::step "Saving a copy of docker host's /lib/modules"
     dind::create-volume "$dind_sys_vol_name"
@@ -739,7 +739,7 @@ function dind::set-master-opts {
   if [[ ${BUILD_KUBEADM} || ${BUILD_HYPERKUBE} ]]; then
     # share binaries pulled from the build container between nodes
     local dind_k8s_bin_vol_name
-    dind_k8s_bin_vol_name="dind-k8s-binaries-$(dind::sha1 "$DIND_LABEL")"
+    dind_k8s_bin_vol_name="dind-k8s-binaries$(dind::clusterSuffix)"
     dind::ensure-volume "${dind_k8s_bin_vol_name}"
     dind::set-build-volume-args
     master_opts+=("${build_volume_args[@]}" -v "${dind_k8s_bin_vol_name}:/k8s")
@@ -913,7 +913,7 @@ function dind::create-node-container {
   local node_ip="${dind_ip_base}$((next_node_index + 2))"
   local -a opts
   if [[ ${BUILD_KUBEADM} || ${BUILD_HYPERKUBE} ]]; then
-    opts+=(-v "dind-k8s-binaries-$(dind::sha1 "$DIND_LABEL")":/k8s)
+    opts+=(-v "dind-k8s-binaries$(dind::clusterSuffix)":/k8s)
     if [[ ${BUILD_KUBEADM} ]]; then
       opts+=(-e KUBEADM_SOURCE=build://)
     fi
@@ -1282,27 +1282,35 @@ function dind::down {
 }
 
 function dind::master-name {
-  echo "kube-master-$(dind::sha1 "$DIND_LABEL")"
+  echo "kube-master$( dind::clusterSuffix )"
 }
 
 function dind::node-name {
   local nr="$1"
-  echo "kube-node-${nr}-$(dind::sha1 "$DIND_LABEL")"
+  echo "kube-node-${nr}$( dind::clusterSuffix )"
+}
+
+function dind::clusterSuffix {
+  if [ "$DIND_LABEL" != "$DEFAULT_DIND_LABEL" ]; then
+    echo "-$( dind::sha1 "$DIND_LABEL" )"
+  else
+    echo ''
+  fi
 }
 
 function dind::context-name {
-  echo "dind-$(dind::sha1 "$DIND_LABEL")"
+  echo "dind$( dind::clusterSuffix )"
 }
 
 function dind::net-name {
-  echo "kubeadm-dind-net-$(dind::sha1 "$DIND_LABEL")"
+  echo "kubeadm-dind-net$( dind::clusterSuffix )"
 }
 
 function dind::remove-volumes {
   # docker 1.13+: docker volume ls -q -f label="${DIND_LABEL}"
   local nameRE
-  nameRE='^kubeadm-dind-.*-'"$(dind::sha1 "$DIND_LABEL")"
-  docker volume ls -q | (grep "$nameRE" || true) | while read volume_id; do
+  nameRE="^kubeadm-dind-(sys|kube-master|kube-node-\\d+)$(dind::clusterSuffix)$"
+  docker volume ls -q | (grep -E "$nameRE" || true) | while read -r volume_id; do
     dind::step "Removing volume:" "${volume_id}"
     docker volume rm "${volume_id}"
   done
@@ -1310,7 +1318,7 @@ function dind::remove-volumes {
 
 function dind::sha1 {
   # shellcheck disable=SC2046
-  set -- $( echo "$@" | sha1sum )
+  set -- $( echo -n "$@" | sha1sum )
   echo "$1"
 }
 
