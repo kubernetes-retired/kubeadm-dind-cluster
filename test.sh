@@ -358,6 +358,17 @@ function test-case-dump-succeeds() {
   }
 }
 
+function test-case-restore() {
+  local d="${DIND_ROOT}/dind-cluster.sh"
+
+  "$d" up
+  APISERVER_PORT=8083 "$d" up || {
+    fail 'Expected to be able to restore the cluster with the APIServer listening on 8083'
+  }
+
+  "$d" clean
+}
+
 function hasKubeContext() {
   kubectl config get-contexts --no-headers \
     | sed 's/^\s*\**\s*//g' \
@@ -410,6 +421,7 @@ if [[ ! ${TEST_CASE} ]]; then
   # test-case-src-master-coredns
   test-case-multiple-instances
   test-case-dump-succeeds
+  test-case-restore
 else
   "test-case-${TEST_CASE}"
 fi
