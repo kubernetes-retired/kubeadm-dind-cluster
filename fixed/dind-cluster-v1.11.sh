@@ -1242,7 +1242,7 @@ function dind::restore {
         if [[ ${IP_MODE} = "ipv6" ]]; then
           local_host="[::1]"
         fi
-        dind::restore_container "$(dind::run -r "$(dind::master-name)" "${kube_master_ip}" 1 ${local_host}:${APISERVER_PORT}:${APISERVER_PORT} ${master_opts[@]+"${master_opts[@]}"})"
+        dind::restore_container "$(dind::run -r "$(dind::master-name)" "${kube_master_ip}" 1 ${local_host}:${APISERVER_PORT}:${INTERNAL_APISERVER_PORT} ${master_opts[@]+"${master_opts[@]}"})"
         dind::step "Master container restored"
       else
         dind::step "Restoring node container:" ${n}
