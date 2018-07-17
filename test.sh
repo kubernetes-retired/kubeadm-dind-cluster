@@ -315,9 +315,6 @@ function test-case-multiple-instances {
   test "$(countVolumesWithFilter "name=kubeadm-dind-kube-node-\\d+$")" -ge 1 || {
     fail 'Expected one volume for the kube nodes to exist - cluster created with default label'
   }
-  test "$(countVolumesWithFilter "name=kubeadm-dind-sys$")" -eq 1 || {
-    fail 'Expected one volume for the sys to exist - cluster created with default label'
-  }
 
   test "$(countVolumesWithFilter "name=kubeadm-dind-kube-master-${customSha}$")" -eq 1 || {
     fail 'Expected one volume for the kube master to exist - cluster created with custom label'
@@ -325,9 +322,16 @@ function test-case-multiple-instances {
   test "$(countVolumesWithFilter "name=kubeadm-dind-kube-node-\\d+-${customSha}$")" -ge 1 || {
     fail 'Expected one volume for the kube nodes to exist - cluster created with custom label'
   }
-  test "$(countVolumesWithFilter "name=kubeadm-dind-sys-${customSha}$")" -eq 1 || {
-    fail 'Expected one volume for the sys to exist - cluster created with custom label'
-  }
+
+  if usesLinuxKit
+  then
+    test "$(countVolumesWithFilter "name=kubeadm-dind-sys$")" -eq 1 || {
+      fail 'Expected one volume for the sys to exist - cluster created with default label'
+    }
+    test "$(countVolumesWithFilter "name=kubeadm-dind-sys-${customSha}$")" -eq 1 || {
+      fail 'Expected one volume for the sys to exist - cluster created with custom label'
+    }
+  fi
 
   # networks
   test "$(countNetworksWithFilter "name=kubeadm-dind-net$")" -eq 1 || {
@@ -399,6 +403,16 @@ function countContainersWithLabel() {
 
 function countContainersWithFilter() {
   docker ps -q --filter="${1}" | wc -l | xargs
+}
+
+function usesLinuxKit() {
+  if ! docker info|grep -s '^Operating System: .*Docker for Windows' > /dev/null 2>&1 ; then
+    if docker info|grep -s '^Kernel Version: .*-moby$' >/dev/null 2>&1 ||
+        docker info|grep -s '^Kernel Version: .*-linuxkit-' > /dev/null 2>&1 ; then
+      return 0
+    fi
+  fi
+  return 1
 }
 
 if [[ ! ${TEST_CASE} ]]; then
