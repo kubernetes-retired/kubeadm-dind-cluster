@@ -176,6 +176,23 @@ test_src: &test_src
           cd kubernetes
           ../dind-cluster.sh clean
 
+test_multiple_clusters: &test_multiple_clusters
+  steps:
+    - checkout
+    - setup_remote_docker
+    - run:
+        <<: *setup
+    - attach_workspace:
+        at: _save
+    - run:
+        name: Restore images
+        command: |
+          docker load -i _save/images.tar
+    - run:
+        name: Test multiple parallel clusters
+        command: |
+          NOBUILD=1 TEST_CASE=multiple-instances ./test.sh
+
 version: 2
 jobs:
   build:
@@ -220,6 +237,34 @@ jobs:
         root: _save
         paths:
         - images.tar
+
+  test_multiple_clusters_1.8:
+    <<: *defaults
+    environment:
+      <<: *env
+      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.8
+    <<: *test_multiple_clusters
+
+  test_multiple_clusters_1.9:
+    <<: *defaults
+    environment:
+      <<: *env
+      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.9
+    <<: *test_multiple_clusters
+
+  test_multiple_clusters_1.10:
+    <<: *defaults
+    environment:
+      <<: *env
+      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.10
+    <<: *test_multiple_clusters
+
+  test_multiple_clusters_1.11:
+    <<: *defaults
+    environment:
+      <<: *env
+      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.11
+    <<: *test_multiple_clusters
 
   test_1.8:
     <<: *defaults
@@ -451,6 +496,18 @@ workflows:
   build-test-push:
     jobs:
     - build
+    - test_multiple_clusters_1.8:
+        requires:
+        - build
+    - test_multiple_clusters_1.9:
+        requires:
+        - build
+    - test_multiple_clusters_1.10:
+        requires:
+        - build
+    - test_multiple_clusters_1.11:
+        requires:
+        - build
     - test_1.8:
         requires:
         - build
