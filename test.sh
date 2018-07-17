@@ -283,38 +283,6 @@ function test-case-src-master-coredns {
 function test-case-multiple-instances {
   local defaultLabel='mirantis.kubeadm_dind_cluster_runtime'
   local customLabel='some.custom-label'
-
-  "${DIND_ROOT}"/dind-cluster.sh up
-  APISERVER_PORT=8082 DIND_SUBNET='10.199.0.0' DIND_LABEL="$customLabel" "${DIND_ROOT}"/dind-cluster.sh up
-
-  test "$(countContainersWithLabel "$defaultLabel")" -gt 0 || {
-    fail 'Expected containers with default label to exist'
-  }
-  test "$(countContainersWithLabel "$customLabel")"  -gt 0 || {
-    fail 'Expected containers with custom label to exist'
-  }
-
-  "${DIND_ROOT}"/dind-cluster.sh clean
-  test "$(countContainersWithLabel "$defaultLabel")" -eq 0 || {
-    fail 'Expected containters with default label not to exist'
-  }
-  test "$(countContainersWithLabel "$customLabel")" -gt 0 || {
-    fail 'Expected containters with custom label to exist'
-  }
-
-  DIND_LABEL="$customLabel" "${DIND_ROOT}"/dind-cluster.sh clean
-  test "$(countContainersWithLabel "$defaultLabel")" -eq 0 || {
-    fail 'Expected containters with default label not to exist'
-  }
-  test "$(countContainersWithLabel "$customLabel")" -eq 0 || {
-    fail 'Expected containters with custom label not to exist'
-  }
-}
-
-
-function test-case-cluster-names() {
-  local defaultLabel='mirantis.kubeadm_dind_cluster_runtime'
-  local customLabel='some.custom-label'
   local customSha='e0f1032f845a2ea6653db1f9a997ac9572d4bc65'
   local d="${DIND_ROOT}/dind-cluster.sh"
 
@@ -442,7 +410,6 @@ if [[ ! ${TEST_CASE} ]]; then
   # test-case-src-master-coredns
   test-case-multiple-instances
   test-case-dump-succeeds
-  test-case-cluster-names
 else
   "test-case-${TEST_CASE}"
 fi
