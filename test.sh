@@ -280,79 +280,6 @@ function test-case-src-master-coredns {
   )
 }
 
-function test-case-multiple-instances {
-  local defaultLabel='mirantis.kubeadm_dind_cluster_runtime'
-  local customLabel='some.custom-label'
-  local customSha='e0f1032f845a2ea6653db1f9a997ac9572d4bc65'
-  local d="${DIND_ROOT}/dind-cluster.sh"
-
-  export KUBECONFIG="$(mktemp)"
-  trap 'rm -- "$KUBECONFIG"' EXIT
-
-  "${d}" up
-  APISERVER_PORT=8082 DIND_SUBNET='10.199.0.0' DIND_LABEL="$customLabel" "${d}" up
-
-  # masters
-  test "$(countContainersWithExactName "kube-master")" -eq 1 || {
-    fail 'Expected exactly one container with name "kube-master" to exist - cluster created with default label'
-  }
-  test "$(countContainersWithExactName "kube-master-${customSha}")" -eq 1 || {
-    fail 'Expected exactly one container with name "kube-master-e0f1032f845a2ea6653db1f9a997ac9572d4bc65" to exist - cluster created with custom label'
-  }
-
-  # nodes
-  test "$(countContainersWithExactName "kube-node-\\d{1}")" -ge 1 || {
-    fail 'Expected at least one container with name "kube-node-<nr>" to exist - cluster created with default label'
-  }
-  test "$(countContainersWithExactName "kube-node-\\d{1}-${customSha}")" -ge 1 || {
-    fail 'Expected at least one container with name "kube-node-<nr>-e0f1032f845a2ea6653db1f9a997ac9572d4bc65" to exist - cluster created with custom label'
-  }
-
-  # volumes
-  test "$(countVolumesWithFilter "name=kubeadm-dind-kube-master$")" -eq 1 || {
-    fail 'Expected one volume for the kube master to exist - cluster created with default label'
-  }
-  test "$(countVolumesWithFilter "name=kubeadm-dind-kube-node-\\d+$")" -ge 1 || {
-    fail 'Expected one volume for the kube nodes to exist - cluster created with default label'
-  }
-
-  test "$(countVolumesWithFilter "name=kubeadm-dind-kube-master-${customSha}$")" -eq 1 || {
-    fail 'Expected one volume for the kube master to exist - cluster created with custom label'
-  }
-  test "$(countVolumesWithFilter "name=kubeadm-dind-kube-node-\\d+-${customSha}$")" -ge 1 || {
-    fail 'Expected one volume for the kube nodes to exist - cluster created with custom label'
-  }
-
-  if usesLinuxKit
-  then
-    test "$(countVolumesWithFilter "name=kubeadm-dind-sys$")" -eq 1 || {
-      fail 'Expected one volume for the sys to exist - cluster created with default label'
-    }
-    test "$(countVolumesWithFilter "name=kubeadm-dind-sys-${customSha}$")" -eq 1 || {
-      fail 'Expected one volume for the sys to exist - cluster created with custom label'
-    }
-  fi
-
-  # networks
-  test "$(countNetworksWithFilter "name=kubeadm-dind-net$")" -eq 1 || {
-    fail 'Expected one network to exist - cluster created with default label'
-  }
-  test "$(countNetworksWithFilter "name=kubeadm-dind-net-${customSha}$")" -eq 1 || {
-    fail 'Expected one network to exist - cluster created with custom label'
-  }
-
-  # contexts
-  hasKubeContext "dind" || {
-    fail 'Expected to have context - cluster created with default label'
-  }
-  hasKubeContext "dind-${customSha}" || {
-    fail 'Expected to have context - cluster created with custom label'
-  }
-
-  "${d}" clean
-  DIND_LABEL="$customLabel" "${d}" clean
-}
-
 function test-case-dump-succeeds() {
   local d="${DIND_ROOT}/dind-cluster.sh"
 
@@ -373,45 +300,9 @@ function test-case-restore() {
   "$d" clean
 }
 
-function hasKubeContext() {
-  kubectl config get-contexts --no-headers \
-    | sed 's/^\s*\**\s*//g' \
-    | grep -q "^${1}\\s"
-}
-
 function fail() {
   local msg="$1"
   echo -e "\033[1;31m${msg}\033[0m" >&2
-  return 1
-}
-
-function countNetworksWithFilter() {
-  docker network ls -q --filter="$1" | wc -l | xargs
-}
-
-function countVolumesWithFilter() {
-  docker volume ls -q --filter="$1" | wc -l | xargs
-}
-
-function countContainersWithExactName() {
-  countContainersWithFilter "name=${1}$"
-}
-
-function countContainersWithLabel() {
-  countContainersWithFilter "label=${1}"
-}
-
-function countContainersWithFilter() {
-  docker ps -q --filter="${1}" | wc -l | xargs
-}
-
-function usesLinuxKit() {
-  if ! docker info|grep -s '^Operating System: .*Docker for Windows' > /dev/null 2>&1 ; then
-    if docker info|grep -s '^Kernel Version: .*-moby$' >/dev/null 2>&1 ||
-        docker info|grep -s '^Kernel Version: .*-linuxkit-' > /dev/null 2>&1 ; then
-      return 0
-    fi
-  fi
   return 1
 }
 
@@ -433,7 +324,6 @@ if [[ ! ${TEST_CASE} ]]; then
   # test-case-src-calico-kdd
   # test-case-src-master-weave
   # test-case-src-master-coredns
-  test-case-multiple-instances
   test-case-dump-succeeds
   test-case-restore
 else
