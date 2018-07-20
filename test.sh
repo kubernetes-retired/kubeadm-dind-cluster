@@ -59,6 +59,7 @@ fi
 
 function test-cluster {
   local kubectl="${KUBECTL_DIR}/kubectl"
+  local defaultServer='localhost:8080'
   if [[ ${BUILD_HYPERKUBE:-} ]]; then
     kubectl="${PWD}/cluster/kubectl.sh"
   fi
@@ -70,9 +71,9 @@ function test-cluster {
   fi
   bash -x "${DIND_ROOT}"/dind-cluster.sh clean
   time bash -x "${DIND_ROOT}"/dind-cluster.sh up
-  "${kubectl}" get pods -n kube-system | grep kube-dns
+  "${kubectl}" --server="$defaultServer" get pods -n kube-system | grep kube-dns
   time bash -x "${DIND_ROOT}"/dind-cluster.sh up
-  "${kubectl}" get pods -n kube-system | grep kube-dns
+  "${kubectl}" --server="$defaultServer" get pods -n kube-system | grep kube-dns
   bash -x "${DIND_ROOT}"/dind-cluster.sh down
   bash -x "${DIND_ROOT}"/dind-cluster.sh clean
 }
@@ -279,6 +280,31 @@ function test-case-src-master-coredns {
   )
 }
 
+function test-case-dump-succeeds() {
+  local d="${DIND_ROOT}/dind-cluster.sh"
+
+  "$d" up
+  "$d" dump >/dev/null || {
+    fail "Expected '$d dump' to succeed"
+  }
+}
+
+function test-case-restore() {
+  local d="${DIND_ROOT}/dind-cluster.sh"
+
+  "$d" up
+  APISERVER_PORT=8083 "$d" up || {
+    fail 'Expected to be able to restore the cluster with the APIServer listening on 8083'
+  }
+
+  "$d" clean
+}
+
+function fail() {
+  local msg="$1"
+  echo -e "\033[1;31m${msg}\033[0m" >&2
+  return 1
+}
 
 if [[ ! ${TEST_CASE} ]]; then
   test-case-1.8
@@ -291,13 +317,15 @@ if [[ ! ${TEST_CASE} ]]; then
   test-case-1.9-calico
   test-case-1.9-calico-kdd
   test-case-1.9-weave
-  test-case-src-1.8
+  test-case-src-1.10
   test-case-src-master
   # test-case-src-master-flannel
   # test-case-src-master-calico
   # test-case-src-calico-kdd
   # test-case-src-master-weave
   # test-case-src-master-coredns
+  test-case-dump-succeeds
+  test-case-restore
 else
   "test-case-${TEST_CASE}"
 fi
