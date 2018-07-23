@@ -212,7 +212,6 @@ fi
 
 DEFAULT_DIND_LABEL='mirantis.kubeadm_dind_cluster_runtime'
 : "${DIND_LABEL:=${DEFAULT_DIND_LABEL}}"
-: "${APISERVER_PORT:=$(dind::find-free-local-apiserver-port)}"
 
 # not configurable for now, would need to setup context for kubectl _inside_ the cluster
 readonly INTERNAL_APISERVER_PORT=8080
@@ -775,7 +774,7 @@ function dind::configure-kubectl {
   context_name="$(dind::context-name)"
   cluster_name="$(dind::context-name)"
   "${kubectl}" config set-cluster "$cluster_name" \
-    --server="http://${host}:${APISERVER_PORT}" \
+    --server="http://${host}:$(dind::apiserver-port)" \
     --insecure-skip-tls-verify=true
   "${kubectl}" config set-context "$context_name" --cluster="$cluster_name"
 }
@@ -854,7 +853,7 @@ function dind::init {
   fi
   local master_name container_id
   master_name="$(dind::master-name)"
-  container_id=$(dind::run "${master_name}" "$(dind::master-ip)" 1 ${local_host}:${APISERVER_PORT}:${INTERNAL_APISERVER_PORT} ${master_opts[@]+"${master_opts[@]}"})
+  container_id=$(dind::run "${master_name}" "$(dind::master-ip)" 1 ${local_host}:$(dind::apiserver-port):${INTERNAL_APISERVER_PORT} ${master_opts[@]+"${master_opts[@]}"})
   # FIXME: I tried using custom tokens with 'kubeadm ex token create' but join failed with:
   # 'failed to parse response as JWS object [square/go-jose: compact JWS format must have three parts]'
   # So we just pick the line from 'kubeadm init' output
@@ -1161,7 +1160,7 @@ function dind::wait-for-ready {
   if [[ ${IP_MODE} = "ipv6" ]]; then
       local_host="[::1]"
   fi
-  dind::step "Access dashboard at:" "http://${local_host}:${APISERVER_PORT}/api/v1/namespaces/kube-system/services/kubernetes-dashboard:/proxy"
+  dind::step "Access dashboard at:" "http://${local_host}:$(dind::apiserver-port)/api/v1/namespaces/kube-system/services/kubernetes-dashboard:/proxy"
 }
 
 function dind::up {
@@ -1287,18 +1286,20 @@ function dind::restore_container {
 }
 
 function dind::restore {
+  local apiserver_port local_host containter_id pid pids
   dind::down
   dind::step "Restoring master container"
   dind::set-master-opts
+  apiserver_port="$( dind::apiserver-port )"
   for ((n=0; n <= NUM_NODES; n++)); do
     (
       if [[ n -eq 0 ]]; then
         dind::step "Restoring master container"
-        local local_host="127.0.0.1"
+        local_host="127.0.0.1"
         if [[ ${IP_MODE} = "ipv6" ]]; then
           local_host="[::1]"
         fi
-        dind::restore_container "$(dind::run -r "$(dind::master-name)" "$(dind::master-ip)" 1 ${local_host}:${APISERVER_PORT}:${INTERNAL_APISERVER_PORT} ${master_opts[@]+"${master_opts[@]}"})"
+        dind::restore_container "$(dind::run -r "$(dind::master-name)" "$(dind::master-ip)" 1 ${local_host}:${apiserver_port}:${INTERNAL_APISERVER_PORT} ${master_opts[@]+"${master_opts[@]}"})"
         dind::step "Master container restored"
       else
         dind::step "Restoring node container:" ${n}
@@ -1337,6 +1338,31 @@ function dind::down {
   elif [[ "${CNI_PLUGIN}" = "kube-router" ]]; then
     docker run --privileged --net=host cloudnativelabs/kube-router --cleanup-config
   fi
+}
+
+function dind::apiserver-port {
+  # APISERVER_PORT is explicitely set
+  if [ -n "${APISERVER_PORT:-}" ]
+  then
+    echo "$APISERVER_PORT"
+    return
+  fi
+
+  # Get the port from the master
+  local master port
+  master="$(dind::master-name)"
+  # 8080/tcp -> 127.0.0.1:8082  =>  8082
+  port="$( docker port "$master" 2>/dev/null | awk -F: "/^${INTERNAL_APISERVER_PORT}/{ print \$NF }" )"
+  if [ -n "$port" ]
+  then
+    APISERVER_PORT="$port"
+    echo "$APISERVER_PORT"
+    return
+  fi
+
+  # get a random free port
+  APISERVER_PORT="$(dind::find-free-local-apiserver-port)"
+  echo "$APISERVER_PORT"
 }
 
 function dind::master-name {
