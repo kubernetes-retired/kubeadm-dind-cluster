@@ -59,6 +59,12 @@ function dind::find-free-ipv4-subnet() {
 
   maxIP=$( dind::ipv4::find-maximum-claimed-ip )
 
+  if [ $maxIP -eq 0 ]
+  then
+    echo '10.192.0.0'
+    return
+  fi
+
   # maxIP is the highest IP we cannot use (because it already belongs to a subnet)
   # One could argue that maxIP+1 could be the MinHost of the subnet we're about to allocate (a.k.a. "new subnet").
   # But, consider:
