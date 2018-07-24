@@ -53,26 +53,80 @@ fi
 EMBEDDED_CONFIG=y;DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.8
 
 function dind::find-free-ipv4-subnet() {
-  local allocatedNets curNet
-  allocatedNets="$(
+  local maxIP anAddressInNewSubnet
+
+  subnetSize="$1"
+
+  maxIP=$( dind::ipv4::find-maximum-claimed-ip )
+
+  # maxIP is the highest IP we cannot use (because it already belongs to a subnet)
+  # One could argue that maxIP+1 could be the MinHost of the subnet we're about to allocate (a.k.a. "new subnet").
+  # But, consider:
+  # maxIP: 10.0.0.255
+  # maybeNextMinHost: 10.0.1.0
+  # In the above, a subnet size of /16, will start at 10.0.0.0 - which is invalid.
+  # So we need to start the new subnet at least 32-(subnetSize) IP spaces away.
+  anAddressInNewSubnet=$(( maxIP + (1<<(32-subnetSize)) ))
+
+  # apply mask to get min host
+  nextMinHost=$(( anAddressInNewSubnet & $(dind::ipv4::netmask "$subnetSize") ))
+
+  dind::ipv4::itoa "$nextMinHost"
+}
+
+function dind::ipv4::netmask() {
+  local netmask i
+  netmask=0
+  for i in $( seq 32 $(( 32 - $1 )) )
+  do
+    netmask=$(( netmask + 2**i ))
+  done
+  echo "$netmask"
+}
+
+function dind::ipv4::find-maximum-claimed-ip() {
+  local maxIP upperIPs b m i
+  maxIP=0
+  upperIPs="$(
     docker network ls --format '{{ .Name }}' | while read -r nw
     do
-      docker network inspect "$nw" --format "{{ range .IPAM.Config }}{{ .Subnet }}{{ end }}"
+      subnet="$( docker network inspect "$nw" --format "{{ range .IPAM.Config }}{{ .Subnet }}{{ end }}" )"
+      if [ -z "$subnet" ]
+      then
+        continue
+      fi
+      IFS='/' read -r b m <<<"$subnet"
+      echo $(( $(dind::ipv4::atoi "$b") + (1<<(32-m)) - 1 ))
     done
   )"
 
-  # this is a very naive implementations which ignores any netmask and
-  # basically assumes each net to be /16.
-  for i in $(seq 192 254) $(seq 0 191)
+  for i in $upperIPs
   do
-    curNet="10.${i}.0.0"
-    if ! echo "$allocatedNets" | grep -q "^${curNet}"
+    if [ "$(( i - maxIP ))" -gt 1 ]
     then
-      echo "$curNet"
-      return 0
+      maxIP="$i"
     fi
   done
-  return 1
+
+  echo "$maxIP"
+}
+
+function dind::ipv4::itoa() {
+  echo -n $(($(($(($(($1/256))/256))/256))%256)).
+  echo -n $(($(($(($1/256))/256))%256)).
+  echo -n $(($(($1/256))%256)).
+  echo $(($1%256))
+}
+
+function dind::ipv4::atoi() {
+  local ip="$1"
+  local ret=0
+  for (( i=0 ; i<4 ; ++i ))
+  do
+    (( ret += ${ip%%.*} * ( 256**(3-i) ) ))
+    ip=${ip#*.}
+  done
+  echo $ret
 }
 
 function dind::find-free-local-apiserver-port() {
@@ -212,7 +266,6 @@ fi
 
 DEFAULT_DIND_LABEL='mirantis.kubeadm_dind_cluster_runtime'
 : "${DIND_LABEL:=${DEFAULT_DIND_LABEL}}"
-: "${APISERVER_PORT:=$(dind::find-free-local-apiserver-port)}"
 
 # not configurable for now, would need to setup context for kubectl _inside_ the cluster
 readonly INTERNAL_APISERVER_PORT=8080
@@ -775,7 +828,7 @@ function dind::configure-kubectl {
   context_name="$(dind::context-name)"
   cluster_name="$(dind::context-name)"
   "${kubectl}" config set-cluster "$cluster_name" \
-    --server="http://${host}:${APISERVER_PORT}" \
+    --server="http://${host}:$(dind::apiserver-port)" \
     --insecure-skip-tls-verify=true
   "${kubectl}" config set-context "$context_name" --cluster="$cluster_name"
 }
@@ -854,7 +907,7 @@ function dind::init {
   fi
   local master_name container_id
   master_name="$(dind::master-name)"
-  container_id=$(dind::run "${master_name}" "$(dind::master-ip)" 1 ${local_host}:${APISERVER_PORT}:${INTERNAL_APISERVER_PORT} ${master_opts[@]+"${master_opts[@]}"})
+  container_id=$(dind::run "${master_name}" "$(dind::master-ip)" 1 ${local_host}:$(dind::apiserver-port):${INTERNAL_APISERVER_PORT} ${master_opts[@]+"${master_opts[@]}"})
   # FIXME: I tried using custom tokens with 'kubeadm ex token create' but join failed with:
   # 'failed to parse response as JWS object [square/go-jose: compact JWS format must have three parts]'
   # So we just pick the line from 'kubeadm init' output
@@ -1161,7 +1214,7 @@ function dind::wait-for-ready {
   if [[ ${IP_MODE} = "ipv6" ]]; then
       local_host="[::1]"
   fi
-  dind::step "Access dashboard at:" "http://${local_host}:${APISERVER_PORT}/api/v1/namespaces/kube-system/services/kubernetes-dashboard:/proxy"
+  dind::step "Access dashboard at:" "http://${local_host}:$(dind::apiserver-port)/api/v1/namespaces/kube-system/services/kubernetes-dashboard:/proxy"
 }
 
 function dind::up {
@@ -1287,18 +1340,20 @@ function dind::restore_container {
 }
 
 function dind::restore {
+  local apiserver_port local_host containter_id pid pids
   dind::down
   dind::step "Restoring master container"
   dind::set-master-opts
+  apiserver_port="$( dind::apiserver-port )"
   for ((n=0; n <= NUM_NODES; n++)); do
     (
       if [[ n -eq 0 ]]; then
         dind::step "Restoring master container"
-        local local_host="127.0.0.1"
+        local_host="127.0.0.1"
         if [[ ${IP_MODE} = "ipv6" ]]; then
           local_host="[::1]"
         fi
-        dind::restore_container "$(dind::run -r "$(dind::master-name)" "$(dind::master-ip)" 1 ${local_host}:${APISERVER_PORT}:${INTERNAL_APISERVER_PORT} ${master_opts[@]+"${master_opts[@]}"})"
+        dind::restore_container "$(dind::run -r "$(dind::master-name)" "$(dind::master-ip)" 1 ${local_host}:${apiserver_port}:${INTERNAL_APISERVER_PORT} ${master_opts[@]+"${master_opts[@]}"})"
         dind::step "Master container restored"
       else
         dind::step "Restoring node container:" ${n}
@@ -1339,6 +1394,31 @@ function dind::down {
   fi
 }
 
+function dind::apiserver-port {
+  # APISERVER_PORT is explicitely set
+  if [ -n "${APISERVER_PORT:-}" ]
+  then
+    echo "$APISERVER_PORT"
+    return
+  fi
+
+  # Get the port from the master
+  local master port
+  master="$(dind::master-name)"
+  # 8080/tcp -> 127.0.0.1:8082  =>  8082
+  port="$( docker port "$master" 2>/dev/null | awk -F: "/^${INTERNAL_APISERVER_PORT}/{ print \$NF }" )"
+  if [ -n "$port" ]
+  then
+    APISERVER_PORT="$port"
+    echo "$APISERVER_PORT"
+    return
+  fi
+
+  # get a random free port
+  APISERVER_PORT="$(dind::find-free-local-apiserver-port)"
+  echo "$APISERVER_PORT"
+}
+
 function dind::master-name {
   echo "kube-master$( dind::clusterSuffix )"
 }
@@ -1376,11 +1456,11 @@ function dind::node-ip {
 function dind::get-ip-from-range() {
   local idx="$1"
 
-  read -r range _ <<<"$( dind::get-subnet )"
+  read -r net _ <<<"$( dind::get-subnet )"
+  ipNum="$( dind::ipv4::atoi "$net" )"
+  ipNum=$(( ipNum + idx ))
 
-  printf '%s.%s\n' \
-    "$( echo "$range" | cut -d. -f1-3 )" \
-    "$idx"
+  dind::ipv4::itoa "$ipNum"
 }
 
 function dind::get-subnet {
@@ -1395,8 +1475,8 @@ function dind::get-subnet {
 
   if [ "$netDataErr" -ne 0 ]
   then
-    net="${DIND_SUBNET:-$(dind::find-free-ipv4-subnet)}"
     mask="${DIND_SUBNET_SIZE:-16}"
+    net="${DIND_SUBNET:-$(dind::find-free-ipv4-subnet "$mask")}"
     exists=0
   else
     IFS=/ read -r net mask <<<"$netData"
