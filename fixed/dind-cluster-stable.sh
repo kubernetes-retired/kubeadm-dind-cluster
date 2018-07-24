@@ -83,7 +83,7 @@ function dind::find-free-ipv4-subnet() {
 function dind::ipv4::netmask() {
   local netmask i
   netmask=0
-  for i in $( seq 32 $(( 32 - $1 )) )
+  for i in $( seq $(( 32 - $1 )) 32 )
   do
     netmask=$(( netmask + 2**i ))
   done
