@@ -192,8 +192,8 @@ test_multiple_clusters: &test_multiple_clusters
         name: Bring up multiple clusters in parallel
         no_output_timeout: 35m
         command: |
-          build/portforward.sh -wait 8080
-          build/portforward.sh -wait 8082
+          build/portforward.sh -wait 8080  # by default, first cluster binds to 8080
+          build/portforward.sh -wait 8081  #       ... and second cluster binds to 8081
 
           set -eu
           set -o pipefail
@@ -205,7 +205,7 @@ test_multiple_clusters: &test_multiple_clusters
             local d="./dind-cluster.sh"
 
             "${d}" up
-            APISERVER_PORT=8082 DIND_SUBNET='10.199.0.0' DIND_LABEL="$customLabel" "${d}" up
+            DIND_LABEL="$customLabel" "${d}" up
 
             # masters
             test "$(countContainersWithExactName "kube-master")" -eq 1 || {
