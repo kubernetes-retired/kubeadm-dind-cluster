@@ -143,6 +143,21 @@ function dind::localhost() {
   fi
 }
 
+function dind::find-free-remote-apiserver-port() {
+  local port local_host
+
+  local_host="$( dind::localhost )"
+  for port in $(seq 8080 9090)
+  do
+    if docker run -p "${local_host}:${port}:8080" --entrypoint /bin/true "${DIND_IMAGE}" >/dev/null 2>&1
+    then
+      echo "$port"
+      return 0
+    fi
+  done
+  return 1
+}
+
 function dind::find-free-local-apiserver-port() {
   local port rc local_host
   local_host="$( dind::localhost )"
@@ -1423,7 +1438,7 @@ function dind::apiserver-port {
   fi
 
   # get a random free port
-  APISERVER_PORT="$(dind::find-free-local-apiserver-port)"
+  APISERVER_PORT="$(dind::find-free-remote-apiserver-port)"
   echo "$APISERVER_PORT"
 }
 
