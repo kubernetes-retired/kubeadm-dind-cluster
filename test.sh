@@ -35,6 +35,7 @@ K8S_PR="${K8S_PR:-}"
 
 tempdir="$(mktemp -d)"
 export KUBECTL_DIR="${tempdir}"
+export KUBECONFIG="${KUBECTL_DIR}/kube.conf"
 
 function cleanup {
   if [[ ${TRAVIS:-} && $? -ne 0 ]]; then
@@ -59,9 +60,7 @@ fi
 
 function test-cluster {
   local kubectl="${KUBECTL_DIR}/kubectl"
-  # context name for the default cluster
-  #   (hashed 'mirantis.kubeadm_dind_cluster_runtime')
-  local defaultContext='dind-8b6554faeab30c4beae1f439af392901406ba5a2'
+  local defaultContext='dind'
 
   if [[ ${BUILD_HYPERKUBE:-} ]]; then
     kubectl="${PWD}/cluster/kubectl.sh"
