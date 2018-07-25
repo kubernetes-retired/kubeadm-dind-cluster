@@ -122,7 +122,7 @@ The first `dind/dind-cluster.sh up` invocation can be slow because it
 needs to build the base image and Kubernetes binaries. Subsequent
 invocations are much faster.
 
-## IPv6 Mode (experimental)
+## IPv6 Mode
 To run Kubernetes in IPv6 only mode, set the environment variable IP_MODE
 to "ipv6". There are additional customizations that you can make for IPv6,
 to set the prefix used for DNS64, subnet prefix to use for DinD, and
@@ -135,34 +135,14 @@ export DIND_SUBNET=fd00:77::
 export SERVICE_CIDR=fd00:77:30::/110
 ```
 
-As of November 28th, there are two IPv6 Kuberentes PRs in-flight. One is for
-Kubenet and one for E2E tests (neither is required for IPv6 use). You can
-cherry pick these PRs, if desired, and then set the BUILD_HYPERKUBE and
-BUILD_KUBEADM flags, to include the changes in a local Kubernetes repo.
-
-```
-PR #56245 Updates kubenet CNI template for v0.3.1"
-PR #52748 "Add brackets around IPv6 addrs in e2e test IP:port endpoints"
-
-git fetch origin pull/56245/head:pr56245
-git log --abbrev-commit pr56245 --oneline --abbrev-commit -n 1 | cut -f 1 -d" "
-
-git fetch origin pull/52748/head:pr52748
-git log --abbrev-commit pr52748 --oneline --abbrev-commit -n 1 | cut -f 1 -d" "
-```
-
-Note: If you run into a kube-proxy crash during an attempt to modify conntrack
-settings, you'll need to patch that is mentioned in this issue:
-
-```
-https://github.com/kubernetes-sigs/kubeadm-dind-cluster/issues/50
-```
+NOTE: If you use `kube-router` for networking, IPv6 is not supported, as of
+July 2018.
 
 ## Configuration
 You may edit `config.sh` to override default settings. See comments in
 [the file](config.sh) for more info. In particular, you can specify
 CNI plugin to use via `CNI_PLUGIN` variable (`bridge`, `flannel`,
-`calico`, `weave`).
+`calico`, `weave`, `kube-router`).
 
 ## Remote Docker / GCE
 It's possible to build Kubernetes on a remote machine running Docker.
