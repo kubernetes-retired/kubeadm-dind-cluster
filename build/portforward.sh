@@ -10,6 +10,9 @@ if [[ ${1:-} = -wait ]]; then
   wait=1
   shift
 fi
+if [ "${DIND_PORT_FORWARDER_WAIT:-}" = "1" ]; then
+  wait=1
+fi
 
 if [[ ${1:-} = start ]]; then
   docker run -d -it \

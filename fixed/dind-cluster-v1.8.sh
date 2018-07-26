@@ -118,10 +118,10 @@ function dind::ipv4::find-maximum-claimed-ip() {
 }
 
 function dind::ipv4::itoa() {
-  echo -n $(($(($(($(($1/256))/256))/256))%256)).
-  echo -n $(($(($(($1/256))/256))%256)).
-  echo -n $(($(($1/256))%256)).
-  echo $(($1%256))
+  echo -n $(( ($1 / 256 / 256 / 256) % 256)).
+  echo -n $(( ($1 / 256 / 256) % 256 )).
+  echo -n $(( ($1 / 256) % 256 )).
+  echo    $((  $1 % 256 ))
 }
 
 function dind::ipv4::atoi() {
@@ -141,39 +141,6 @@ function dind::localhost() {
   else
     echo '127.0.0.1'
   fi
-}
-
-function dind::find-free-remote-apiserver-port() {
-  local port local_host
-
-  local_host="$( dind::localhost )"
-  for port in $(seq 8080 9090)
-  do
-    if docker run -p "${local_host}:${port}:8080" --entrypoint /bin/true "${DIND_IMAGE}" >/dev/null 2>&1
-    then
-      echo "$port"
-      return 0
-    fi
-  done
-  return 1
-}
-
-function dind::find-free-local-apiserver-port() {
-  local port rc local_host
-  local_host="$( dind::localhost )"
-  for port in $(seq 8080 9090)
-  do
-    set +e
-    ( echo "" >"/dev/tcp/${local_host}/${port}" ) >/dev/null 2>&1
-    rc=$?
-    set -e
-    if [ $rc -ne 0 ]
-    then
-      echo "$port"
-      return 0
-    fi
-  done
-  return 1
 }
 
 IP_MODE="${IP_MODE:-ipv4}"  # ipv4, ipv6, (future) dualstack
@@ -1025,6 +992,7 @@ EOF
   fi
   kubeadm_join_flags="$(dind::kubeadm "${container_id}" init "${init_args[@]}" --skip-preflight-checks "$@" | grep '^ *kubeadm join' | sed 's/^ *kubeadm join //')"
   dind::configure-kubectl
+  dind::start-port-forwarder
 }
 
 function dind::create-node-container {
@@ -1402,6 +1370,7 @@ function dind::restore {
   # Recheck kubectl config. It's possible that the cluster was started
   # on this docker from different host
   dind::configure-kubectl
+  dind::start-port-forwarder
   dind::wait-for-ready
 }
 
@@ -1438,7 +1407,7 @@ function dind::apiserver-port {
   fi
 
   # get a random free port
-  APISERVER_PORT="$(dind::find-free-remote-apiserver-port)"
+  APISERVER_PORT=0
   echo "$APISERVER_PORT"
 }
 
@@ -1517,6 +1486,16 @@ function dind::remove-volumes {
     dind::step "Removing volume:" "${volume_id}"
     docker volume rm "${volume_id}"
   done
+}
+
+function dind::start-port-forwarder {
+  local fwdr
+  fwdr="${DIND_PORT_FORWARDER:-}"
+
+  [ -n "$fwdr" ] || return 0
+  [ -x "$fwdr" ] || return 0
+
+  "$fwdr" "$( dind::apiserver-port )"
 }
 
 function dind::sha1 {
@@ -1854,6 +1833,9 @@ case "${1:-}" in
     ;;
   split-dump64)
     dind::split-dump64
+    ;;
+  apiserver-port)
+    dind::apiserver-port
     ;;
   *)
     echo "usage:" >&2
