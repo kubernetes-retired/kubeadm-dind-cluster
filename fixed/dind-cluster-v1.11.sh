@@ -70,6 +70,7 @@ if [[ ${IP_MODE} = "ipv6" ]]; then
     DIND_SUBNET_SIZE="${DIND_SUBNET_SIZE:-64}"
     REMOTE_DNS64_V4SERVER="${REMOTE_DNS64_V4SERVER:-8.8.8.8}"
     LOCAL_NAT64_SERVER="${DIND_SUBNET}200"
+    NAT64_V4_SUBNET_PREFIX="${NAT64_V4_SUBNET_PREFIX:-172.18}"
     DNS64_PREFIX="${DNS64_PREFIX:-fd00:10:64:ff9b::}"
     DNS64_PREFIX_SIZE="${DNS64_PREFIX_SIZE:-96}"
     DNS64_PREFIX_CIDR="${DNS64_PREFIX}/${DNS64_PREFIX_SIZE}"
@@ -494,7 +495,7 @@ function dind::ensure-network {
     local v6settings=""
     if [[ ${IP_MODE} = "ipv6" ]]; then
       # Need second network for NAT64
-      v6settings="--subnet=172.18.0.0/16 --ipv6"
+      v6settings="--subnet=${NAT64_V4_SUBNET_PREFIX}.0.0/16 --ipv6"
     fi
     docker network create ${v6settings} --subnet="${DIND_SUBNET}/${DIND_SUBNET_SIZE}" --gateway="${dind_ip_base}1" $(dind::net-name) >/dev/null
   fi
@@ -571,18 +572,18 @@ function dind::ensure-nat {
         if ! docker ps | grep tayga >&/dev/null; then
             docker run -d --name tayga --hostname tayga --net "$(dind::net-name)" --label "${DIND_LABEL}" \
 		   --sysctl net.ipv6.conf.all.disable_ipv6=0 --sysctl net.ipv6.conf.all.forwarding=1 \
-		   --privileged=true --ip 172.18.0.200 --ip6 ${LOCAL_NAT64_SERVER} --dns ${REMOTE_DNS64_V4SERVER} --dns ${dns_server} \
-		   -e TAYGA_CONF_PREFIX=${DNS64_PREFIX_CIDR} -e TAYGA_CONF_IPV4_ADDR=172.18.0.200 \
-		   danehans/tayga:latest >/dev/null
+		   --privileged=true --ip ${NAT64_V4_SUBNET_PREFIX}.0.200 --ip6 ${LOCAL_NAT64_SERVER} --dns ${REMOTE_DNS64_V4SERVER} --dns ${dns_server} \
+		   -e TAYGA_CONF_PREFIX=${DNS64_PREFIX_CIDR} -e TAYGA_CONF_IPV4_ADDR=${NAT64_V4_SUBNET_PREFIX}.0.200 \
+		   -e TAYGA_CONF_DYNAMIC_POOL=${NAT64_V4_SUBNET_PREFIX}.0.128/25 danehans/tayga:latest >/dev/null
 	    # Need to check/create, as "clean" may remove route
-	    local route="$(ip route | egrep "^172.18.0.128/25")"
+	    local route="$(ip route | egrep "^${NAT64_V4_SUBNET_PREFIX}.0.128/25")"
 	    if [[ -z "${route}" ]]; then
 		if [[ ${GCE_HOSTED} ]]; then
-		    docker-machine ssh k8s-dind sudo ip route add 172.18.0.128/25 via 172.18.0.200
-    elif [[ -z ${using_linuxdocker} ]]; then
-        :
+		    docker-machine ssh k8s-dind sudo ip route add ${NAT64_V4_SUBNET_PREFIX}.0.128/25 via ${NAT64_V4_SUBNET_PREFIX}.0.200
+                elif [[ -z ${using_linuxdocker} ]]; then
+                    :
 		else
-		    docker run --net=host --rm --privileged ${busybox_image} ip route add 172.18.0.128/25 via 172.18.0.200
+		    docker run --net=host --rm --privileged ${busybox_image} ip route add ${NAT64_V4_SUBNET_PREFIX}.0.128/25 via ${NAT64_V4_SUBNET_PREFIX}.0.200
 		fi
 	    fi
 	fi
@@ -1016,7 +1017,7 @@ function dind::setup_external_access_on_host {
     return
   fi
   local main_if=`ip route | grep default | awk '{print $5}'`
-  local bridge_if=`ip route | grep 172.18.0.0 | awk '{print $3}'`
+  local bridge_if=`ip route | grep ${NAT64_V4_SUBNET_PREFIX}.0.0 | awk '{print $3}'`
   docker run --entrypoint /sbin/ip6tables --net=host --rm --privileged ${DIND_IMAGE} -t nat -A POSTROUTING -o $main_if -j MASQUERADE
   if [[ -n "$bridge_if" ]]; then
     docker run --entrypoint /sbin/ip6tables --net=host --rm --privileged ${DIND_IMAGE} -A FORWARD -i $bridge_if -j ACCEPT
@@ -1032,7 +1033,7 @@ function dind::remove_external_access_on_host {
   fi
   local have_rule
   local main_if="$(ip route | grep default | awk '{print $5}')"
-  local bridge_if="$(ip route | grep 172.18.0.0 | awk '{print $3}')"
+  local bridge_if="$(ip route | grep ${NAT64_V4_SUBNET_PREFIX}.0.0 | awk '{print $3}')"
 
   have_rule="$(docker run --entrypoint /sbin/ip6tables --net=host --rm --privileged ${DIND_IMAGE} -S -t nat | grep "\-o $main_if" || true)"
   if [[ -n "$have_rule" ]]; then
