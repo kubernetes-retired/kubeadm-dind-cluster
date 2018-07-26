@@ -64,9 +64,9 @@ $ export PATH="$HOME/.kubeadm-dind-cluster:$PATH"
 
 $ kubectl get nodes
 NAME                      STATUS    AGE       VERSION
-kube-master-<sha1-hash>   Ready     6m        v1.8.6
-kube-node-1-<sha1-hash>   Ready     5m        v1.8.6
-kube-node-2-<sha1-hash>   Ready     5m        v1.8.6
+kube-master   Ready     6m        v1.8.6
+kube-node-1   Ready     5m        v1.8.6
+kube-node-2   Ready     5m        v1.8.6
 
 $ # k8s dashboard available at http://localhost:8080/api/v1/namespaces/kube-system/services/kubernetes-dashboard:/proxy
 
@@ -99,9 +99,9 @@ $ ~/dind/dind-cluster.sh up
 
 $ kubectl get nodes
 NAME                      STATUS         AGE
-kube-master-<sha1-hash>   Ready,master   1m
-kube-node-1-<sha1-hash>   Ready          34s
-kube-node-2-<sha1-hash>   Ready          34s
+kube-master   Ready,master   1m
+kube-node-1   Ready          34s
+kube-node-2   Ready          34s
 
 $ # k8s dashboard available at http://localhost:8080/ui
 
@@ -179,7 +179,14 @@ The example is based on sample commands from
 in Kubernetes source.
 
 When using a remote machine, you need to use ssh port forwarding
-to forward `KUBE_RSYNC_PORT` and `APISERVER_PORT` you choose.
+to forward `KUBE_RSYNC_PORT` and `APISERVER_PORT`.
+
+If you do not explicitly set `APISERVER_PORT`, that port will be randomized. To
+help with that `./dind-cluster.sh` will call a user-defined executable as soon
+as the port is allocated and the kubectl context is set up. For that to happen
+you need to set `DIND_PORT_FORWARDER` to a path to an executable, which will be
+called with the allocated port as a first argument. If you keep
+`DIND_PORT_FORWARDER` empty, that mechanism will not kick in.
 
 ## Dumping cluster state
 
@@ -225,27 +232,50 @@ The following information is currently stored in the dump:
 ## Running multiple clusters in parallel
 
 `dind-cluster.sh` can be used to create and manage multiple dind clusters.
-The first instance will use the default values for
-* the label
-* the subnet (and subnet mask)
-* he local port to be forwarded to the APIServer
-* ...
 
-For every additional cluster, at least `DIND_LABEL` needs to be set.
+A cluster with `DIND_LABEL` *not* configured will use the default names for the
+docker resources and kubectl context, e.g. `kube-master` (container name),
+`kubeadm-dind-kube-master` (volume name), `dind` (context name), ...
+
+For every additional cluster `DIND_LABEL` needs to be set to an unique value.
+By doing so, all resources will be suffixed with `-<hash>`, where `<hash>` is
+the sha1 hash of the value of `DIND_LABEL`.
+Certain docker resources will be labeled with the value of `DIND_LABEL`, see
+the example below.
+
+In any case, 'default' or 'additional' cluster, the subnet for the docker
+network and the port for the APIServer will be randomly assigned. You can
+change that by explicitly setting `DIND_SUBNET`/`DIND_SUBNET_SIZE` or
+`APISERVER_PORT`.
 
 Example usage:
 
 ```shell
+$ # creates a 'default' cluster
+$ ./dind-cluster up
+$ # creates an additional cluster with the label 'example-custom-label'
 $ DIND_LABEL="example-custom-label" ./dind-cluster.sh up
 ```
 
-Example output:
+Example containers:
 
 ```shell
 $ docker ps  --format '{{ .ID }} - {{ .Names }} -- {{ .Labels }}'                                                                                                                                           │
-fd566cd6c41e - kube-node-2-a851cc1971ecacfea75609d7267e9b30231f4270 -- mirantis.kubeadm_dind_cluster=1,example-custom-label=
-baaca6df2300 - kube-node-1-a851cc1971ecacfea75609d7267e9b30231f4270 -- example-custom-label=,mirantis.kubeadm_dind_cluster=1
-b15b957a6554 - kube-master-a851cc1971ecacfea75609d7267e9b30231f4270 -- example-custom-label=,mirantis.kubeadm_dind_cluster=1
+923d2ab5c783 - kube-node-2 -- mirantis.kubeadm_dind_cluster=1
+c165e366499c - kube-node-1 -- mirantis.kubeadm_dind_cluster=1
+6499c923d2ab - kube-master -- mirantis.kubeadm_dind_cluster=1
+fd566cd6c41e - kube-node-2-d63d26399fd0d25b9edc9460af1841985d91bce8 -- mirantis.kubeadm_dind_cluster=1,example-custom-label=
+baaca6df2300 - kube-node-1-d63d26399fd0d25b9edc9460af1841985d91bce8 -- example-custom-label=,mirantis.kubeadm_dind_cluster=1
+b15b957a6554 - kube-master-d63d26399fd0d25b9edc9460af1841985d91bce8 -- example-custom-label=,mirantis.kubeadm_dind_cluster=1
+```
+
+Example `kubectl` access:
+
+```shell
+$ # to access the 'default' cluster
+$ kubectl --context dind get all
+$ # to access the additional cluster
+$ kubectl --context dind-d63d26399fd0d25b9edc9460af1841985d91bce8 get all
 ```
 
 ## Motivation
