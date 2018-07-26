@@ -135,12 +135,36 @@ function dind::ipv4::atoi() {
   echo $ret
 }
 
+function dind::localhost() {
+  if [[ ${IP_MODE} = "ipv6" ]]; then
+    echo '[::1]'
+  else
+    echo '127.0.0.1'
+  fi
+}
+
+function dind::find-free-remote-apiserver-port() {
+  local port local_host
+
+  local_host="$( dind::localhost )"
+  for port in $(seq 8080 9090)
+  do
+    if docker run -p "${local_host}:${port}:8080" --entrypoint /bin/true "${DIND_IMAGE}" >/dev/null 2>&1
+    then
+      echo "$port"
+      return 0
+    fi
+  done
+  return 1
+}
+
 function dind::find-free-local-apiserver-port() {
-  local port rc
+  local port rc local_host
+  local_host="$( dind::localhost )"
   for port in $(seq 8080 9090)
   do
     set +e
-    ( echo "" >"/dev/tcp/127.0.0.1/${port}" ) >/dev/null 2>&1
+    ( echo "" >"/dev/tcp/${local_host}/${port}" ) >/dev/null 2>&1
     rc=$?
     set -e
     if [ $rc -ne 0 ]
@@ -907,13 +931,10 @@ function dind::kubeadm-version {
 function dind::init {
   local -a opts
   dind::set-master-opts
-  local local_host="127.0.0.1"
-  if [[ ${IP_MODE} = "ipv6" ]]; then
-      local_host="[::1]"
-  fi
-  local master_name container_id
+  local local_host master_name container_id
   master_name="$(dind::master-name)"
-  container_id=$(dind::run "${master_name}" "$(dind::master-ip)" 1 ${local_host}:$(dind::apiserver-port):${INTERNAL_APISERVER_PORT} ${master_opts[@]+"${master_opts[@]}"})
+  local_host="$( dind::localhost )"
+  container_id=$(dind::run "${master_name}" "$(dind::master-ip)" 1 "${local_host}:$(dind::apiserver-port):${INTERNAL_APISERVER_PORT}" ${master_opts[@]+"${master_opts[@]}"})
   # FIXME: I tried using custom tokens with 'kubeadm ex token create' but join failed with:
   # 'failed to parse response as JWS object [square/go-jose: compact JWS format must have three parts]'
   # So we just pick the line from 'kubeadm init' output
@@ -1216,10 +1237,9 @@ function dind::wait-for-ready {
   echo "[done]" >&2
 
   dind::retry "${kubectl}" --context "$ctx" get nodes >&2
-  local_host="localhost"
-  if [[ ${IP_MODE} = "ipv6" ]]; then
-      local_host="[::1]"
-  fi
+
+  local local_host
+  local_host="$( dind::localhost )"
   dind::step "Access dashboard at:" "http://${local_host}:$(dind::apiserver-port)/api/v1/namespaces/kube-system/services/kubernetes-dashboard:/proxy"
 }
 
@@ -1346,20 +1366,17 @@ function dind::restore_container {
 }
 
 function dind::restore {
-  local apiserver_port local_host containter_id pid pids
+  local apiserver_port local_host pid pids
   dind::down
   dind::step "Restoring master container"
   dind::set-master-opts
+  local_host="$( dind::localhost )"
   apiserver_port="$( dind::apiserver-port )"
   for ((n=0; n <= NUM_NODES; n++)); do
     (
       if [[ n -eq 0 ]]; then
         dind::step "Restoring master container"
-        local_host="127.0.0.1"
-        if [[ ${IP_MODE} = "ipv6" ]]; then
-          local_host="[::1]"
-        fi
-        dind::restore_container "$(dind::run -r "$(dind::master-name)" "$(dind::master-ip)" 1 ${local_host}:${apiserver_port}:${INTERNAL_APISERVER_PORT} ${master_opts[@]+"${master_opts[@]}"})"
+        dind::restore_container "$(dind::run -r "$(dind::master-name)" "$(dind::master-ip)" 1 "${local_host}:${apiserver_port}:${INTERNAL_APISERVER_PORT}" ${master_opts[@]+"${master_opts[@]}"})"
         dind::step "Master container restored"
       else
         dind::step "Restoring node container:" ${n}
@@ -1421,7 +1438,7 @@ function dind::apiserver-port {
   fi
 
   # get a random free port
-  APISERVER_PORT="$(dind::find-free-local-apiserver-port)"
+  APISERVER_PORT="$(dind::find-free-remote-apiserver-port)"
   echo "$APISERVER_PORT"
 }
 
