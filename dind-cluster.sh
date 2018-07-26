@@ -118,10 +118,10 @@ function dind::ipv4::find-maximum-claimed-ip() {
 }
 
 function dind::ipv4::itoa() {
-  echo -n $(($(($(($(($1/256))/256))/256))%256)).
-  echo -n $(($(($(($1/256))/256))%256)).
-  echo -n $(($(($1/256))%256)).
-  echo $(($1%256))
+  echo -n $(( ($1 / 256 / 256 / 256) % 256)).
+  echo -n $(( ($1 / 256 / 256) % 256 )).
+  echo -n $(( ($1 / 256) % 256 )).
+  echo    $((  $1 % 256 ))
 }
 
 function dind::ipv4::atoi() {
