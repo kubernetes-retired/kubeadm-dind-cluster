@@ -1537,9 +1537,10 @@ function dind::do-run-e2e {
     fi
   fi
   dind::need-source
-  local test_args="--host=http://${host}:${INTERNAL_APISERVER_PORT}"
+  local kubeapi test_args term
   local -a e2e_volume_opts=()
-  local term=
+  kubeapi="http://${host}:$(dind::apiserver-port)"
+  test_args="--host=${kubeapi}"
   if [[ ${focus} ]]; then
     test_args="--ginkgo.focus=${focus} ${test_args}"
   fi
@@ -1562,14 +1563,14 @@ function dind::do-run-e2e {
          --net=host \
          "${build_volume_args[@]}" \
          -e KUBERNETES_PROVIDER=dind \
-         -e KUBE_MASTER_IP=http://${host}:${INTERNAL_APISERVER_PORT} \
+         -e KUBE_MASTER_IP="${kubeapi}" \
          -e KUBE_MASTER=local \
          -e KUBERNETES_CONFORMANCE_TEST=y \
          -e GINKGO_PARALLEL=${parallel} \
          ${e2e_volume_opts[@]+"${e2e_volume_opts[@]}"} \
          -w /go/src/k8s.io/kubernetes \
          "${e2e_base_image}" \
-         bash -c "cluster/kubectl.sh config set-cluster dind --server='http://${host}:${INTERNAL_APISERVER_PORT}' --insecure-skip-tls-verify=true &&
+         bash -c "cluster/kubectl.sh config set-cluster dind --server='${kubeapi}' --insecure-skip-tls-verify=true &&
          cluster/kubectl.sh config set-context dind --cluster=dind &&
          cluster/kubectl.sh config use-context dind &&
          go run hack/e2e.go -- --v 6 --test --check-version-skew=false --test_args='${test_args}'"
