@@ -27,18 +27,20 @@ setup: &setup
     tar -xz -C /tmp -f "/tmp/docker-${DOCKER_VERSION}.tgz"
     mv /tmp/docker/* /usr/bin
     # Start port forwarder
-    build/portforward.sh start
+    "${PWD}/build/portforward.sh" start
 
 display_cluster_state: &display_cluster_state
   command: |
+    DIND_ROOT="$PWD"
+
     kubectl="kubectl"
     if [[ ${K8S_SRC:-} ]]; then
       cd kubernetes
       kubectl="cluster/kubectl.sh"
     fi
 
-    apiserver_port="$( ./dind-cluster.sh apiserver-port )"
-    build/portforward.sh -wait "$apiserver_port"
+    apiserver_port="$( "${DIND_ROOT}/dind-cluster.sh" apiserver-port )"
+    "${DIND_ROOT}/build/portforward.sh" -wait "$apiserver_port"
 
     "${kubectl}" "--server=:${apiserver_port}" version
     "${kubectl}" "--server=:${apiserver_port}" get all --all-namespaces -o wide
@@ -74,7 +76,7 @@ test: &test
         name: Bring up the cluster
         command: |
           export DIND_PORT_FORWARDER_WAIT=1
-          export DIND_PORT_FORWARDER=build/portforward.sh
+          export DIND_PORT_FORWARDER="${PWD}/build/portforward.sh"
           ./dind-cluster.sh up
     - run:
         name: Display cluster status (1)
@@ -87,7 +89,7 @@ test: &test
         name: Bring up the cluster (again)
         command: |
           export DIND_PORT_FORWARDER_WAIT=1
-          export DIND_PORT_FORWARDER=build/portforward.sh
+          export DIND_PORT_FORWARDER="${PWD}/build/portforward.sh"
           ./dind-cluster.sh up
     - run:
         name: Display cluster status (2)
@@ -135,8 +137,8 @@ test_src: &test_src
         no_output_timeout: 35m
         command: |
           export DIND_PORT_FORWARDER_WAIT=1
-          export DIND_PORT_FORWARDER=build/portforward.sh
-          build/portforward.sh 8730
+          export DIND_PORT_FORWARDER="${PWD}/build/portforward.sh"
+          "${PWD}/build/portforward.sh" 8730
           cd kubernetes
           ../dind-cluster.sh up
     - run:
@@ -150,8 +152,8 @@ test_src: &test_src
         name: Bring up the cluster (again)
         command: |
           export DIND_PORT_FORWARDER_WAIT=1
-          export DIND_PORT_FORWARDER=build/portforward.sh
-          build/portforward.sh 8730
+          export DIND_PORT_FORWARDER="${PWD}/build/portforward.sh"
+          "${PWD}/build/portforward.sh" 8730
           cd kubernetes
           ../dind-cluster.sh up
     - run:
@@ -159,8 +161,8 @@ test_src: &test_src
         no_output_timeout: 25m
         command: |
           export DIND_PORT_FORWARDER_WAIT=1
-          export DIND_PORT_FORWARDER=build/portforward.sh
-          build/portforward.sh 8730
+          export DIND_PORT_FORWARDER="${PWD}/build/portforward.sh"
+          "${PWD}/build/portforward.sh" 8730
           cd kubernetes
           ../dind-cluster.sh e2e "existing RC"
     - run:
@@ -209,7 +211,7 @@ test_multiple_clusters: &test_multiple_clusters
             local d="./dind-cluster.sh"
 
             export DIND_PORT_FORWARDER_WAIT=1
-            export DIND_PORT_FORWARDER=build/portforward.sh
+            export DIND_PORT_FORWARDER="${PWD}/build/portforward.sh"
 
             "${d}" up
             DIND_LABEL="$customLabel" "${d}" up
