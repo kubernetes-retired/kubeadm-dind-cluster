@@ -1492,12 +1492,16 @@ function dind::start-port-forwarder {
   local fwdr port
   fwdr="${DIND_PORT_FORWARDER:-}"
 
-  if [ -n "$fwdr" ] && [ -x "$fwdr" ]
-  then
-    port="$( dind::apiserver-port )"
-    dind::step "+ Setting up port-forwarding for :${port}"
-    "$fwdr" "$port"
-  fi
+  [ -n "$fwdr" ] || return 0
+
+  [ -x "$fwdr" ] || {
+    echo "'${fwdr}' is not executable." >&2
+    return 1
+  }
+
+  port="$( dind::apiserver-port )"
+  dind::step "+ Setting up port-forwarding for :${port}"
+  "$fwdr" "$port"
 }
 
 function dind::sha1 {

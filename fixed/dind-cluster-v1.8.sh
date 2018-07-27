@@ -1489,19 +1489,19 @@ function dind::remove-volumes {
 }
 
 function dind::start-port-forwarder {
-  set -x
-
   local fwdr port
   fwdr="${DIND_PORT_FORWARDER:-}"
 
-  if [ -n "$fwdr" ] && [ -x "$fwdr" ]
-  then
-    port="$( dind::apiserver-port )"
-    dind::step "+ Setting up port-forwarding for :${port}"
-    "$fwdr" "$port"
-  fi
+  [ -n "$fwdr" ] || return 0
 
-  set +x
+  [ -x "$fwdr" ] || {
+    echo "'${fwdr}' is not executable." >&2
+    return 1
+  }
+
+  port="$( dind::apiserver-port )"
+  dind::step "+ Setting up port-forwarding for :${port}"
+  "$fwdr" "$port"
 }
 
 function dind::sha1 {
