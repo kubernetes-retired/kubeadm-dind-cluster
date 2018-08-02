@@ -300,6 +300,7 @@ SKIP_SNAPSHOT="${SKIP_SNAPSHOT:-}"
 E2E_REPORT_DIR="${E2E_REPORT_DIR:-}"
 DIND_NO_PARALLEL_E2E="${DIND_NO_PARALLEL_E2E:-}"
 DNS_SERVICE="${DNS_SERVICE:-kube-dns}"
+DIND_STORAGE_DRIVER="${DIND_STORAGE_DRIVER:-overlay2}"
 
 DIND_CA_CERT_URL="${DIND_CA_CERT_URL:-}"
 DIND_PROPAGATE_HTTP_PROXY="${DIND_PROPAGATE_HTTP_PROXY:-}"
@@ -746,6 +747,7 @@ function dind::run {
   local -a opts=("${ip_arg}" "${ip}" "$@")
   local -a args=("systemd.setenv=CNI_PLUGIN=${CNI_PLUGIN}")
   args+=("systemd.setenv=IP_MODE=${IP_MODE}")
+  args+=("systemd.setenv=DIND_STORAGE_DRIVER=${DIND_STORAGE_DRIVER}")
   if [[ ${IP_MODE} = "ipv6" ]]; then
       opts+=(--sysctl net.ipv6.conf.all.disable_ipv6=0)
       opts+=(--sysctl net.ipv6.conf.all.forwarding=1)
