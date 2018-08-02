@@ -52,6 +52,97 @@ fi
 
 EMBEDDED_CONFIG=y;DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.11
 
+function dind::find-free-ipv4-subnet() {
+  local maxIP anAddressInNewSubnet
+
+  subnetSize="$1"
+
+  maxIP=$( dind::ipv4::find-maximum-claimed-ip )
+
+  if [ $maxIP -eq 0 ]
+  then
+    echo '10.192.0.0'
+    return
+  fi
+
+  # maxIP is the highest IP we cannot use (because it already belongs to a subnet)
+  # One could argue that maxIP+1 could be the MinHost of the subnet we're about to allocate (a.k.a. "new subnet").
+  # But, consider:
+  # maxIP: 10.0.0.255
+  # maybeNextMinHost: 10.0.1.0
+  # In the above, a subnet size of /16, will start at 10.0.0.0 - which is invalid.
+  # So we need to start the new subnet at least 32-(subnetSize) IP spaces away.
+  anAddressInNewSubnet=$(( maxIP + (1<<(32-subnetSize)) ))
+
+  # apply mask to get min host
+  nextMinHost=$(( anAddressInNewSubnet & $(dind::ipv4::netmask "$subnetSize") ))
+
+  dind::ipv4::itoa "$nextMinHost"
+}
+
+function dind::ipv4::netmask() {
+  local netmask i
+  netmask=0
+  for i in $( seq $(( 32 - $1 )) 32 )
+  do
+    netmask=$(( netmask + 2**i ))
+  done
+  echo "$netmask"
+}
+
+function dind::ipv4::find-maximum-claimed-ip() {
+  local maxIP upperIPs b m i
+  maxIP=0
+  upperIPs="$(
+    docker network ls --format '{{ .Name }}' | while read -r nw
+    do
+      subnet="$( docker network inspect "$nw" --format "{{ range .IPAM.Config }}{{ .Subnet }}{{ end }}" )"
+      if [ -z "$subnet" ]
+      then
+        continue
+      fi
+      IFS='/' read -r b m <<<"$subnet"
+      echo $(( $(dind::ipv4::atoi "$b") + (1<<(32-m)) - 1 ))
+    done
+  )"
+
+  for i in $upperIPs
+  do
+    if [ "$(( i - maxIP ))" -gt 1 ]
+    then
+      maxIP="$i"
+    fi
+  done
+
+  echo "$maxIP"
+}
+
+function dind::ipv4::itoa() {
+  echo -n $(( ($1 / 256 / 256 / 256) % 256)).
+  echo -n $(( ($1 / 256 / 256) % 256 )).
+  echo -n $(( ($1 / 256) % 256 )).
+  echo    $((  $1 % 256 ))
+}
+
+function dind::ipv4::atoi() {
+  local ip="$1"
+  local ret=0
+  for (( i=0 ; i<4 ; ++i ))
+  do
+    (( ret += ${ip%%.*} * ( 256**(3-i) ) ))
+    ip=${ip#*.}
+  done
+  echo $ret
+}
+
+function dind::localhost() {
+  if [[ ${IP_MODE} = "ipv6" ]]; then
+    echo '[::1]'
+  else
+    echo '127.0.0.1'
+  fi
+}
+
 IP_MODE="${IP_MODE:-ipv4}"  # ipv4, ipv6, (future) dualstack
 if [[ ! ${EMBEDDED_CONFIG:-} ]]; then
   source "${DIND_ROOT}/config.sh"
@@ -82,11 +173,8 @@ if [[ ${IP_MODE} = "ipv6" ]]; then
 	exit 1
     fi
 else
-    DIND_SUBNET="${DIND_SUBNET:-10.192.0.0}"
-    dind_ip_base="$(echo "${DIND_SUBNET}" | sed 's/0$//')"
     KUBE_RSYNC_ADDR="${KUBE_RSYNC_ADDR:-127.0.0.1}"
     SERVICE_CIDR="${SERVICE_CIDR:-10.96.0.0/12}"
-    DIND_SUBNET_SIZE="${DIND_SUBNET_SIZE:-16}"
     dns_server="${REMOTE_DNS64_V4SERVER:-8.8.8.8}"
     DEFAULT_POD_NETWORK_CIDR="10.244.0.0/16"
     USE_HAIRPIN="${USE_HAIRPIN:-false}"  # Disabled for IPv4, as issue with Virtlet networking
@@ -105,7 +193,6 @@ if [[ ${IP_MODE} != "ipv6" ]]; then
 else
     DNS_SVC_IP="${dns_prefix}a"
 fi
-kube_master_ip="${dind_ip_base}2"
 
 POD_NETWORK_CIDR="${POD_NETWORK_CIDR:-${DEFAULT_POD_NETWORK_CIDR}}"
 if [[ ${IP_MODE} = "ipv6" ]]; then
@@ -177,7 +264,6 @@ fi
 
 DEFAULT_DIND_LABEL='mirantis.kubeadm_dind_cluster_runtime'
 : "${DIND_LABEL:=${DEFAULT_DIND_LABEL}}"
-: "${APISERVER_PORT:=8080}"
 
 # not configurable for now, would need to setup context for kubectl _inside_ the cluster
 readonly INTERNAL_APISERVER_PORT=8080
@@ -491,13 +577,23 @@ function dind::ensure-binaries {
 }
 
 function dind::ensure-network {
-  if ! docker network inspect $(dind::net-name) >&/dev/null; then
+  local netName
+  netName="$(dind::net-name)"
+
+  read -r net mask exists <<<"$( dind::get-subnet )"
+
+  if [ "$exists" -ne 1 ]
+  then
     local v6settings=""
     if [[ ${IP_MODE} = "ipv6" ]]; then
       # Need second network for NAT64
       v6settings="--subnet=${NAT64_V4_SUBNET_PREFIX}.0.0/16 --ipv6"
     fi
-    docker network create ${v6settings} --subnet="${DIND_SUBNET}/${DIND_SUBNET_SIZE}" --gateway="${dind_ip_base}1" $(dind::net-name) >/dev/null
+    docker network create \
+      ${v6settings} \
+      --subnet="${net}/${mask}" \
+      --gateway="$(dind::get-ip-from-range 1)" \
+      "${netName}" >/dev/null
   fi
 }
 
@@ -714,7 +810,8 @@ function dind::kubeadm {
 
 function dind::configure-kubectl {
   dind::step "Setting cluster config"
-  local host="${dind_ip_base}2"
+  local host
+  host="$(dind::master-ip)"
   if [[ ${IP_MODE} = "ipv6" ]]; then
       host="[${host}]"
   fi
@@ -729,7 +826,7 @@ function dind::configure-kubectl {
   context_name="$(dind::context-name)"
   cluster_name="$(dind::context-name)"
   "${kubectl}" config set-cluster "$cluster_name" \
-    --server="http://${host}:${APISERVER_PORT}" \
+    --server="http://${host}:$(dind::apiserver-port)" \
     --insecure-skip-tls-verify=true
   "${kubectl}" config set-context "$context_name" --cluster="$cluster_name"
 }
@@ -802,13 +899,10 @@ function dind::kubeadm-version {
 function dind::init {
   local -a opts
   dind::set-master-opts
-  local local_host="127.0.0.1"
-  if [[ ${IP_MODE} = "ipv6" ]]; then
-      local_host="[::1]"
-  fi
-  local master_name container_id
+  local local_host master_name container_id
   master_name="$(dind::master-name)"
-  container_id=$(dind::run "${master_name}" "${kube_master_ip}" 1 ${local_host}:${APISERVER_PORT}:${INTERNAL_APISERVER_PORT} ${master_opts[@]+"${master_opts[@]}"})
+  local_host="$( dind::localhost )"
+  container_id=$(dind::run "${master_name}" "$(dind::master-ip)" 1 "${local_host}:$(dind::apiserver-port):${INTERNAL_APISERVER_PORT}" ${master_opts[@]+"${master_opts[@]}"})
   # FIXME: I tried using custom tokens with 'kubeadm ex token create' but join failed with:
   # 'failed to parse response as JWS object [square/go-jose: compact JWS format must have three parts]'
   # So we just pick the line from 'kubeadm init' output
@@ -874,7 +968,7 @@ function dind::init {
   fi
   docker exec -i "$master_name" bash <<EOF
 sed -e "s|{{API_VERSION}}|${api_version}|" \
-    -e "s|{{ADV_ADDR}}|${kube_master_ip}|" \
+    -e "s|{{ADV_ADDR}}|$(dind::master-ip)|" \
     -e "s|{{POD_SUBNET_DISABLE}}|${pod_subnet_disable}|" \
     -e "s|{{POD_NETWORK_CIDR}}|${POD_NETWORK_CIDR}|" \
     -e "s|{{SVC_SUBNET}}|${SERVICE_CIDR}|" \
@@ -899,10 +993,12 @@ EOF
   fi
   kubeadm_join_flags="$(dind::kubeadm "${container_id}" init "${init_args[@]}" --skip-preflight-checks "$@" | grep '^ *kubeadm join' | sed 's/^ *kubeadm join //')"
   dind::configure-kubectl
+  dind::start-port-forwarder
 }
 
 function dind::create-node-container {
-  local reuse_volume=
+  local reuse_volume next_node_index node_ip node_name
+  reuse_volume=''
   if [[ $1 = -r ]]; then
     reuse_volume="-r"
     shift
@@ -910,8 +1006,8 @@ function dind::create-node-container {
   # if there's just one node currently, it's master, thus we need to use
   # kube-node-1 hostname, if there are two nodes, we should pick
   # kube-node-2 and so on
-  local next_node_index=${1:-$(docker ps -q --filter=label="${DIND_LABEL}" | wc -l | sed 's/^ *//g')}
-  local node_ip="${dind_ip_base}$((next_node_index + 2))"
+  next_node_index=${1:-$(docker ps -q --filter=label="${DIND_LABEL}" | wc -l | sed 's/^ *//g')}
+  node_ip="$(dind::node-ip $((next_node_index + 2)) )"
   local -a opts
   if [[ ${BUILD_KUBEADM} || ${BUILD_HYPERKUBE} ]]; then
     opts+=(-v "dind-k8s-binaries$(dind::clusterSuffix)":/k8s)
@@ -922,7 +1018,6 @@ function dind::create-node-container {
       opts+=(-e HYPERKUBE_SOURCE=build://)
     fi
   fi
-  local node_name
   node_name="$(dind::node-name ${next_node_index})"
   dind::run ${reuse_volume} "$node_name" ${node_ip} $((next_node_index + 1)) "${EXTRA_PORTS}" ${opts[@]+"${opts[@]}"}
 }
@@ -1111,11 +1206,10 @@ function dind::wait-for-ready {
   echo "[done]" >&2
 
   dind::retry "${kubectl}" --context "$ctx" get nodes >&2
-  local_host="localhost"
-  if [[ ${IP_MODE} = "ipv6" ]]; then
-      local_host="[::1]"
-  fi
-  dind::step "Access dashboard at:" "http://${local_host}:${APISERVER_PORT}/api/v1/namespaces/kube-system/services/kubernetes-dashboard:/proxy"
+
+  local local_host
+  local_host="$( dind::localhost )"
+  dind::step "Access dashboard at:" "http://${local_host}:$(dind::apiserver-port)/api/v1/namespaces/kube-system/services/kubernetes-dashboard:/proxy"
 }
 
 function dind::up {
@@ -1241,18 +1335,17 @@ function dind::restore_container {
 }
 
 function dind::restore {
+  local apiserver_port local_host pid pids
   dind::down
   dind::step "Restoring master container"
   dind::set-master-opts
+  local_host="$( dind::localhost )"
+  apiserver_port="$( dind::apiserver-port )"
   for ((n=0; n <= NUM_NODES; n++)); do
     (
       if [[ n -eq 0 ]]; then
         dind::step "Restoring master container"
-        local local_host="127.0.0.1"
-        if [[ ${IP_MODE} = "ipv6" ]]; then
-          local_host="[::1]"
-        fi
-        dind::restore_container "$(dind::run -r "$(dind::master-name)" "${kube_master_ip}" 1 ${local_host}:${APISERVER_PORT}:${INTERNAL_APISERVER_PORT} ${master_opts[@]+"${master_opts[@]}"})"
+        dind::restore_container "$(dind::run -r "$(dind::master-name)" "$(dind::master-ip)" 1 "${local_host}:${apiserver_port}:${INTERNAL_APISERVER_PORT}" ${master_opts[@]+"${master_opts[@]}"})"
         dind::step "Master container restored"
       else
         dind::step "Restoring node container:" ${n}
@@ -1278,6 +1371,7 @@ function dind::restore {
   # Recheck kubectl config. It's possible that the cluster was started
   # on this docker from different host
   dind::configure-kubectl
+  dind::start-port-forwarder
   dind::wait-for-ready
 }
 
@@ -1291,6 +1385,31 @@ function dind::down {
   elif [[ "${CNI_PLUGIN}" = "kube-router" ]]; then
     docker run --privileged --net=host cloudnativelabs/kube-router --cleanup-config
   fi
+}
+
+function dind::apiserver-port {
+  # APISERVER_PORT is explicitely set
+  if [ -n "${APISERVER_PORT:-}" ]
+  then
+    echo "$APISERVER_PORT"
+    return
+  fi
+
+  # Get the port from the master
+  local master port
+  master="$(dind::master-name)"
+  # 8080/tcp -> 127.0.0.1:8082  =>  8082
+  port="$( docker port "$master" 2>/dev/null | awk -F: "/^${INTERNAL_APISERVER_PORT}/{ print \$NF }" )"
+  if [ -n "$port" ]
+  then
+    APISERVER_PORT="$port"
+    echo "$APISERVER_PORT"
+    return
+  fi
+
+  # get a random free port
+  APISERVER_PORT=0
+  echo "$APISERVER_PORT"
 }
 
 function dind::master-name {
@@ -1318,6 +1437,48 @@ function dind::net-name {
   echo "kubeadm-dind-net$( dind::clusterSuffix )"
 }
 
+function dind::master-ip {
+  dind::get-ip-from-range 2
+}
+
+function dind::node-ip {
+  local nodeId="$1"
+  dind::get-ip-from-range "$nodeId"
+}
+
+function dind::get-ip-from-range() {
+  local idx="$1"
+
+  read -r net _ <<<"$( dind::get-subnet )"
+  ipNum="$( dind::ipv4::atoi "$net" )"
+  ipNum=$(( ipNum + idx ))
+
+  dind::ipv4::itoa "$ipNum"
+}
+
+function dind::get-subnet {
+  local netName netData netDataErr net mask exists
+
+  netName="$(dind::net-name)"
+  netDataErr=0
+  netData="$(
+    docker network inspect "$netName" --format '{{ range .IPAM.Config }}{{ .Subnet }}{{ end }}' 2>/dev/null \
+      | head -1
+  )" || netDataErr=$?
+
+  if [ "$netDataErr" -ne 0 ]
+  then
+    mask="${DIND_SUBNET_SIZE:-16}"
+    net="${DIND_SUBNET:-$(dind::find-free-ipv4-subnet "$mask")}"
+    exists=0
+  else
+    IFS=/ read -r net mask <<<"$netData"
+    exists=1
+  fi
+
+  echo "$net" "$mask" "$exists"
+}
+
 function dind::remove-volumes {
   # docker 1.13+: docker volume ls -q -f label="${DIND_LABEL}"
   local nameRE
@@ -1326,6 +1487,22 @@ function dind::remove-volumes {
     dind::step "Removing volume:" "${volume_id}"
     docker volume rm "${volume_id}"
   done
+}
+
+function dind::start-port-forwarder {
+  local fwdr port
+  fwdr="${DIND_PORT_FORWARDER:-}"
+
+  [ -n "$fwdr" ] || return 0
+
+  [ -x "$fwdr" ] || {
+    echo "'${fwdr}' is not executable." >&2
+    return 1
+  }
+
+  port="$( dind::apiserver-port )"
+  dind::step "+ Setting up port-forwarding for :${port}"
+  "$fwdr" "$port"
 }
 
 function dind::sha1 {
@@ -1349,7 +1526,7 @@ function dind::do-run-e2e {
   local parallel="${1:-}"
   local focus="${2:-}"
   local skip="${3:-}"
-  local host="${kube_master_ip}"
+  local host="$(dind::master-ip)"
   if [[ "${IP_MODE}" = "ipv6" ]]; then
     host="[$host]"
   fi
@@ -1361,9 +1538,10 @@ function dind::do-run-e2e {
     fi
   fi
   dind::need-source
-  local test_args="--host=http://${host}:${INTERNAL_APISERVER_PORT}"
+  local kubeapi test_args term
   local -a e2e_volume_opts=()
-  local term=
+  kubeapi="http://${host}:$(dind::apiserver-port)"
+  test_args="--host=${kubeapi}"
   if [[ ${focus} ]]; then
     test_args="--ginkgo.focus=${focus} ${test_args}"
   fi
@@ -1386,14 +1564,14 @@ function dind::do-run-e2e {
          --net=host \
          "${build_volume_args[@]}" \
          -e KUBERNETES_PROVIDER=dind \
-         -e KUBE_MASTER_IP=http://${host}:${INTERNAL_APISERVER_PORT} \
+         -e KUBE_MASTER_IP="${kubeapi}" \
          -e KUBE_MASTER=local \
          -e KUBERNETES_CONFORMANCE_TEST=y \
          -e GINKGO_PARALLEL=${parallel} \
          ${e2e_volume_opts[@]+"${e2e_volume_opts[@]}"} \
          -w /go/src/k8s.io/kubernetes \
          "${e2e_base_image}" \
-         bash -c "cluster/kubectl.sh config set-cluster dind --server='http://${host}:${INTERNAL_APISERVER_PORT}' --insecure-skip-tls-verify=true &&
+         bash -c "cluster/kubectl.sh config set-cluster dind --server='${kubeapi}' --insecure-skip-tls-verify=true &&
          cluster/kubectl.sh config set-context dind --cluster=dind &&
          cluster/kubectl.sh config use-context dind &&
          go run hack/e2e.go -- --v 6 --test --check-version-skew=false --test_args='${test_args}'"
@@ -1663,6 +1841,9 @@ case "${1:-}" in
     ;;
   split-dump64)
     dind::split-dump64
+    ;;
+  apiserver-port)
+    dind::apiserver-port
     ;;
   *)
     echo "usage:" >&2
