@@ -1274,8 +1274,8 @@ function dind::up {
       dind::retry "${kubectl}" --context "$ctx" apply -f "https://github.com/weaveworks/weave/blob/master/prog/weave-kube/weave-daemonset-k8s-1.6.yaml?raw=true"
       ;;
     kube-router)
-      dind::retry "${kubectl}" apply -f "https://raw.githubusercontent.com/cloudnativelabs/kube-router/master/daemonset/kubeadm-kuberouter-all-features.yaml"
-      dind::retry "${kubectl}" -n kube-system delete ds kube-proxy
+      dind::retry "${kubectl}" --context "$ctx" apply -f "https://raw.githubusercontent.com/cloudnativelabs/kube-router/master/daemonset/kubeadm-kuberouter-all-features.yaml"
+      dind::retry "${kubectl}" --context "$ctx" -n kube-system delete ds kube-proxy
       docker run --privileged --net=host k8s.gcr.io/kube-proxy-amd64:v1.10.2 kube-proxy --cleanup
       ;;
     *)
