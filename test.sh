@@ -308,6 +308,84 @@ function fail() {
   return 1
 }
 
+function get-ip-for-pod() {
+  local pod_name="$1"
+  local ctx="${2:-dind}"
+  local tries=100
+
+  while (( tries-- ))
+  do
+    ip="$( kubectl --context "$ctx" get pod "$pod_name" -o 'go-template={{ .status.podIP }}' )"
+    if [ -n "$ip" ] && [ "$ip" != '<no value>' ]
+    then
+      echo "$ip"
+      return
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+function get-node-selector-override() {
+  local node="${1}"
+  echo '{ "apiVersion": "v1", "spec": { "nodeSelector": { "kubernetes.io/hostname": "'"$node"'" } } }'
+}
+
+function get-hostname-override() {
+  local name="${1}"
+  echo '{ "apiVersion": "v1", "spec": { "hostname": "'"$name"'" } }'
+}
+
+function test-case-ipv6() {
+  export KUBEADM_URL="${KUBEADM_URL_1_10}"
+  export KUBEADM_SHA1="${KUBEADM_SHA1_1_10}"
+  export HYPERKUBE_URL="${HYPERKUBE_URL_1_10}"
+  export HYPERKUBE_SHA1="${HYPERKUBE_SHA1_1_10}"
+  export DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.10
+  docker pull "${DIND_IMAGE}"
+
+  export POD_NETWORK_CIDR=''
+
+  IP_MODE='ipv6' \
+    bash -x ./dind-cluster.sh up
+
+  docker exec -ti kube-node-1 /bin/ping6 -c 1 google.com || {
+    fail 'Expected to be able to ping google.com from a node'
+  }
+
+  export PATH="${PATH}:${KUBECTL_DIR}"
+  local k="kubectl --context dind"
+
+  # external access
+  $k run pod2 --attach --image=busybox --restart=Never --rm --command -- /bin/ping6 -c 1 google.com || {
+    fail 'Expected to be able to ping google.com from a pod'
+  }
+
+  $k run pod1 --image=busybox --restart=Never \
+    --overrides="$( get-node-selector-override kube-node-1 )" \
+    --overrides="$( get-hostname-override pingme )" \
+    --command -- /bin/sh -c 'hostname ; /bin/sleep 3600'
+
+  pod1_ip="$( get-ip-for-pod 'pod1' )"
+
+  # internal access, via IP
+  $k run pod2 --attach --image=busybox --restart=Never --rm \
+    --overrides="$( get-node-selector-override kube-node-2 )" \
+    --command -- /bin/ping6 -c 1 "$pod1_ip" || {
+    fail 'Expected to be able to ping a pod by IP on a different node'
+  }
+
+  # internal access, via name -- TODO: is this supposed to work?
+  # $k run pod2 --attach --image=busybox --restart=Never --rm \
+  #   --overrides="$( get-node-selector-override kube-node-2 )" \
+  #   --command -- /bin/ping6 -c 1 pingme || {
+  #   fail 'Expected to be able to ping a pod by name on a different node'
+  # }
+
+  IP_MODE='ipv6' \
+    bash -x ./dind-cluster.sh clean
+}
+
 if [[ ! ${TEST_CASE} ]]; then
   test-case-1.8
   test-case-1.8-flannel
