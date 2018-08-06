@@ -336,51 +336,87 @@ function get-hostname-override() {
   echo '{ "apiVersion": "v1", "spec": { "hostname": "'"$name"'" } }'
 }
 
-function test-case-ipv6() {
-  export KUBEADM_URL="${KUBEADM_URL_1_10}"
-  export KUBEADM_SHA1="${KUBEADM_SHA1_1_10}"
-  export HYPERKUBE_URL="${HYPERKUBE_URL_1_10}"
-  export HYPERKUBE_SHA1="${HYPERKUBE_SHA1_1_10}"
-  export DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.10
+function setup-ipv6-test() {
+  # Currently only testing with a specific version of
+  # kubernetes. However, `dind-cluster.sh` is still from HEAD.
+  local v='v1.11'
+  export LOCAL_KUBECTL_VERSION="$v"
+  export DIND_IMAGE="mirantis/kubeadm-dind-cluster:${v}"
   docker pull "${DIND_IMAGE}"
 
+  # Globally exported CIDR not applicable for IPv6
   export POD_NETWORK_CIDR=''
+  # Add the directory we will download kubectl into to the PATH
+  export PATH="${PATH}:${KUBECTL_DIR}"
+}
+
+function ping-tests() {
+  local k="kubectl --context dind"
+
+  $k run pod-on-node1 --image=busybox --restart=Never \
+    --overrides="$( get-node-selector-override kube-node-1 )" \
+    --command -- /bin/sh -c 'hostname ; /bin/sleep 3600'
+
+  local ipv6_enabled_host="ds.test-ipv6.noroutetohost.net"
+  local ipv4_only_host="ipv4.test-ipv6.noroutetohost.net"
+
+  pod_on_node1_ip="$( get-ip-for-pod 'pod-on-node1' )"
+
+  $k exec -ti pod-on-node1 -- ping6 -c1 $ipv6_enabled_host || {
+    fail "Expected ping6 to $ipv6_enabled_host to succeed"
+  }
+
+  $k exec -ti pod-on-node1 -- ping6 -c1 $ipv4_only_host || {
+    fail "Expected ping6 to $ipv4_only_host to succeed"
+  }
+
+  # internal access, via IP
+  $k run pod-on-node2 --attach --image=busybox --restart=Never --rm \
+    --overrides="$( get-node-selector-override kube-node-2 )" \
+    --command -- /bin/ping6 -c 1 "$pod_on_node1_ip" || {
+    fail 'Expected to be able to ping6 a pod by IP on a different node'
+  }
+}
+
+# default case
+function test-case-ipv6-aaaa-disallowed() {
+  setup-ipv6-test
 
   IP_MODE='ipv6' \
     bash -x ./dind-cluster.sh up
 
-  docker exec -ti kube-node-1 /bin/ping6 -c 1 google.com || {
-    fail 'Expected to be able to ping google.com from a node'
-  }
+  ping-tests
 
-  export PATH="${PATH}:${KUBECTL_DIR}"
+  IP_MODE='ipv6' \
+    bash -x ./dind-cluster.sh clean
+}
+
+# with DIND_ALLOW_AAAA_USE set
+function test-case-ipv6-aaaa-allowed() {
+  export DIND_ALLOW_AAAA_USE=some-value
+
+  setup-ipv6-test
+
+  IP_MODE='ipv6' \
+    bash -x ./dind-cluster.sh up
+
+  ping-tests
+
+  # additional assertions
   local k="kubectl --context dind"
+  local ipv6_host='ds.test-ipv6.noroutetohost.net'
+  local ipv6_host_ns='8.8.8.8'
 
-  # external access
-  $k run pod2 --attach --image=busybox --restart=Never --rm --command -- /bin/ping6 -c 1 google.com || {
-    fail 'Expected to be able to ping google.com from a pod'
+  expected_ipv6_addr="$( dig +short "@${ipv6_host_ns}" "${ipv6_host}" aaaa )"
+  actual_ipv6_addr=$(
+    $k exec -ti pod-on-node1 -- nslookup -type=aaaa "${ipv6_host}" \
+      | awk '/Address:/{ print $2 }' \
+      | tail -1
+  )
+
+  test "$actual_ipv6_addr" = "$expected_ipv6_addr" || {
+    fail "Expected ${ipv6_host} to resolve to ${expected_ipv6_addr}, instead resolved to ${actual_ipv6_addr}"
   }
-
-  $k run pod1 --image=busybox --restart=Never \
-    --overrides="$( get-node-selector-override kube-node-1 )" \
-    --overrides="$( get-hostname-override pingme )" \
-    --command -- /bin/sh -c 'hostname ; /bin/sleep 3600'
-
-  pod1_ip="$( get-ip-for-pod 'pod1' )"
-
-  # internal access, via IP
-  $k run pod2 --attach --image=busybox --restart=Never --rm \
-    --overrides="$( get-node-selector-override kube-node-2 )" \
-    --command -- /bin/ping6 -c 1 "$pod1_ip" || {
-    fail 'Expected to be able to ping a pod by IP on a different node'
-  }
-
-  # internal access, via name -- TODO: is this supposed to work?
-  # $k run pod2 --attach --image=busybox --restart=Never --rm \
-  #   --overrides="$( get-node-selector-override kube-node-2 )" \
-  #   --command -- /bin/ping6 -c 1 pingme || {
-  #   fail 'Expected to be able to ping a pod by name on a different node'
-  # }
 
   IP_MODE='ipv6' \
     bash -x ./dind-cluster.sh clean
