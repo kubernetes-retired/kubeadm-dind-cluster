@@ -1538,7 +1538,7 @@ function dind::do-run-e2e {
     fi
   fi
   dind::need-source
-  local kubeapi test_args term
+  local kubeapi test_args term=
   local -a e2e_volume_opts=()
   kubeapi="http://${host}:$(dind::apiserver-port)"
   test_args="--host=${kubeapi}"
