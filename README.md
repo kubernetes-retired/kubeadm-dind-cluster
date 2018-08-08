@@ -322,6 +322,39 @@ currently have some issues. You may still try running them though:
 $ dind/dind-cluster.sh e2e-serial
 ```
 
+## Contributing to & Testing `kubeadm-dind-cluster`
+
+There are currently two CI systems in place which automatically test PRs to
+kubeadm-dind-cluster:
+- [TravisCI](https://travis-ci.org/kubernetes-sigs/kubeadm-dind-cluster)
+- [CircleCI](https://circleci.com/gh/kubernetes-sigs/kubeadm-dind-cluster)
+
+To run tests locally, find the test function you wish to run (it is called
+`test-case-<test-name>`). Then run:`
+```shell
+# See all test cases:
+$ grep 'function test-case-' ./test.sh
+# run a specific test:
+$ TEST_CASE=<test-name> ./test.sh
+```
+
+### IPv6 tests
+
+There isn't currently a CI setup with IPv6 support available. Please run at
+least the following locally, even if your contribution was not directly related
+to IPv6:
+```shell
+# should succeed on any environment
+$ TEST_CASE=ipv6-aaaa-disallowed ./test.sh
+# needs IPv6 enabled environment to succeed
+$ TEST_CASE=ipv6-aaaa-allowed ./test.sh
+```
+
+The first test case should succeed in any case, regardless if the host you run
+it on has IPv6 connectivity.
+
+The second test will fail when the host has no IPv6 connectivity.
+
 ## Related work
 
 * kubeadm-dind-cluster was initially derived from
