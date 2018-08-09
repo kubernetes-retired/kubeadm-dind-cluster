@@ -268,7 +268,6 @@ DEFAULT_DIND_LABEL='mirantis.kubeadm_dind_cluster_runtime'
 # not configurable for now, would need to setup context for kubectl _inside_ the cluster
 readonly INTERNAL_APISERVER_PORT=8080
 
-
 function dind::need-source {
   if [[ ! -f cluster/kubectl.sh ]]; then
     echo "$0 must be called from the Kubernetes repository root directory" 1>&2
@@ -896,6 +895,15 @@ function dind::kubeadm-version {
   fi
 }
 
+function dind::kubeadm-skip-checks-flag {
+  kubeadm_version="$(dind::kubeadm-version)"
+  if [[ ${kubeadm_version} =~ 1\.8\. ]]; then
+    echo -n "--skip-preflight-checks"
+  else
+    echo -n "--ignore-preflight-errors=all"
+  fi
+}
+
 function dind::init {
   local -a opts
   dind::set-master-opts
@@ -983,15 +991,13 @@ sed -e "s|{{API_VERSION}}|${api_version}|" \
     -e "s|{{KUBE_MASTER_NAME}}|${master_name}|" \
     /etc/kubeadm.conf.tmpl > /etc/kubeadm.conf
 EOF
-  # TODO: --skip-preflight-checks needs to be replaced with
-  # --ignore-preflight-errors=all for k8s 1.10+
-  # (need to check k8s 1.9)
   init_args=(--config /etc/kubeadm.conf)
+  skip_preflight_arg="$(dind::kubeadm-skip-checks-flag)"
   # required when building from source
   if [[ ${BUILD_KUBEADM} || ${BUILD_HYPERKUBE} ]]; then
     docker exec "$master_name" mount --make-shared /k8s
   fi
-  kubeadm_join_flags="$(dind::kubeadm "${container_id}" init "${init_args[@]}" --skip-preflight-checks "$@" | grep '^ *kubeadm join' | sed 's/^ *kubeadm join //')"
+  kubeadm_join_flags="$(dind::kubeadm "${container_id}" init "${init_args[@]}" "${skip_preflight_arg}" "$@" | grep '^ *kubeadm join' | sed 's/^ *kubeadm join //')"
   dind::configure-kubectl
   dind::start-port-forwarder
 }
@@ -1027,7 +1033,8 @@ function dind::join {
   shift
   dind::proxy "${container_id}"
   dind::custom-docker-opts "${container_id}"
-  dind::kubeadm "${container_id}" join --skip-preflight-checks "$@" >/dev/null
+  skip_preflight_arg="$(dind::kubeadm-skip-checks-flag)"
+  dind::kubeadm "${container_id}" join "${skip_preflight_arg}" "$@" >/dev/null
 }
 
 function dind::escape-e2e-name {
