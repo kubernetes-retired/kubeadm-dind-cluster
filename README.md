@@ -122,6 +122,15 @@ The first `dind/dind-cluster.sh up` invocation can be slow because it
 needs to build the base image and Kubernetes binaries. Subsequent
 invocations are much faster.
 
+## Kube-router
+Instead of using kube-proxy and static routes (with bridge CNI plugin),
+kube-router can be used. Kube-router uses the bridge plugin, but uses
+IPVS kernel module, instead of iptables. This results in better performance
+and scalability. Kube-router also uses iBGP, so that static routes are not
+required for pods to communicate across nodes.
+
+To use kube-router, set the CNI_PLUGIN environment variable to "kube-router".
+
 ## IPv6 Mode
 To run Kubernetes in IPv6 only mode, set the environment variable IP_MODE
 to "ipv6". There are additional customizations that you can make for IPv6,
@@ -134,6 +143,13 @@ export DNS64_PREFIX=fd00:77:64:ff9b::
 export DIND_SUBNET=fd00:77::
 export SERVICE_CIDR=fd00:77:30::/110
 ```
+
+NOTE: The DNS64 and NAT64 containers that are created on the host, persist
+beyond `down` operation. This is to reduce startup time, if doing multiple
+down/up cycles. When `clean` is done, these containers are removed.
+
+NOTE: Multi-cluster mode has not been tested, as is not currently supported
+for IPv6 mode.
 
 NOTE: If you use `kube-router` for networking, IPv6 is not supported, as of
 July 2018.
