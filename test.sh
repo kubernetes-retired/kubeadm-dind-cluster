@@ -310,12 +310,13 @@ function fail() {
 
 function get-ip-for-pod() {
   local pod_name="$1"
-  local ctx="${2:-dind}"
   local tries=100
+
+  kubectl="${kubectl:-kubectl}"
 
   while (( tries-- ))
   do
-    ip="$( kubectl --context "$ctx" get pod "$pod_name" -o 'go-template={{ .status.podIP }}' )"
+    ip="$( $kubectl get pod "$pod_name" -o 'go-template={{ .status.podIP }}' )"
     if [ -n "$ip" ] && [ "$ip" != '<no value>' ]
     then
       echo "$ip"
@@ -348,32 +349,82 @@ function setup-ipv6-test() {
   export POD_NETWORK_CIDR=''
   # Add the directory we will download kubectl into to the PATH
   export PATH="${PATH}:${KUBECTL_DIR}"
+
+  # Explicitiely set the DNS64 prefix
+  export DNS64_PREFIX='fd00:10:64:ff9b::'
+
+  # some shared config for the ipv6 tests
+  export ipv6_enabled_host="ds.test-ipv6.noroutetohost.net"
+  export ipv4_only_host="ipv4.test-ipv6.noroutetohost.net"
+  export ipv6_enabled_host_ns='8.8.8.8'
+
+  # kubect, pre setup
+  export kubectl="kubectl --context dind"
+
+  # the image to use for containers in k8s
+  export k8s_img='tutum/dnsutils'
+}
+
+function get-addr() {
+  local name="$1"
+  local type="${2:-A}"
+  local ns="${3:-}"
+
+  test -n "$ns" && ns="@${ns}"
+
+  dig +short ${name} ${type} ${ns} | sed 's/\r//g'
+}
+
+function get-addr-on-pod() {
+  local pod="$1"
+
+  local name="$2"
+  local type="${3:-A}"
+  local ns="${4:-}"
+
+  test -n "$ns" && ns="@${ns}"
+
+  $kubectl exec -ti "$pod" -- dig +short "${name}" "${type}" ${ns} | sed 's/\r//g'
+}
+
+function get-addr-on-node() {
+  local node="$1"
+  local name="$2"
+  local type=''
+
+  case "${3:-}" in
+    AAAA)  type='ahostsv6' ;;
+    A)     type='ahostsv4' ;;
+    *)     echo "unknown type '${3:-}' for get-addr-on-node" >&2 ; return 1 ;;
+  esac
+
+  docker exec -ti "$node" getent "$type" "$name" | awk '/ STREAM /{ print $1 }'
+}
+
+function create-persistent-pod() {
+  $kubectl run pod-on-node1 --image=${k8s_img} --restart=Never \
+    --overrides="$( get-node-selector-override kube-node-1 )" \
+    --command -- /bin/sh -c 'hostname ; /bin/sleep 3600' \
+    >/dev/null 2>&1
+
+  echo "$( get-ip-for-pod 'pod-on-node1' )"
 }
 
 function ping-tests() {
-  local k="kubectl --context dind"
+  pod_on_node1_ip="$1"
 
-  $k run pod-on-node1 --image=busybox --restart=Never \
-    --overrides="$( get-node-selector-override kube-node-1 )" \
-    --command -- /bin/sh -c 'hostname ; /bin/sleep 3600'
-
-  local ipv6_enabled_host="ds.test-ipv6.noroutetohost.net"
-  local ipv4_only_host="ipv4.test-ipv6.noroutetohost.net"
-
-  pod_on_node1_ip="$( get-ip-for-pod 'pod-on-node1' )"
-
-  $k exec -ti pod-on-node1 -- ping6 -c1 $ipv6_enabled_host || {
+  $kubectl exec -ti pod-on-node1 -- ping6 -n -c1 $ipv6_enabled_host || {
     fail "Expected ping6 to $ipv6_enabled_host to succeed"
   }
 
-  $k exec -ti pod-on-node1 -- ping6 -c1 $ipv4_only_host || {
+  $kubectl exec -ti pod-on-node1 -- ping6 -n -c1 $ipv4_only_host || {
     fail "Expected ping6 to $ipv4_only_host to succeed"
   }
 
   # internal access, via IP
-  $k run pod-on-node2 --attach --image=busybox --restart=Never --rm \
+  $kubectl run pod-on-node2 --attach --image=${k8s_img} --restart=Never --rm \
     --overrides="$( get-node-selector-override kube-node-2 )" \
-    --command -- /bin/ping6 -c 1 "$pod_on_node1_ip" || {
+    --command -- /bin/ping6 -n -c 1 "$pod_on_node1_ip" || {
     fail 'Expected to be able to ping6 a pod by IP on a different node'
   }
 }
@@ -385,7 +436,40 @@ function test-case-ipv6-aaaa-disallowed() {
   IP_MODE='ipv6' \
     bash -x ./dind-cluster.sh up
 
-  ping-tests
+  persistent_pod_ip="$( create-persistent-pod )"
+
+  for target in "${ipv6_enabled_host}" "${ipv4_only_host}"
+  do
+    aaaa_from_node="$( get-addr-on-node 'kube-node-1' "${target}" AAAA )" || {
+      fail "Expected to successfully resolve ${target}'s IPv6 address on kube-node-1"
+    }
+    a_from_node="$( get-addr-on-node 'kube-node-1' "${target}" A )" || {
+      fail "Expected to successfully resolve ${target}'s IPv4 address on kube-node-1"
+    }
+
+    aaaa_from_pod="$( get-addr-on-pod 'pod-on-node1' "${target}" AAAA )" || {
+      fail "Expected to successfully resolve ${target}'s IPv6 address on a pod"
+    }
+    a_from_pod="$( get-addr-on-pod 'pod-on-node1' "${target}" A )" || {
+      fail "Expected to successfully resolve ${target}'s IPv4 address on a pod"
+    }
+
+    aaaa_from_host="$( get-addr "${target}" AAAA )" || {
+      fail "Expected to successfully resolve ${target}'s IPv6 from the host"
+    }
+    a_from_host="$( get-addr "${target}" A )" || {
+      fail "Expected to successfully resolve ${target}'s IPv4 from the host"
+    }
+
+    test "${aaaa_from_node}" = "${aaaa_from_pod}" || {
+      fail "Expected ${target} to resolve to the same IPv6 address on a node and on a pod"
+    }
+    test "${a_from_node}" = "${a_from_pod}" || {
+      fail "Expected ${target} to resolve to the same IPv4 address on a node and on a pod"
+    }
+  done
+
+  ping-tests "$persistent_pod_ip"
 
   IP_MODE='ipv6' \
     bash -x ./dind-cluster.sh clean
@@ -402,20 +486,15 @@ function test-case-ipv6-aaaa-allowed() {
 
   ping-tests
 
-  # additional assertions
-  local k="kubectl --context dind"
-  local ipv6_host='ds.test-ipv6.noroutetohost.net'
-  local ipv6_host_ns='8.8.8.8'
-
-  expected_ipv6_addr="$( dig +short "@${ipv6_host_ns}" "${ipv6_host}" aaaa )"
+  expected_ipv6_addr="$( dig +short "@${ipv6_enabled_host_ns}" "${ipv6_enabled_host}" aaaa )"
   actual_ipv6_addr=$(
-    $k exec -ti pod-on-node1 -- nslookup -type=aaaa "${ipv6_host}" \
+    $kubectl exec -ti pod-on-node1 -- nslookup -type=aaaa "${ipv6_enabled_host}" \
       | awk '/Address:/{ print $2 }' \
       | tail -1
   )
 
   test "$actual_ipv6_addr" = "$expected_ipv6_addr" || {
-    fail "Expected ${ipv6_host} to resolve to ${expected_ipv6_addr}, instead resolved to ${actual_ipv6_addr}"
+    fail "Expected ${ipv6_enabled_host} to resolve to ${expected_ipv6_addr}, instead resolved to ${actual_ipv6_addr}"
   }
 
   IP_MODE='ipv6' \
