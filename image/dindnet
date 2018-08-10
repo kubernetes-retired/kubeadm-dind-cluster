@@ -19,19 +19,21 @@ set -o pipefail
 set -o errtrace
 set -x
 
-function get_ipv4_info {
+function get_interface_info_for {
   local from_intf=$1
   IPV4_CIDR=$(ip addr show $from_intf | grep -w inet | awk '{ print $2; }')
   IPV4="$(echo ${IPV4_CIDR} | sed 's,/.*,,')"
-}
-
-function get_ipv6_info {
-  local from_intf=$1
-  IPV6_CIDR="$(ip addr show $from_intf | grep -w inet6 | grep -i global | head -1 | awk '{ print $2; }')"
-  IPV6="$(echo ${IPV6_CIDR} | sed 's,/.*,,')"
+  if [[ "${IP_MODE}" = "ipv6" ]]; then
+    IPV6_CIDR="$(ip addr show $from_intf | grep -w inet6 | grep -i global | head -1 | awk '{ print $2; }')"
+    IPV6="$(echo ${IPV6_CIDR} | sed 's,/.*,,')"
+  fi
 }
 
 function dind::setup-bridge {
+  if [[ ${CNI_PLUGIN} = "ptp" ]]; then
+    return
+  fi
+
   if [[ ! -z "$(ip addr show dind0 2>/dev/null)" ]]; then
     return  # Bridge is already set up
   fi
@@ -39,7 +41,6 @@ function dind::setup-bridge {
   ip link add dind0 type bridge
   if [[ "${IP_MODE}" = "ipv6" ]]; then
     ip -6 addr add "${POD_NET_PREFIX}::1/${POD_NET_SIZE}" dev dind0
-    ip -6 route add ${DNS64_PREFIX_CIDR} via ${LOCAL_NAT64_SERVER}
   else
     ip addr add "${POD_NET_PREFIX}.1/${POD_NET_SIZE}" dev dind0
   fi
@@ -51,6 +52,46 @@ function dind::setup-bridge {
   ip link set dev dind0 address $DIND0_MAC
 
   ip link set dind0 up
+}
+
+function ptp-cni-contents {
+  cat <<PTP_CONTENTS
+{
+  "cniVersion": "0.3.1",
+  "name": "dindnet",
+  "type": "ptp",
+  "ipMasq": true,
+  "ipam": {
+    "type": "host-local",
+    "subnet": "${NETWORK}/${POD_NET_SIZE}",
+    "routes": [
+      {"dst": "${DEFAULT_ROUTE}"}
+    ]
+  }
+}
+PTP_CONTENTS
+}
+
+function bridge-cni-contents {
+  # NOTE: hairpin mode for CNI bridge breaks Virtlet networking,
+  # to be investigated & fixed. For now, default is false for IPv4
+  # and true for IPv6, unless overridden.
+  cat <<BRIDGE_CONTENTS
+{
+  "cniVersion": "0.3.1",
+  "name": "dindnet",
+  "type": "bridge",
+  "bridge": "dind0",
+  "isDefaultGateway": true,
+  "hairpinMode": ${USE_HAIRPIN},
+  "ipMasq": true,
+  "ipam": {
+      "type": "host-local",
+      "subnet": "${NETWORK}/${POD_NET_SIZE}",
+      "gateway": "${DEFAULT_GW}"
+  }
+}
+BRIDGE_CONTENTS
 }
 
 function dind::setup-config-file {
@@ -66,25 +107,12 @@ function dind::setup-config-file {
   echo "Subnet ${NETWORK}/${POD_NET_SIZE}"
   CONFIG_FILE="/etc/cni/net.d/cni.conf"
   mkdir -p "$(dirname "${CONFIG_FILE}")"
-  # NOTE: hairpin mode for CNI bridge breaks Virtlet networking,
-  # to be investigated & fixed. For now, default is false for IPv4
-  # and true for IPv6, unless overridden.
-  cat >${CONFIG_FILE} <<CFG_EOF
-{
-    "cniVersion": "0.3.0",
-    "name": "dindnet",
-    "type": "bridge",
-    "bridge": "dind0",
-    "isDefaultGateway": true,
-    "hairpinMode": ${USE_HAIRPIN},
-    "ipMasq": true,
-    "ipam": {
-        "type": "host-local",
-        "subnet": "${NETWORK}/${POD_NET_SIZE}",
-        "gateway": "${DEFAULT_GW}"
-    }
-}
-CFG_EOF
+  if [[ ${CNI_PLUGIN} = "ptp" ]]; then
+    contents="$(ptp-cni-contents)"
+  else
+    contents="$(bridge-cni-contents)"
+  fi
+  echo "${contents}" >${CONFIG_FILE}
   echo "Config file created: ${CONFIG_FILE}"
 }
 
@@ -100,14 +128,18 @@ EOF
     fi
 }
 
+function dind::setup-external-access {
+  if [[ "${IP_MODE}" = "ipv6" ]]; then
+    ip -6 route add ${DNS64_PREFIX_CIDR} via ${LOCAL_NAT64_SERVER}
+  fi
+}
 
 # ******************** START ********************
-get_ipv4_info eth0
-if [[ "${IP_MODE}" = "ipv6" ]]; then
-  get_ipv6_info eth0
-fi
+get_interface_info_for eth0
+
 if [[ ! -z "${POD_NET_PREFIX:-}" && ${POD_NET_SIZE:-0} -ne 0 ]]; then
   dind::setup-bridge
+  dind::setup-external-access
   dind::setup-config-file
   dind::make-kubelet-extra-dns-args
 fi

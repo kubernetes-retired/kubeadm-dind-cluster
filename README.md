@@ -157,7 +157,7 @@ July 2018.
 ## Configuration
 You may edit `config.sh` to override default settings. See comments in
 [the file](config.sh) for more info. In particular, you can specify
-CNI plugin to use via `CNI_PLUGIN` variable (`bridge`, `flannel`,
+CNI plugin to use via `CNI_PLUGIN` variable (`bridge`, `ptp`, `flannel`,
 `calico`, `weave`, `kube-router`).
 
 ## Remote Docker / GCE
