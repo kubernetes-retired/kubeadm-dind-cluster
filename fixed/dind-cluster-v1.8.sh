@@ -43,11 +43,10 @@ if ! docker info|grep -s '^Operating System: .*Docker for Windows' > /dev/null 2
     fi
 fi
 
-# In case of linux as the OS and docker running locally we will be using
-# localhost to access the apiserver nor do we need to add routes
-using_linuxdocker=
+# Determine when using Linux and docker daemon running locally
+using_local_linuxdocker=
 if [[ $(uname) == Linux && -z ${DOCKER_HOST:-} ]]; then
-    using_linuxdocker=1
+    using_local_linuxdocker=1
 fi
 
 EMBEDDED_CONFIG=y;DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.8
@@ -673,9 +672,6 @@ function dind::ensure-volume {
 function dind::ensure-dns {
     if [[ ${IP_MODE} = "ipv6" ]]; then
         if ! docker inspect bind9 >&/dev/null; then
-	    local bind9_path=/tmp/bind9
-	    rm -rf ${bind9_path}
-	    mkdir -p ${bind9_path}/conf ${bind9_path}/cache
 	    local force_dns64_for=""
 	    if [[ ! ${DIND_ALLOW_AAAA_USE} ]]; then
 		# Normally, if have an AAAA record, it is used. This clause tells
@@ -685,7 +681,7 @@ function dind::ensure-dns {
 		# records meaning we ALWAYS use A records and do NAT64.
 	        force_dns64_for="exclude { any; };"
 	    fi
-	    cat >${bind9_path}/conf/named.conf <<BIND9_EOF
+	    read -r -d '' bind9_conf <<BIND9_EOF
 options {
     directory "/var/bind";
     allow-query { any; };
@@ -699,18 +695,11 @@ options {
     };
 };
 BIND9_EOF
-	    if [[ ${GCE_HOSTED} ]]; then
-		# TODO: Have bind9 create config file, and pass in variables via Env vars.
-		docker-machine scp ${bind9_path}/conf/named.conf k8s-dind:bind9-named.conf
-		docker-machine ssh k8s-dind sudo rm -rf ${bind-path}
-		docker-machine ssh k8s-dind sudo mkdir -p ${bind9_path}/conf ${bind9_path}/cache
-		docker-machine ssh k8s-dind sudo cp /home/docker-user/bind9-named.conf ${bind9_path}/conf/named.conf
-	    fi
 	    docker run -d --name bind9 --hostname bind9 --net "$(dind::net-name)" --label "dind-support" \
 		   --sysctl net.ipv6.conf.all.disable_ipv6=0 --sysctl net.ipv6.conf.all.forwarding=1 \
 		   --privileged=true --ip6 ${dns_server} --dns ${dns_server} \
-		   -v ${bind9_path}/conf/named.conf:/etc/bind/named.conf \
-		   resystit/bind9:latest >/dev/null
+		   -e bind9_conf="${bind9_conf}" \
+		   resystit/bind9:latest /bin/sh -c 'echo "${bind9_conf}" >/named.conf && named -c /named.conf -g -u named' >/dev/null
 	    ipv4_addr="$(docker exec bind9 ip addr list eth0 | grep "inet" | awk '$1 == "inet" {print $2}')"
 	    docker exec bind9 ip addr del ${ipv4_addr} dev eth0
 	    docker exec bind9 ip -6 route add ${DNS64_PREFIX_CIDR} via ${LOCAL_NAT64_SERVER}
@@ -729,13 +718,7 @@ function dind::ensure-nat {
 	    # Need to check/create, as "clean" may remove route
 	    local route="$(ip route | egrep "^${NAT64_V4_SUBNET_PREFIX}.0.128/25")"
 	    if [[ -z "${route}" ]]; then
-		if [[ ${GCE_HOSTED} ]]; then
-		    docker-machine ssh k8s-dind sudo ip route add ${NAT64_V4_SUBNET_PREFIX}.0.128/25 via ${NAT64_V4_SUBNET_PREFIX}.0.200
-                elif [[ -z ${using_linuxdocker} ]]; then
-                    :
-		else
-		    docker run --net=host --rm --privileged ${busybox_image} ip route add ${NAT64_V4_SUBNET_PREFIX}.0.128/25 via ${NAT64_V4_SUBNET_PREFIX}.0.200
-		fi
+	        docker run --net=host --rm --privileged ${busybox_image} ip route add ${NAT64_V4_SUBNET_PREFIX}.0.128/25 via ${NAT64_V4_SUBNET_PREFIX}.0.200
 	    fi
 	fi
     fi
@@ -865,18 +848,7 @@ function dind::kubeadm {
 
 function dind::configure-kubectl {
   dind::step "Setting cluster config"
-  local host
-  host="$(dind::master-ip)"
-  if [[ ${IP_MODE} = "ipv6" ]]; then
-      host="[${host}]"
-  fi
-  if [[ ${GCE_HOSTED} || ${DOCKER_HOST:-} =~ ^tcp: || ${using_linuxkit} || -n ${using_linuxdocker} ]]; then
-    if [[ "${IP_MODE}" = "ipv4" ]]; then
-      host="localhost"
-    else
-      host="[::1]"
-    fi
-  fi
+  local host="$(dind::localhost)"
   local context_name cluster_name
   context_name="$(dind::context-name)"
   cluster_name="$(dind::context-name)"
@@ -884,6 +856,10 @@ function dind::configure-kubectl {
     --server="http://${host}:$(dind::apiserver-port)" \
     --insecure-skip-tls-verify=true
   "${kubectl}" config set-context "$context_name" --cluster="$cluster_name"
+  if [[ ${DIND_LABEL} = ${DEFAULT_DIND_LABEL} ]]; then
+      # Single cluster mode
+      "${kubectl}" config use-context "$context_name"
+  fi
 }
 
 force_make_binaries=
@@ -1555,17 +1531,7 @@ function dind::do-run-e2e {
   local parallel="${1:-}"
   local focus="${2:-}"
   local skip="${3:-}"
-  local host="$(dind::master-ip)"
-  if [[ "${IP_MODE}" = "ipv6" ]]; then
-    host="[$host]"
-  fi
-  if [[ ${GCE_HOSTED} || ${DOCKER_HOST:-} =~ ^tcp: || -n ${using_linuxdocker} ]]; then
-    if [[ "${IP_MODE}" = "ipv4" ]]; then
-      host="localhost"
-    else
-      host="[::1]"
-    fi
-  fi
+  local host="$(dind::localhost)"
   dind::need-source
   local kubeapi test_args term=
   local -a e2e_volume_opts=()
