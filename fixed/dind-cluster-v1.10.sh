@@ -1037,7 +1037,7 @@ EOF
 function dind::create-node-container {
   local reuse_volume next_node_index node_ip node_name
   reuse_volume=''
-  if [[ $1 = -r ]]; then
+  if [[ ${1:-} = -r ]]; then
     reuse_volume="-r"
     shift
   fi
@@ -1731,7 +1731,7 @@ function dind::proxy {
 function dind::custom-docker-opts {
   local container_id="$1"
   local -a jq=()
-  if [ ! -f ${DIND_DAEMON_JSON_FILE} ] ; then
+  if [[ ! -f ${DIND_DAEMON_JSON_FILE} ]] ; then
     jq[0]="{}"
   else
     jq+=("$(cat ${DIND_DAEMON_JSON_FILE})")
