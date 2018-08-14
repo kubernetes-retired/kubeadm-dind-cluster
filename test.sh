@@ -338,9 +338,8 @@ function get-hostname-override() {
 }
 
 function setup-ipv6-test() {
-  # Currently only testing with a specific version of
-  # kubernetes. However, `dind-cluster.sh` is still from HEAD.
-  local v='v1.11'
+  # set TEST_K8S_VER to something specific, by default testing v1.11 for now
+  local v="${TEST_K8S_VER:-v1.11}"
   export LOCAL_KUBECTL_VERSION="$v"
   export DIND_IMAGE="mirantis/kubeadm-dind-cluster:${v}"
   docker pull "${DIND_IMAGE}"
@@ -358,7 +357,7 @@ function setup-ipv6-test() {
   export ipv4_only_host="ipv4.test-ipv6.noroutetohost.net"
   export ipv6_enabled_host_ns='8.8.8.8'
 
-  # kubect, pre setup
+  # kubectl setup
   export kubectl="kubectl --context dind"
 
   # the image to use for containers in k8s
@@ -410,8 +409,20 @@ function create-persistent-pod() {
   echo "$( get-ip-for-pod 'pod-on-node1' )"
 }
 
-function ping-tests() {
-  pod_on_node1_ip="$1"
+function ping-tests-external() {
+  if [ -n "${DIND_ALLOW_AAAA_USE:-}" ]
+  then
+    {
+      echo ''
+      echo 'WARNING: not testing direct external IPv6 connectivity.'
+      echo '  ... right now IPv6 in CI is only tested through NAT64 as'
+      echo '      we do not have access to an IPv6 enabled CI system.'
+      echo ''
+      echo '  ... "ping-tests-external" is skipped'
+      echo ''
+    } >&2
+    return 0
+  fi
 
   $kubectl exec -ti pod-on-node1 -- ping6 -n -c1 $ipv6_enabled_host || {
     fail "Expected ping6 to $ipv6_enabled_host to succeed"
@@ -420,8 +431,10 @@ function ping-tests() {
   $kubectl exec -ti pod-on-node1 -- ping6 -n -c1 $ipv4_only_host || {
     fail "Expected ping6 to $ipv4_only_host to succeed"
   }
+}
 
-  # internal access, via IP
+function ping-tests-internal() {
+  pod_on_node1_ip="$1"
   $kubectl run pod-on-node2 --attach --image=${k8s_img} --restart=Never --rm \
     --overrides="$( get-node-selector-override kube-node-2 )" \
     --command -- /bin/ping6 -n -c 1 "$pod_on_node1_ip" || {
@@ -430,7 +443,9 @@ function ping-tests() {
 }
 
 # default case
-function test-case-ipv6-aaaa-disallowed() {
+function test-case-ipv6() {
+  local aaaa_from_host a_from_host aaaa_from_node a_from_node aaaa_from_pod a_from_pod target
+
   setup-ipv6-test
 
   IP_MODE='ipv6' \
@@ -467,38 +482,61 @@ function test-case-ipv6-aaaa-disallowed() {
     test "${a_from_node}" = "${a_from_pod}" || {
       fail "Expected ${target} to resolve to the same IPv4 address on a node and on a pod"
     }
+
+    if [ -z "${DIND_ALLOW_AAAA_USE:-}" ]
+    then
+      # When DIND_ALLOW_AAAA_USE is not set, we expect *every* name to resolve
+      # to an IPv6 address, we expect those addresses from the range configured
+      # in DNS64_PREFIX
+      starts-with "$DNS64_PREFIX" "$aaaa_from_node" || {
+        fail "Expected ${target} to resolve to something starting with the DNS64 prefix on pods/nodes, but got ${aaaa_from_node}"
+      }
+
+      # On the host (where the outer docker daemon and this test runs from) we
+      # expect that the address does not resolve to something handled by our
+      # internal DNS64 service
+      starts-with "$DNS64_PREFIX" "$aaaa_from_host" && {
+        fail "Expected ${target} not to resolve to something starting with the DNS64 prefix on the host"
+      }
+    else
+      # External AAAA allowed
+      if [ "$target" = "$ipv6_enabled_host" ]
+      then
+	# all IPv6 hosts should resolve to the actual IP address and not to ane
+	# IP address of the DNS64 range.
+        starts-with "$DNS64_PREFIX" "$aaaa_from_node" && {
+          fail "Expected ${target} not to resolve to something starting with the DNS64 prefix on pods/nodes, but got ${aaaa_from_node}"
+        }
+        starts-with "$DNS64_PREFIX" "$aaaa_from_host" && {
+          fail "Expected ${target} not to resolve to something starting with the DNS64 prefix on the host"
+        }
+
+        test "$( get-addr "$target" 'AAAA' "$ipv6_enabled_host_ns" )" = "$aaaa_from_node" || {
+          fail "Expected ${target} to resolv to the same as on ${ipv6_enabled_host_ns}"
+        }
+      else
+        # Hosts which don't have a AAAA record still get one from our DNS64 range
+        starts-with "$DNS64_PREFIX" "$aaaa_from_node" || {
+          fail "Expected ${target} to resolve to something starting with the DNS64 prefix on pods/nodes, but got ${aaaa_from_node}"
+        }
+        test "$aaaa_from_host" = "" || {
+          fail "Expected ${target} not to resolve on the host"
+        }
+      fi
+    fi
   done
 
-  ping-tests "$persistent_pod_ip"
+  ping-tests-internal "$persistent_pod_ip"
+  ping-tests-external
 
   IP_MODE='ipv6' \
     bash -x ./dind-cluster.sh clean
 }
 
-# with DIND_ALLOW_AAAA_USE set
-function test-case-ipv6-aaaa-allowed() {
-  export DIND_ALLOW_AAAA_USE=some-value
-
-  setup-ipv6-test
-
-  IP_MODE='ipv6' \
-    bash -x ./dind-cluster.sh up
-
-  ping-tests
-
-  expected_ipv6_addr="$( dig +short "@${ipv6_enabled_host_ns}" "${ipv6_enabled_host}" aaaa )"
-  actual_ipv6_addr=$(
-    $kubectl exec -ti pod-on-node1 -- nslookup -type=aaaa "${ipv6_enabled_host}" \
-      | awk '/Address:/{ print $2 }' \
-      | tail -1
-  )
-
-  test "$actual_ipv6_addr" = "$expected_ipv6_addr" || {
-    fail "Expected ${ipv6_enabled_host} to resolve to ${expected_ipv6_addr}, instead resolved to ${actual_ipv6_addr}"
-  }
-
-  IP_MODE='ipv6' \
-    bash -x ./dind-cluster.sh clean
+function starts-with() {
+  local needle="$1"
+  local haystack="$2"
+  [[ "$haystack" = "$needle"* ]]
 }
 
 if [[ ! ${TEST_CASE} ]]; then
