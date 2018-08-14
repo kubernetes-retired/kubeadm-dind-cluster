@@ -340,20 +340,32 @@ $ TEST_CASE=<test-name> ./test.sh
 
 ### IPv6 tests
 
-There isn't currently a CI setup with IPv6 support available. Please run at
-least the following locally, even if your contribution was not directly related
-to IPv6:
-```shell
-# should succeed on any environment
-$ TEST_CASE=ipv6-aaaa-disallowed ./test.sh
-# needs IPv6 enabled environment to succeed
-$ TEST_CASE=ipv6-aaaa-allowed ./test.sh
-```
+All of the IPv6 related tests currently run on
+[TravisCI](https://travis-ci.org/kubernetes-sigs/kubeadm-dind-cluster). There
+are two slightly different kind of tests which run for all major version starting from `v1.9`:
 
-The first test case should succeed in any case, regardless if the host you run
-it on has IPv6 connectivity.
+#### `TEST_CASE=ipv6 ./test.sh`
 
-The second test will fail when the host has no IPv6 connectivity.
+The cluster is setup with IPv6 support. The tests check, if on nodes and pods
+the IP resolution works as expected. For all AAAA records the DNS64 is used,
+external IPv6 traffic goes throught NAT64. Both those mechanisms are
+automattically deployed as docker containers, alongside the `kube-master` and
+`kube-node-X` containers running in the outer docker daemon.
+
+Those tests are able to run everywhere, regardless if the host machine of the
+outer docker daemon actaully has external IPv6 connectivity.
+
+#### `TEST_CASE=ipv6 DIND_ALLOW_AAAA_USE=true ./test.sh`
+
+Those tests use the public AAAA records when available. This means that for
+hosts which have a AAAA record that IP is used, only in case a host does not
+have a AAAA record, the DNS64 kicks in. Furthermore that means, that traffic to
+those host does not get routed through NAT64. In that case the host running the
+outer docker daemon needs to have external IPv6 available.
+
+As our CI currently does not allow for external IPv6 the external ping tests
+are enabled, instead a warning is printed. Note that internal ping tests will
+still be tested.
 
 ## Related work
 
