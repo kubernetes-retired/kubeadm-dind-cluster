@@ -342,30 +342,35 @@ $ TEST_CASE=<test-name> ./test.sh
 
 All of the IPv6 related tests currently run on
 [TravisCI](https://travis-ci.org/kubernetes-sigs/kubeadm-dind-cluster). There
-are two slightly different kind of tests which run for all major version starting from `v1.9`:
+are two slightly different kind of tests which run for all version starting from `v1.9`:
 
 #### `TEST_CASE=ipv6 ./test.sh`
 
-The cluster is setup with IPv6 support. The tests check, if on nodes and pods
-the IP resolution works as expected. For all AAAA records the DNS64 is used,
-external IPv6 traffic goes throught NAT64. Both those mechanisms are
-automattically deployed as docker containers, alongside the `kube-master` and
-`kube-node-X` containers running in the outer docker daemon.
+The cluster is setup with IPv6 support. The tests check if the IP resolution on
+nodes and pods works as expected. DNS64 is always used, and external IPv6
+traffic goes throught NAT64. Both NAT64 and DNS64 are automatically deployed
+as docker containers, alongside the `kube-master` and `kube-node-X` containers
+running in the outer docker daemon.
 
-Those tests are able to run everywhere, regardless if the host machine of the
-outer docker daemon actaully has external IPv6 connectivity.
+These IPv6 tests do not depend on the host machine of the
+outer docker daemon actaully having external IPv6 connectivity.
+
+The tests cover, on pods, nodes and host:
+* IP address lookups
+* internal `ping6`s (pod to pod on different nodes)
+* external `ping6`s (to IPv4-only and IPv6-enabled targets)
 
 #### `TEST_CASE=ipv6 DIND_ALLOW_AAAA_USE=true ./test.sh`
 
-Those tests use the public AAAA records when available. This means that for
-hosts which have a AAAA record that IP is used, only in case a host does not
-have a AAAA record, the DNS64 kicks in. Furthermore that means, that traffic to
-those host does not get routed through NAT64. In that case the host running the
-outer docker daemon needs to have external IPv6 available.
+Those tests use the public AAAA records when available. Specifically for hosts
+which have a AAAA record that IP is used, traffic to those hosts does not get
+routed through NAT64. In that case the host running the outer docker daemon
+needs to have external IPv6 available.  If a host does not have a public AAAA
+record, the DNS64 kicks in and traffic is routed throught NAT64.
 
-As our CI currently does not allow for external IPv6 the external ping tests
-are enabled, instead a warning is printed. Note that internal ping tests will
-still be tested.
+The same test suites as above run, except for external ping tests which are intentionally disabled. That's
+because the CI does not currently allow for external IPv6. Internal ping tests
+still run.
 
 ## Related work
 
