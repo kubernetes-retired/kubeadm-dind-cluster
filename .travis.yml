@@ -6,12 +6,6 @@ env:
   - TEST_CASE=1.8
   - TEST_CASE=1.9
   - TEST_CASE=1.10
-  - TEST_CASE=ipv6-only TEST_K7S_VER='v1.9'
-  - TEST_CASE=ipv6-only TEST_K8S_VER='v1.9' DIND_ALLOW_AAAA_USE=true
-  - TEST_CASE=ipv6-only TEST_K8S_VER='v1.10'
-  - TEST_CASE=ipv6-only TEST_K8S_VER='v1.10' DIND_ALLOW_AAAA_USE=true
-  - TEST_CASE=ipv6-only TEST_K8S_VER='v1.11'
-  - TEST_CASE=ipv6-only TEST_K8S_VER='v1.11' DIND_ALLOW_AAAA_USE=true
 
 before_install:
   - sudo apt-get -qq update
