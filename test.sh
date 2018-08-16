@@ -337,7 +337,7 @@ function get-hostname-override() {
   echo '{ "apiVersion": "v1", "spec": { "hostname": "'"$name"'" } }'
 }
 
-function setup-ipv6-test() {
+function setup-ipv6-only-test() {
   # set TEST_K8S_VER to something specific, by default testing v1.11 for now
   local v="${TEST_K8S_VER:-v1.11}"
   export LOCAL_KUBECTL_VERSION="$v"
@@ -508,8 +508,8 @@ function verify-lookup-with-ext-dns-for-ipv4-only-host() {
   fi
 }
 
-function test-case-ipv6() {
-  setup-ipv6-test
+function test-case-ipv6-only() {
+  setup-ipv6-only-test
 
   IP_MODE='ipv6' \
     bash -x ./dind-cluster.sh up

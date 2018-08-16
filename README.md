@@ -344,7 +344,7 @@ All of the IPv6 related tests currently run on
 [TravisCI](https://travis-ci.org/kubernetes-sigs/kubeadm-dind-cluster). There
 are two slightly different kind of tests which run for all version starting from `v1.9`:
 
-#### `TEST_CASE=ipv6 ./test.sh`
+#### `TEST_CASE=ipv6-only ./test.sh`
 
 The cluster is setup with IPv6 support. The tests check if the IP resolution on
 nodes and pods works as expected. DNS64 is always used, and external IPv6
@@ -360,7 +360,7 @@ The tests cover, on pods, nodes and host:
 * internal `ping6`s (pod to pod on different nodes)
 * external `ping6`s (to IPv4-only and IPv6-enabled targets)
 
-#### `TEST_CASE=ipv6 DIND_ALLOW_AAAA_USE=true ./test.sh`
+#### `TEST_CASE=ipv6-only DIND_ALLOW_AAAA_USE=true ./test.sh`
 
 Those tests use the public AAAA records when available. Specifically for hosts
 which have a AAAA record that IP is used, traffic to those hosts does not get
