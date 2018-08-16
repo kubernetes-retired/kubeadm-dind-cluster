@@ -434,15 +434,9 @@ function resolve-host() {
   aaaa_from_node="$( lookup-address-on-node 'kube-node-1' "${target}" AAAA )" || {
     fail "Expected to successfully resolve ${target}'s IPv6 address on kube-node-1"
   }
-  a_from_node="$( lookup-address-on-node 'kube-node-1' "${target}" A )" || {
-    fail "Expected to successfully resolve ${target}'s IPv4 address on kube-node-1"
-  }
 
   aaaa_from_pod="$( lookup-address-on-pod 'pod-on-node1' "${target}" AAAA )" || {
     fail "Expected to successfully resolve ${target}'s IPv6 address on a pod"
-  }
-  a_from_pod="$( lookup-address-on-pod 'pod-on-node1' "${target}" A )" || {
-    fail "Expected to successfully resolve ${target}'s IPv4 address on a pod"
   }
 
   aaaa_from_host="$( lookup-address "${target}" AAAA )" || {
@@ -451,9 +445,6 @@ function resolve-host() {
 
   test "${aaaa_from_node}" = "${aaaa_from_pod}" || {
     fail "Expected ${target} to resolve to the same IPv6 address on a node and on a pod"
-  }
-  test "${a_from_node}" = "${a_from_pod}" || {
-    fail "Expected ${target} to resolve to the same IPv4 address on a node and on a pod"
   }
 
   # We verified, that AAAA is the same from Pod & Node, so we can just return
