@@ -364,7 +364,7 @@ function setup-ipv6-test() {
   export k8s_img='tutum/dnsutils'
 }
 
-function get-addr() {
+function lookup-address() {
   local name="$1"
   local type="${2:-A}"
   local ns="${3:-}"
@@ -374,7 +374,7 @@ function get-addr() {
   dig +short ${name} ${type} ${ns} | sed 's/\r//g'
 }
 
-function get-addr-on-pod() {
+function lookup-address-on-pod() {
   local pod="$1"
 
   local name="$2"
@@ -386,7 +386,7 @@ function get-addr-on-pod() {
   $kubectl exec -ti "$pod" -- dig +short "${name}" "${type}" ${ns} | sed 's/\r//g'
 }
 
-function get-addr-on-node() {
+function lookup-address-on-node() {
   local node="$1"
   local name="$2"
   local type=''
@@ -394,7 +394,7 @@ function get-addr-on-node() {
   case "${3:-}" in
     AAAA)  type='ahostsv6' ;;
     A)     type='ahostsv4' ;;
-    *)     echo "unknown type '${3:-}' for get-addr-on-node" >&2 ; return 1 ;;
+    *)     echo "unknown type '${3:-}' for lookup-address-on-node" >&2 ; return 1 ;;
   esac
 
   docker exec -ti "$node" getent "$type" "$name" | awk '/ STREAM /{ print $1 }'
@@ -410,20 +410,6 @@ function create-persistent-pod() {
 }
 
 function ping-tests-external() {
-  if [ -n "${DIND_ALLOW_AAAA_USE:-}" ]
-  then
-    {
-      echo ''
-      echo 'WARNING: not testing direct external IPv6 connectivity.'
-      echo '  ... right now IPv6 in CI is only tested through NAT64 as'
-      echo '      we do not have access to an IPv6 enabled CI system.'
-      echo ''
-      echo '  ... "ping-tests-external" is skipped'
-      echo ''
-    } >&2
-    return 0
-  fi
-
   $kubectl exec -ti pod-on-node1 -- ping6 -n -c1 $ipv6_enabled_host || {
     fail "Expected ping6 to $ipv6_enabled_host to succeed"
   }
@@ -442,10 +428,96 @@ function ping-tests-internal() {
   }
 }
 
-# default case
-function test-case-ipv6() {
-  local aaaa_from_host a_from_host aaaa_from_node a_from_node aaaa_from_pod a_from_pod target
+function resolve-host() {
+  local target="$1"
 
+  aaaa_from_node="$( lookup-address-on-node 'kube-node-1' "${target}" AAAA )" || {
+    fail "Expected to successfully resolve ${target}'s IPv6 address on kube-node-1"
+  }
+  a_from_node="$( lookup-address-on-node 'kube-node-1' "${target}" A )" || {
+    fail "Expected to successfully resolve ${target}'s IPv4 address on kube-node-1"
+  }
+
+  aaaa_from_pod="$( lookup-address-on-pod 'pod-on-node1' "${target}" AAAA )" || {
+    fail "Expected to successfully resolve ${target}'s IPv6 address on a pod"
+  }
+  a_from_pod="$( lookup-address-on-pod 'pod-on-node1' "${target}" A )" || {
+    fail "Expected to successfully resolve ${target}'s IPv4 address on a pod"
+  }
+
+  aaaa_from_host="$( lookup-address "${target}" AAAA )" || {
+    fail "Expected to successfully resolve ${target}'s IPv6 from the host"
+  }
+
+  test "${aaaa_from_node}" = "${aaaa_from_pod}" || {
+    fail "Expected ${target} to resolve to the same IPv6 address on a node and on a pod"
+  }
+  test "${a_from_node}" = "${a_from_pod}" || {
+    fail "Expected ${target} to resolve to the same IPv4 address on a node and on a pod"
+  }
+
+  # We verified, that AAAA is the same from Pod & Node, so we can just return
+  # one of those
+  local aaaa_from_k8s="${aaaa_from_pod}"
+
+  echo "${aaaa_from_host},${aaaa_from_k8s}"
+}
+
+function verify-lookup-with-dns64-only() {
+  local target="$1"
+
+  IFS=, read aaaa_from_host aaaa_from_k8s <<<"$( resolve-host "$target" )"
+
+  if ! starts-with "$DNS64_PREFIX" "$aaaa_from_k8s"
+  then
+    fail "Expected ${target} to resolve to something starting with the DNS64 prefix on pods/nodes, but got ${aaaa_from_k8s}"
+  fi
+
+  if starts-with "$DNS64_PREFIX" "$aaaa_from_host"
+  then
+    fail "Expected ${target} not to resolve to something starting with the DNS64 prefix on the host"
+  fi
+}
+
+function verify-lookup-with-ext-dns-for-ipv6-host() {
+  local target="$1"
+
+  IFS=, read aaaa_from_host aaaa_from_k8s <<<"$( resolve-host "$target" )"
+
+  if starts-with "$DNS64_PREFIX" "$aaaa_from_k8s"
+  then
+    fail "Expected ${target} not to resolve to something starting with the DNS64 prefix on pods/nodes, but got ${aaaa_from_k8s}"
+  fi
+
+  if starts-with "$DNS64_PREFIX" "$aaaa_from_host"
+  then
+    fail "Expected ${target} not to resolve to something starting with the DNS64 prefix on the host"
+  fi
+
+  if [ "$( lookup-address "$target" 'AAAA' "$ipv6_enabled_host_ns" )" != "$aaaa_from_k8s" ]
+  then
+    fail "Expected ${target} to resolve to the same as on ${ipv6_enabled_host_ns}"
+  fi
+}
+
+function verify-lookup-with-ext-dns-for-ipv4-only-host() {
+  local target="$1"
+
+  IFS=, read aaaa_from_host aaaa_from_k8s <<<"$( resolve-host "$target" )"
+
+  # Hosts which don't have a AAAA record still get one from our DNS64 range
+  if ! starts-with "$DNS64_PREFIX" "$aaaa_from_k8s"
+  then
+    fail "Expected ${target} to resolve to something starting with the DNS64 prefix on pods/nodes, but got ${aaaa_from_k8s}"
+  fi
+
+  if [ "$aaaa_from_host" != "" ]
+  then
+    fail "Expected ${target} not to resolve on the host"
+  fi
+}
+
+function test-case-ipv6() {
   setup-ipv6-test
 
   IP_MODE='ipv6' \
@@ -455,79 +527,35 @@ function test-case-ipv6() {
 
   for target in "${ipv6_enabled_host}" "${ipv4_only_host}"
   do
-    aaaa_from_node="$( get-addr-on-node 'kube-node-1' "${target}" AAAA )" || {
-      fail "Expected to successfully resolve ${target}'s IPv6 address on kube-node-1"
-    }
-    a_from_node="$( get-addr-on-node 'kube-node-1' "${target}" A )" || {
-      fail "Expected to successfully resolve ${target}'s IPv4 address on kube-node-1"
-    }
-
-    aaaa_from_pod="$( get-addr-on-pod 'pod-on-node1' "${target}" AAAA )" || {
-      fail "Expected to successfully resolve ${target}'s IPv6 address on a pod"
-    }
-    a_from_pod="$( get-addr-on-pod 'pod-on-node1' "${target}" A )" || {
-      fail "Expected to successfully resolve ${target}'s IPv4 address on a pod"
-    }
-
-    aaaa_from_host="$( get-addr "${target}" AAAA )" || {
-      fail "Expected to successfully resolve ${target}'s IPv6 from the host"
-    }
-    a_from_host="$( get-addr "${target}" A )" || {
-      fail "Expected to successfully resolve ${target}'s IPv4 from the host"
-    }
-
-    test "${aaaa_from_node}" = "${aaaa_from_pod}" || {
-      fail "Expected ${target} to resolve to the same IPv6 address on a node and on a pod"
-    }
-    test "${a_from_node}" = "${a_from_pod}" || {
-      fail "Expected ${target} to resolve to the same IPv4 address on a node and on a pod"
-    }
-
     if [ -z "${DIND_ALLOW_AAAA_USE:-}" ]
     then
-      # When DIND_ALLOW_AAAA_USE is not set, we expect *every* name to resolve
-      # to an IPv6 address, we expect those addresses from the range configured
-      # in DNS64_PREFIX
-      starts-with "$DNS64_PREFIX" "$aaaa_from_node" || {
-        fail "Expected ${target} to resolve to something starting with the DNS64 prefix on pods/nodes, but got ${aaaa_from_node}"
-      }
-
-      # On the host (where the outer docker daemon and this test runs from) we
-      # expect that the address does not resolve to something handled by our
-      # internal DNS64 service
-      starts-with "$DNS64_PREFIX" "$aaaa_from_host" && {
-        fail "Expected ${target} not to resolve to something starting with the DNS64 prefix on the host"
-      }
+      verify-lookup-with-dns64-only "${target}"
     else
-      # External AAAA allowed
       if [ "$target" = "$ipv6_enabled_host" ]
       then
-	# all IPv6 hosts should resolve to the actual IP address and not to ane
-	# IP address of the DNS64 range.
-        starts-with "$DNS64_PREFIX" "$aaaa_from_node" && {
-          fail "Expected ${target} not to resolve to something starting with the DNS64 prefix on pods/nodes, but got ${aaaa_from_node}"
-        }
-        starts-with "$DNS64_PREFIX" "$aaaa_from_host" && {
-          fail "Expected ${target} not to resolve to something starting with the DNS64 prefix on the host"
-        }
-
-        test "$( get-addr "$target" 'AAAA' "$ipv6_enabled_host_ns" )" = "$aaaa_from_node" || {
-          fail "Expected ${target} to resolv to the same as on ${ipv6_enabled_host_ns}"
-        }
+        verify-lookup-with-ext-dns-for-ipv6-host "${target}"
       else
-        # Hosts which don't have a AAAA record still get one from our DNS64 range
-        starts-with "$DNS64_PREFIX" "$aaaa_from_node" || {
-          fail "Expected ${target} to resolve to something starting with the DNS64 prefix on pods/nodes, but got ${aaaa_from_node}"
-        }
-        test "$aaaa_from_host" = "" || {
-          fail "Expected ${target} not to resolve on the host"
-        }
+        verify-lookup-with-ext-dns-for-ipv4-only-host "${target}"
       fi
     fi
   done
 
   ping-tests-internal "$persistent_pod_ip"
-  ping-tests-external
+
+  if [ -z "${DIND_ALLOW_AAAA_USE:-}" ]
+  then
+    ping-tests-external
+  else
+    {
+      echo ''
+      echo 'WARNING: not testing direct external IPv6 connectivity.'
+      echo '  ... right now IPv6 in CI is only tested through NAT64 as'
+      echo '      we do not have access to an IPv6 enabled CI system.'
+      echo ''
+      echo '  ... "ping-tests-external" is skipped'
+      echo ''
+    } >&2
+  fi
 
   IP_MODE='ipv6' \
     bash -x ./dind-cluster.sh clean
