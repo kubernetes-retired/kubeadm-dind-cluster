@@ -520,6 +520,14 @@ jobs:
       CNI_PLUGIN: kube-router
     <<: *test
 
+  test_1.10_ptp:
+    <<: *defaults
+    environment:
+      <<: *env
+      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.10
+      CNI_PLUGIN: ptp
+    <<: *test
+
   test_1.11:
     <<: *defaults
     environment:
@@ -565,6 +573,14 @@ jobs:
       <<: *env
       DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.11
       CNI_PLUGIN: kube-router
+    <<: *test
+
+  test_1.11_ptp:
+    <<: *defaults
+    environment:
+      <<: *env
+      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.11
+      CNI_PLUGIN: ptp
     <<: *test
 
   test_src_release:
@@ -701,6 +717,9 @@ workflows:
     - test_1.10_kube_router:
         requires:
         - build
+    - test_1.10_ptp:
+        requires:
+        - build
     - test_1.11:
         requires:
         - build
@@ -717,6 +736,9 @@ workflows:
         requires:
         - build
     - test_1.11_kube_router:
+        requires:
+        - build
+    - test_1.11_ptp:
         requires:
         - build
     - test_src_release:
@@ -748,9 +770,11 @@ workflows:
         - test_1.10_calico_kdd
         - test_1.10_weave
         - test_1.10_kube_router
+        - test_1.10_ptp
         - test_1.11
         - test_1.11_flannel
         - test_1.11_calico
         - test_1.11_calico_kdd
         - test_1.11_weave
         - test_1.11_kube_router
+        - test_1.11_ptp

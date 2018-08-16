@@ -276,7 +276,7 @@ if [[ ${IP_MODE} = "ipv6" ]]; then
 	POD_NET_PREFIX+="0:"
         num_colons+=1
     done
-elif [[ ${CNI_PLUGIN} = "bridge" ]]; then # IPv4, bridge
+elif [[ ${CNI_PLUGIN} = "bridge" || ${CNI_PLUGIN} = "ptp" ]]; then # IPv4, bridge or ptp
     # For IPv4, will assume user specifies /16 CIDR and will use a /24 subnet
     # on each node.
     POD_NET_PREFIX="$(echo ${POD_NETWORK_CIDR} | sed 's/^\([0-9]*\.[0-9]*\.\).*/\1/')"
@@ -951,7 +951,7 @@ function dind::init {
   # customizations to template and then rebuild the image used (build/build-local.sh).
   local pod_subnet_disable="# "
   # TODO: May want to specify each of the plugins that require --pod-network-cidr
-  if [[ ${CNI_PLUGIN} != "bridge" ]]; then
+  if [[ ${CNI_PLUGIN} != "bridge" && ${CNI_PLUGIN} != "ptp" ]]; then
     pod_subnet_disable=""
   fi
   local bind_address="0.0.0.0"
@@ -1108,8 +1108,8 @@ function dind::kill-failed-pods {
   done
 }
 
-function dind::create-static-routes-for-bridge {
-  echo "Creating static routes for bridge plugin"
+function dind::create-static-routes {
+  echo "Creating static routes for bridge/PTP plugin"
   for ((i=0; i <= NUM_NODES; i++)); do
     if [[ ${i} -eq 0 ]]; then
       node="$(dind::master-name)"
@@ -1294,8 +1294,8 @@ function dind::up {
     "${kubectl}" --context "$ctx" taint nodes $(dind::master-name) node-role.kubernetes.io/master- || true
   fi
   case "${CNI_PLUGIN}" in
-    bridge)
-      dind::create-static-routes-for-bridge
+    bridge | ptp)
+      dind::create-static-routes
       dind::setup_external_access_on_host
       ;;
     flannel)
@@ -1323,7 +1323,7 @@ function dind::up {
   esac
   dind::deploy-dashboard
   dind::accelerate-kube-dns
-  if [[ ${CNI_PLUGIN} != bridge || ${SKIP_SNAPSHOT} ]]; then
+  if [[ (${CNI_PLUGIN} != "bridge" && ${CNI_PLUGIN} != "ptp") || ${SKIP_SNAPSHOT} ]]; then
     # This is especially important in case of Calico -
     # the cluster will not recover after snapshotting
     # (at least not after restarting from the snapshot)
@@ -1402,8 +1402,8 @@ function dind::restore {
   for pid in ${pids[*]}; do
     wait ${pid}
   done
-  if [[ "${CNI_PLUGIN}" = "bridge" ]]; then
-    dind::create-static-routes-for-bridge
+  if [[ ${CNI_PLUGIN} = "bridge" || ${CNI_PLUGIN} = "ptp" ]]; then
+    dind::create-static-routes
     dind::setup_external_access_on_host
   fi
   dind::fix-mounts
@@ -1416,7 +1416,7 @@ function dind::restore {
 
 function dind::down {
   dind::remove-images "${DIND_LABEL}"
-  if [[ "${CNI_PLUGIN}" = "bridge" ]]; then
+  if [[ ${CNI_PLUGIN} = "bridge" || ${CNI_PLUGIN} = "ptp" ]]; then
     dind::remove_external_access_on_host
   elif [[ "${CNI_PLUGIN}" = "kube-router" ]]; then
     docker run --privileged --net=host cloudnativelabs/kube-router --cleanup-config
