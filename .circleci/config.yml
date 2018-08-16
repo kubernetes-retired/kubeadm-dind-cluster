@@ -186,11 +186,10 @@ test_src: &test_src
           ../dind-cluster.sh clean
 
 test_ipv6_only: &test_ipv6_only
+  machine: true
+  working_directory: ~/kubeadm-dind-cluster
   steps:
     - checkout
-    - setup_remote_docker
-    - run:
-        <<: *setup
     - attach_workspace:
         at: _save
     - run:
@@ -198,12 +197,9 @@ test_ipv6_only: &test_ipv6_only
         command: |
           docker load -i _save/images.tar
     - run:
-        name: Bring up multiple clusters in parallel
+        name: Run ipv6 only tests
         no_output_timeout: 25m
         command: |
-          export DIND_PORT_FORWARDER_WAIT=1
-          export DIND_PORT_FORWARDER="${PWD}/build/portforward.sh"
-
           "${PWD}/test/test-ipv6-only.sh"
 
 test_multiple_clusters: &test_multiple_clusters
@@ -605,28 +601,24 @@ jobs:
     <<: *test
 
   test_1.9_ipv6_only_dns64:
-    <<: *defaults
     environment:
       <<: *env
       TEST_K8S_VER: 'v1.9'
     <<: *test_ipv6_only
 
   test_1.10_ipv6_only_dns64:
-    <<: *defaults
     environment:
       <<: *env
       TEST_K8S_VER: 'v1.10'
     <<: *test_ipv6_only
 
   test_1.11_ipv6_only_dns64:
-    <<: *defaults
     environment:
       <<: *env
       TEST_K8S_VER: 'v1.11'
     <<: *test_ipv6_only
 
   test_1.9_ipv6_only_ext_aaaa:
-    <<: *defaults
     environment:
       <<: *env
       TEST_K8S_VER: 'v1.9'
@@ -634,7 +626,6 @@ jobs:
     <<: *test_ipv6_only
 
   test_1.10_ipv6_only_ext_aaaa:
-    <<: *defaults
     environment:
       <<: *env
       TEST_K8S_VER: 'v1.10'
@@ -642,7 +633,6 @@ jobs:
     <<: *test_ipv6_only
 
   test_1.11_ipv6_only_ext_aaaa:
-    <<: *defaults
     environment:
       <<: *env
       TEST_K8S_VER: 'v1.11'
