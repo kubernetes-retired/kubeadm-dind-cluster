@@ -324,13 +324,37 @@ $ dind/dind-cluster.sh e2e-serial
 
 ## Contributing to & Testing `kubeadm-dind-cluster`
 
+### Test setup
+
 There are currently two CI systems in place which automatically test PRs to
 kubeadm-dind-cluster:
-- [TravisCI](https://travis-ci.org/kubernetes-sigs/kubeadm-dind-cluster)
 - [CircleCI](https://circleci.com/gh/kubernetes-sigs/kubeadm-dind-cluster)
+- [TravisCI](https://travis-ci.org/kubernetes-sigs/kubeadm-dind-cluster)
 
-To run tests locally, find the test function you wish to run (it is called
-`test-case-<test-name>`). Then run:`
+#### CircleCI, `./.circleci/config.yml`
+
+All tests should run on CircleCI, thus need to be configured in
+`./.circleci/config.yml`.
+
+There are some tests completely implemented in `./.circleci/config.yml`. There
+are also other tests which are implemented in a script in `./test/` and then
+CircleCI just calls that script. This makes it easier to run a CircleCI test
+case also locally, by just calling the script:
+
+```shell
+$ DIND_ALLOW_AAAA_USE='true' TEST_K8S_VER='v1.10' ./test/test-ipv6-only.sh
+```
+
+#### TravisCI, `./test.sh` -- DEPRECATED
+
+There are some tests in `./test.sh`. These were the tests which ran on TravisCI
+when TravisCI was the default CI system.
+
+You should NOT add tests to `./test.sh` but rather run new tests on `CircleCI`.
+
+There could still be some tests in there which you might find useful. You still
+run them like that:
+
 ```shell
 # See all test cases:
 $ grep 'function test-case-' ./test.sh
@@ -341,10 +365,15 @@ $ TEST_CASE=<test-name> ./test.sh
 ### IPv6 tests
 
 All of the IPv6 related tests currently run on
-[TravisCI](https://travis-ci.org/kubernetes-sigs/kubeadm-dind-cluster). There
-are two slightly different kind of tests which run for all version starting from `v1.9`:
+[CircleCI](https://circleci.com/gh/kubernetes-sigs/kubeadm-dind-cluster).
+THose tests run with the `machine executor` (and not as docker containers), so
+that we have IPv6 available for the test cases. Note, that while internal IPv6
+is configured, external IPv6 is not available.
 
-#### `TEST_CASE=ipv6-only ./test.sh`
+There are two slightly different kind of tests which run for all version
+starting from `v1.9`:
+
+#### `TEST_K8S_VER='1.x' ./test/test-ipv6-only.sh`
 
 The cluster is setup with IPv6 support. The tests check if the IP resolution on
 nodes and pods works as expected. DNS64 is always used, and external IPv6
@@ -353,24 +382,27 @@ as docker containers, alongside the `kube-master` and `kube-node-X` containers
 running in the outer docker daemon.
 
 These IPv6 tests do not depend on the host machine of the
-outer docker daemon actaully having external IPv6 connectivity.
+outer docker daemon actually having external IPv6 connectivity.
 
 The tests cover, on pods, nodes and host:
 * IP address lookups
 * internal `ping6`s (pod to pod on different nodes)
 * external `ping6`s (to IPv4-only and IPv6-enabled targets)
 
-#### `TEST_CASE=ipv6-only DIND_ALLOW_AAAA_USE=true ./test.sh`
+#### `TEST_K8S_VER='1.x' DIND_ALLOW_AAAA_USE=true ./test/test-ipv6-only.sh`
 
 Those tests use the public AAAA records when available. Specifically for hosts
 which have a AAAA record that IP is used, traffic to those hosts does not get
 routed through NAT64. In that case the host running the outer docker daemon
-needs to have external IPv6 available.  If a host does not have a public AAAA
+would need to have external IPv6 available to actually communicate with
+external IPv6 hosts. Therefore (beacuase none of our CI systems can provide
+external IPv6) we skip the external ping tests and instead print a warning
+about external IPv6 not being available. If a host does not have a public AAAA
 record, the DNS64 kicks in and traffic is routed throught NAT64.
 
-The same test suites as above run, except for external ping tests which are intentionally disabled. That's
-because the CI does not currently allow for external IPv6. Internal ping tests
-still run.
+In summary:
+The same test suites as above run, except for external ping tests which are
+intentionally disabled. Internal ping tests still run.
 
 ## Related work
 
