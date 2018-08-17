@@ -49,7 +49,7 @@ function setup-ipv6-only-test() {
   export k8s_img='tutum/dnsutils'
 }
 
-function lookup-address() {
+function dns-lookup-ip-by-type() {
   local name="$1"
   local type="${2:-A}"
   local ns="${3:-}"
@@ -59,7 +59,7 @@ function lookup-address() {
   dig +short ${name} ${type} ${ns} | sed 's/\r//g'
 }
 
-function lookup-address-on-pod() {
+function dns-lookup-ip-by-type-on-pod() {
   local pod="$1"
 
   local name="$2"
@@ -71,7 +71,7 @@ function lookup-address-on-pod() {
   kubectl exec -ti "$pod" -- dig +short "${name}" "${type}" ${ns} | sed 's/\r//g'
 }
 
-function lookup-address-on-node() {
+function dns-lookup-ip-by-type-on-node() {
   local node="$1"
   local name="$2"
   local type=''
@@ -79,7 +79,7 @@ function lookup-address-on-node() {
   case "${3:-}" in
     AAAA)  type='ahostsv6' ;;
     A)     type='ahostsv4' ;;
-    *)     echo "unknown type '${3:-}' for lookup-address-on-node" >&2 ; return 1 ;;
+    *)     echo "unknown type '${3:-}' for dns-lookup-ip-by-type-on-node" >&2 ; return 1 ;;
   esac
 
   docker exec -ti "$node" getent "$type" "$name" | awk '/ STREAM /{ print $1 }'
@@ -116,15 +116,15 @@ function ping-tests-internal() {
 function resolve-host() {
   local target="$1"
 
-  aaaa_from_node="$( lookup-address-on-node 'kube-node-1' "${target}" AAAA )" || {
+  aaaa_from_node="$( dns-lookup-ip-by-type-on-node 'kube-node-1' "${target}" AAAA )" || {
     fail "Expected to successfully resolve ${target}'s IPv6 address on kube-node-1"
   }
 
-  aaaa_from_pod="$( lookup-address-on-pod 'pod-on-node1' "${target}" AAAA )" || {
+  aaaa_from_pod="$( dns-lookup-ip-by-type-on-pod 'pod-on-node1' "${target}" AAAA )" || {
     fail "Expected to successfully resolve ${target}'s IPv6 address on a pod"
   }
 
-  aaaa_from_host="$( lookup-address "${target}" AAAA )" || {
+  aaaa_from_host="$( dns-lookup-ip-by-type "${target}" AAAA )" || {
     fail "Expected to successfully resolve ${target}'s IPv6 from the host"
   }
 
@@ -139,7 +139,7 @@ function resolve-host() {
   echo "${aaaa_from_host},${aaaa_from_k8s}"
 }
 
-function verify-lookup-with-dns64-only() {
+function verify-lookup-always-using-dns64-prefix() {
   local target="$1"
 
   IFS=, read aaaa_from_host aaaa_from_k8s <<<"$( resolve-host "$target" )"
@@ -155,7 +155,7 @@ function verify-lookup-with-dns64-only() {
   fi
 }
 
-function verify-lookup-with-ext-dns-for-ipv6-host() {
+function verify-lookup-using-ipv6-address-for-ipv6-hosts() {
   local target="$1"
 
   IFS=, read aaaa_from_host aaaa_from_k8s <<<"$( resolve-host "$target" )"
@@ -170,13 +170,13 @@ function verify-lookup-with-ext-dns-for-ipv6-host() {
     fail "Expected ${target} not to resolve to something starting with the DNS64 prefix on the host"
   fi
 
-  if [ "$( lookup-address "$target" 'AAAA' "$ipv6_enabled_host_ns" )" != "$aaaa_from_k8s" ]
+  if [ "$( dns-lookup-ip-by-type "$target" 'AAAA' "$ipv6_enabled_host_ns" )" != "$aaaa_from_k8s" ]
   then
     fail "Expected ${target} to resolve to the same as on ${ipv6_enabled_host_ns}"
   fi
 }
 
-function verify-lookup-with-ext-dns-for-ipv4-only-host() {
+function verify-lookup-using-dns64-prefix-for-ipv4-hosts() {
   local target="$1"
 
   IFS=, read aaaa_from_host aaaa_from_k8s <<<"$( resolve-host "$target" )"
@@ -204,13 +204,13 @@ function test-case-ipv6-only() {
   do
     if [ -z "${DIND_ALLOW_AAAA_USE:-}" ]
     then
-      verify-lookup-with-dns64-only "${target}"
+      verify-lookup-always-using-dns64-prefix "${target}"
     else
       if [ "$target" = "$ipv6_enabled_host" ]
       then
-        verify-lookup-with-ext-dns-for-ipv6-host "${target}"
+        verify-lookup-using-ipv6-address-for-ipv6-hosts "${target}"
       else
-        verify-lookup-with-ext-dns-for-ipv4-only-host "${target}"
+        verify-lookup-using-dns64-prefix-for-ipv4-hosts "${target}"
       fi
     fi
   done
@@ -223,7 +223,7 @@ function test-case-ipv6-only() {
   else
     {
       echo ''
-      echo 'WARNING: not testing direct external IPv6 connectivity.'
+      echo 'NOTE: not testing direct external IPv6 connectivity.'
       echo '  ... right now IPv6 in CI is only tested through NAT64 as'
       echo '      we do not have access to an IPv6 enabled CI system.'
       echo ''
