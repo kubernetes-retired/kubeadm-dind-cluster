@@ -47,6 +47,11 @@ function setup-ipv6-only-test() {
 
   # the image to use for containers in k8s
   export k8s_img='tutum/dnsutils'
+
+  # runs ./dind-cluster.sh with `xtrace`/`-x` by detault. To turn `xtrace` off
+  # set TEST_DIND_RUN_FLAGS='', to change the flags use
+  # TEST_DIND_RUN_FLAGS='-x -e -u -o pipefail'
+  export dind_run_flags="${TEST_DIND_RUN_FLAGS--x}"
 }
 
 function dns-lookup-ip-by-type() {
@@ -196,7 +201,7 @@ function verify-lookup-using-dns64-prefix-for-ipv4-hosts() {
 function test-case-ipv6-only() {
   setup-ipv6-only-test
 
-  bash -x ./dind-cluster.sh up
+  bash ${dind_run_flags} ./dind-cluster.sh up
 
   persistent_pod_ip="$( create-persistent-pod )"
 
@@ -232,7 +237,7 @@ function test-case-ipv6-only() {
     } >&2
   fi
 
-  bash -x ./dind-cluster.sh clean
+  bash ${dind_run_flags} ./dind-cluster.sh clean
 }
 
 function main() {
