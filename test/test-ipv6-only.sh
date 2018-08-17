@@ -30,21 +30,20 @@ function setup-ipv6-only-test() {
   export DIND_IMAGE="mirantis/kubeadm-dind-cluster:${v}"
   docker pull "${DIND_IMAGE}"
 
-  # Globally exported CIDR not applicable for IPv6
-  export POD_NETWORK_CIDR=''
   # Add the directory we will download kubectl into to the PATH
-  export PATH="${PATH}:${KUBECTL_DIR}"
+  # Make sure the kubectl path has precedence so we use the donwloaded binary
+  # instead of a potential locally available one.
+  export PATH="${KUBECTL_DIR}:${PATH}"
 
-  # Explicitiely set the DNS64 prefix
+  # We set it here explicitely, even though dind-cluster.sh would default it, to
+  # later in the test be able to check if a resolved IP is prefixed with the
+  # specified $DNS64_PREFIX
   export DNS64_PREFIX='fd00:10:64:ff9b::'
 
   # some shared config for the ipv6 tests
   export ipv6_enabled_host="ds.test-ipv6.noroutetohost.net"
   export ipv4_only_host="ipv4.test-ipv6.noroutetohost.net"
   export ipv6_enabled_host_ns='8.8.8.8'
-
-  # kubectl setup
-  export kubectl="kubectl --context dind"
 
   # the image to use for containers in k8s
   export k8s_img='tutum/dnsutils'
@@ -69,7 +68,7 @@ function lookup-address-on-pod() {
 
   test -n "$ns" && ns="@${ns}"
 
-  $kubectl exec -ti "$pod" -- dig +short "${name}" "${type}" ${ns} | sed 's/\r//g'
+  kubectl exec -ti "$pod" -- dig +short "${name}" "${type}" ${ns} | sed 's/\r//g'
 }
 
 function lookup-address-on-node() {
@@ -87,7 +86,7 @@ function lookup-address-on-node() {
 }
 
 function create-persistent-pod() {
-  $kubectl run pod-on-node1 --image=${k8s_img} --restart=Never \
+  kubectl run pod-on-node1 --image=${k8s_img} --restart=Never \
     --overrides="$( get-node-selector-override kube-node-1 )" \
     --command -- /bin/sh -c 'hostname ; /bin/sleep 3600' \
     >/dev/null 2>&1
@@ -96,18 +95,18 @@ function create-persistent-pod() {
 }
 
 function ping-tests-external() {
-  $kubectl exec -ti pod-on-node1 -- ping6 -n -c1 $ipv6_enabled_host || {
+  kubectl exec -ti pod-on-node1 -- ping6 -n -c1 $ipv6_enabled_host || {
     fail "Expected ping6 to $ipv6_enabled_host to succeed"
   }
 
-  $kubectl exec -ti pod-on-node1 -- ping6 -n -c1 $ipv4_only_host || {
+  kubectl exec -ti pod-on-node1 -- ping6 -n -c1 $ipv4_only_host || {
     fail "Expected ping6 to $ipv4_only_host to succeed"
   }
 }
 
 function ping-tests-internal() {
   pod_on_node1_ip="$1"
-  $kubectl run pod-on-node2 --attach --image=${k8s_img} --restart=Never --rm \
+  kubectl run pod-on-node2 --attach --image=${k8s_img} --restart=Never --rm \
     --overrides="$( get-node-selector-override kube-node-2 )" \
     --command -- /bin/ping6 -n -c 1 "$pod_on_node1_ip" || {
     fail 'Expected to be able to ping6 a pod by IP on a different node'
