@@ -366,7 +366,7 @@ $ TEST_CASE=<test-name> ./test.sh
 
 All of the IPv6 related tests currently run on
 [CircleCI](https://circleci.com/gh/kubernetes-sigs/kubeadm-dind-cluster).
-THose tests run with the `machine executor` (and not as docker containers), so
+Those tests run with the `machine executor` (and not as docker containers), so
 that we have IPv6 available for the test cases. Note, that while internal IPv6
 is configured, external IPv6 is not available.
 
@@ -392,13 +392,14 @@ The tests cover, on pods, nodes and host:
 #### `TEST_K8S_VER='1.x' DIND_ALLOW_AAAA_USE=true ./test/test-ipv6-only.sh`
 
 Those tests use the public AAAA records when available. Specifically for hosts
-which have a AAAA record that IP is used, traffic to those hosts does not get
-routed through NAT64. In that case the host running the outer docker daemon
-would need to have external IPv6 available to actually communicate with
-external IPv6 hosts. Therefore (beacuase none of our CI systems can provide
+which have a AAAA record, the IP address is used, traffic to those hosts does
+not get routed through NAT64. In that case the host running the outer docker
+daemon would need to have external IPv6 available to actually communicate with
+external IPv6 hosts. Therefore (becuase none of our CI systems can provide
 external IPv6) we skip the external ping tests and instead print a warning
 about external IPv6 not being available. If a host does not have a public AAAA
-record, the DNS64 kicks in and traffic is routed throught NAT64.
+record, the IPv4 address is used, embedded into a synthesized IPv6 address, and
+routed through NAT64.
 
 In summary:
 The same test suites as above run, except for external ping tests which are
