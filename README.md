@@ -333,7 +333,7 @@ kubeadm-dind-cluster:
 
 #### CircleCI, `./.circleci/config.yml`
 
-All tests should run on CircleCI, thus need to be configured in
+All new tests should run on CircleCI, thus need to be configured in
 `./.circleci/config.yml`.
 
 There are some tests completely implemented in `./.circleci/config.yml`. There
@@ -345,15 +345,14 @@ case also locally, by just calling the script:
 $ DIND_ALLOW_AAAA_USE='true' TEST_K8S_VER='v1.10' ./test/test-ipv6-only.sh
 ```
 
-#### TravisCI, `./test.sh` -- DEPRECATED
+#### TravisCI, `./test.sh`
 
-There are some tests in `./test.sh`. These were the tests which ran on TravisCI
-when TravisCI was the default CI system.
+There are some tests in `./test.sh`, those will run on TravisCI.
+New tests should be added to CircleCI and not to `./test.sh` / the TravisCI
+setup.
 
-You should NOT add tests to `./test.sh` but rather run new tests on `CircleCI`.
-
-There could still be some tests in there which you might find useful. You still
-run them like that:
+To run a specific test from `./test.sh` use the following mechanism to discover
+and run a specific test:
 
 ```shell
 # See all test cases:
