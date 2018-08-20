@@ -395,7 +395,7 @@ Those tests use the public AAAA records when available. Specifically for hosts
 which have a AAAA record, the IP address is used, traffic to those hosts does
 not get routed through NAT64. In that case the host running the outer docker
 daemon would need to have external IPv6 available to actually communicate with
-external IPv6 hosts. Therefore (becuase none of our CI systems can provide
+external IPv6 hosts. Therefore (because none of our CI systems can provide
 external IPv6) we skip the external ping tests and instead print a warning
 about external IPv6 not being available. If a host does not have a public AAAA
 record, the IPv4 address is used, embedded into a synthesized IPv6 address, and
