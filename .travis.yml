@@ -14,6 +14,3 @@ before_install:
 script:
   # building k8s may cause Travis to time out w/o output
   - if [ -n "${TWAIT:-}" ]; then travis_wait 35 ./test.sh; else ./test.sh; fi
-
-before_script:
-  - echo 0 | sudo tee /proc/sys/net/ipv6/conf/all/disable_ipv6
