@@ -185,6 +185,23 @@ test_src: &test_src
           cd kubernetes
           ../dind-cluster.sh clean
 
+test_ipv6_only: &test_ipv6_only
+  machine: true
+  working_directory: ~/kubeadm-dind-cluster
+  steps:
+    - checkout
+    - attach_workspace:
+        at: _save
+    - run:
+        name: Restore images
+        command: |
+          docker load -i _save/images.tar
+    - run:
+        name: Run ipv6 only tests
+        no_output_timeout: 25m
+        command: |
+          "${PWD}/test/test-ipv6-only.sh"
+
 test_multiple_clusters: &test_multiple_clusters
   steps:
     - checkout
@@ -583,6 +600,45 @@ jobs:
       CNI_PLUGIN: ptp
     <<: *test
 
+  test_1.9_ipv6_only_nat64:
+    environment:
+      <<: *env
+      TEST_K8S_VER: 'v1.9'
+    <<: *test_ipv6_only
+
+  test_1.10_ipv6_only_nat64:
+    environment:
+      <<: *env
+      TEST_K8S_VER: 'v1.10'
+    <<: *test_ipv6_only
+
+  test_1.11_ipv6_only_nat64:
+    environment:
+      <<: *env
+      TEST_K8S_VER: 'v1.11'
+    <<: *test_ipv6_only
+
+  test_1.9_ipv6_only_ext_aaaa:
+    environment:
+      <<: *env
+      TEST_K8S_VER: 'v1.9'
+      DIND_ALLOW_AAAA_USE: 'true'
+    <<: *test_ipv6_only
+
+  test_1.10_ipv6_only_ext_aaaa:
+    environment:
+      <<: *env
+      TEST_K8S_VER: 'v1.10'
+      DIND_ALLOW_AAAA_USE: 'true'
+    <<: *test_ipv6_only
+
+  test_1.11_ipv6_only_ext_aaaa:
+    environment:
+      <<: *env
+      TEST_K8S_VER: 'v1.11'
+      DIND_ALLOW_AAAA_USE: 'true'
+    <<: *test_ipv6_only
+
   test_src_release:
     <<: *defaults
     environment:
@@ -741,6 +797,24 @@ workflows:
     - test_1.11_ptp:
         requires:
         - build
+    - test_1.9_ipv6_only_nat64:
+        requires:
+        - build
+    - test_1.10_ipv6_only_nat64:
+        requires:
+        - build
+    - test_1.11_ipv6_only_nat64:
+        requires:
+        - build
+    - test_1.9_ipv6_only_ext_aaaa:
+        requires:
+        - build
+    - test_1.10_ipv6_only_ext_aaaa:
+        requires:
+        - build
+    - test_1.11_ipv6_only_ext_aaaa:
+        requires:
+        - build
     - test_src_release:
         requires:
         - build
@@ -778,3 +852,9 @@ workflows:
         - test_1.11_weave
         - test_1.11_kube_router
         - test_1.11_ptp
+        - test_1.9_ipv6_only_nat64
+        - test_1.10_ipv6_only_nat64
+        - test_1.11_ipv6_only_nat64
+        - test_1.9_ipv6_only_ext_aaaa
+        - test_1.10_ipv6_only_ext_aaaa
+        - test_1.11_ipv6_only_ext_aaaa

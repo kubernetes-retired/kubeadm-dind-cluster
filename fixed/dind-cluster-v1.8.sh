@@ -1152,9 +1152,9 @@ function dind::setup_external_access_on_host {
   fi
   local main_if=`ip route | grep default | awk '{print $5}'`
   local bridge_if=`ip route | grep ${NAT64_V4_SUBNET_PREFIX}.0.0 | awk '{print $3}'`
-  docker run --entrypoint /sbin/ip6tables --net=host --rm --privileged ${DIND_IMAGE} -t nat -A POSTROUTING -o $main_if -j MASQUERADE
+  dind::ip6tables-on-hostnet -t nat -A POSTROUTING -o $main_if -j MASQUERADE
   if [[ -n "$bridge_if" ]]; then
-    docker run --entrypoint /sbin/ip6tables --net=host --rm --privileged ${DIND_IMAGE} -A FORWARD -i $bridge_if -j ACCEPT
+    dind::ip6tables-on-hostnet -A FORWARD -i $bridge_if -j ACCEPT
   else
     echo "WARNING! No $(dind::net-name) bridge - unable to setup forwarding/SNAT"
   fi
@@ -1169,22 +1169,27 @@ function dind::remove_external_access_on_host {
   local main_if="$(ip route | grep default | awk '{print $5}')"
   local bridge_if="$(ip route | grep ${NAT64_V4_SUBNET_PREFIX}.0.0 | awk '{print $3}')"
 
-  have_rule="$(docker run --entrypoint /sbin/ip6tables --net=host --rm --privileged ${DIND_IMAGE} -S -t nat | grep "\-o $main_if" || true)"
+  have_rule="$(dind::ip6tables-on-hostnet -S -t nat | grep "\-o $main_if" || true)"
   if [[ -n "$have_rule" ]]; then
-    docker run --entrypoint /sbin/ip6tables --net=host --rm --privileged ${DIND_IMAGE} -t nat -D POSTROUTING -o $main_if -j MASQUERADE
+    dind::ip6tables-on-hostnet -t nat -D POSTROUTING -o $main_if -j MASQUERADE
   else
     echo "Skipping delete of ip6tables rule for SNAT, as rule non-existent"
   fi
   if [[ -n "$bridge_if" ]]; then
-    have_rule="$(docker run --entrypoint /sbin/ip6tables --net=host --rm --privileged ${DIND_IMAGE} -S | grep "\-i $bridge_if" || true)"
+    have_rule="$(dind::ip6tables-on-hostnet -S | grep "\-i $bridge_if" || true)"
     if [[ -n "$have_rule" ]]; then
-      docker run --entrypoint /sbin/ip6tables --net=host --rm --privileged ${DIND_IMAGE} -D FORWARD -i $bridge_if -j ACCEPT
+      dind::ip6tables-on-hostnet -D FORWARD -i $bridge_if -j ACCEPT
     else
       echo "Skipping delete of ip6tables rule for forwarding, as rule non-existent"
     fi
   else
     echo "Skipping delete of ip6tables rule for forwarding, as no bridge interface"
   fi
+}
+
+function dind::ip6tables-on-hostnet {
+  local mod_path='/lib/modules'
+  docker run -v "${mod_path}:${mod_path}" --entrypoint /sbin/ip6tables --net=host --rm --privileged "${DIND_IMAGE}" "$@"
 }
 
 function dind::wait-for-ready {
