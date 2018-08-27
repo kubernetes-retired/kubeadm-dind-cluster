@@ -61,6 +61,8 @@ RUN clean-install apt-utils \
     iptables \
     iproute2 \
     iputils-ping \
+    ipset \
+    ipvsadm \
     jq \
     kmod \
     lsb-core \
