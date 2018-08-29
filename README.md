@@ -40,11 +40,12 @@ source. If you want you can overridde this behavior by setting
 
 ### Mac OS X considerations
 
-Ensure to have `md5sha1sum` installed. If not existing can be installed via `brew install md5sha1sum`.
-
 When building Kubernetes from source on Mac OS X, it should be
 possible to build `kubectl` locally, i.e. `make WHAT=cmd/kubectl` must
 work.
+
+NOTE: Docker on Mac OS X, at the time of this writing, does not support
+IPv6 and thus clusters cannot be formed using IPv6 addresses.
 
 ## Using preconfigured scripts
 `kubeadm-dind-cluster` currently provides preconfigured scripts for
@@ -122,6 +123,63 @@ The first `dind/dind-cluster.sh up` invocation can be slow because it
 needs to build the base image and Kubernetes binaries. Subsequent
 invocations are much faster.
 
+## Controlling network usage
+Kubeadm-dind-cluster uses several networks for operation, and allows
+the user to customize the networks used. Check your network assignments
+for your setup, and adjust things, if there are conflicts. This section
+will describe how to adjust settings.
+
+NOTE: Docker will define networks for bridges, which kubeadm-dind-cluster
+tries to avoid by default, but based on your setup, you may need to choose
+different subnets. Typically, docker uses 172.17.0.0/16, 172.18.0.0/16,...
+
+### Management network
+For the management network, the user can set MGMT_CIDRS to a string
+representing the CIDR to use for the network. This is used in conjunction
+with the CLUSTER_ID, when creating multple clusters. If single cluster,
+the cluster ID will be zero.
+
+For IPv4, this must be a /24 and the third octet is reserved for the
+multi-cluster number (0 when in single-cluster mode). For example,
+use 10.192.0.0/24, for an IPv4 cluster that will have nodes 10.192.0.2,
+10.192.0.3, etc. A cluster with ID "5" would have nodes 10.192.5.2,
+10.192.5.3, etc.
+
+For IPv6, the CIDR must have room for a hextet to be reserved for the
+multi-cluster number. For example, fd00:10:20::/64 would be for an IPv6
+cluster with ID "10" (considered in hex) with nodes fd00:10:20:10::2,
+fd00:10:20:10::3, etc. If the cluster ID was "0" (single cluster mode),
+the nodes would be fd00:10:20:0::2, fd00:10:20:0::3, etc.
+
+The defaults are 10.192.0.0/24 for IPv4, and fd00:20::/64 for IPv6.
+
+TODO: Dual stack will allow MGMT_CIDRS to be a comman separated list
+of CIDRS (one IPv4, one IPv6), with defaults above used for unspecified
+values.
+
+### Service network
+The service network CIDR, can be specified by SERVICE_CIDR. For IPv4, the
+default is 10.96.0.0/12. For IPv6, the default is fd00:30::/110.
+
+### Pod network
+For the pod network the POD_NETWORK_CIDR environment variable can be set
+to specify the pod sub-networks. One subnet will be created for each node
+in the cluster.
+
+For IPv4, the value must be a /16, of which this will be split into multiple
+/24 subnets. The master node will set the third octet to 2, and the minion
+nodes will set the third octet to 3+. For example, with 10.244.0.0/16, pods
+on the master node will be 10.244.2.X, on minionnkube-node-1 will be 10.244.3.Y,
+on minion kube-node-2 will be 10.244.4.Z, etc.
+
+For IPv6, the CIDR will again be split into subnets, eigth bits smaller. For
+example, with fd00:10:20:30::/72, the master node would have a CIDR of
+fd00:10:20:30:2::/80 with pods fd00:10:20:30:2::X. If the POD_NETWORK_CIDR,
+instead was fd00:10:20:30::/64, the master node woudl have a CIDR of
+fd00:10:20:30:0200::/72, and pods would be fd00:10:20:30:0200::X.
+
+The defaults are 10.244.0.0/16 for IPv4, and fd00:40::/72 for IPv6.
+
 ## Kube-router
 Instead of using kube-proxy and static routes (with bridge CNI plugin),
 kube-router can be used. Kube-router uses the bridge plugin, but uses
@@ -142,14 +200,25 @@ export EMBBEDDED_CONFIG=y
 export DNS64_PREFIX=fd00:77:64:ff9b::
 export DIND_SUBNET=fd00:77::
 export SERVICE_CIDR=fd00:77:30::/110
+export NAT64_V4_SUBNET_PREFIX=172
 ```
 
 NOTE: The DNS64 and NAT64 containers that are created on the host, persist
-beyond `down` operation. This is to reduce startup time, if doing multiple
+beyond the `down` operation. This is to reduce startup time, if doing multiple
 down/up cycles. When `clean` is done, these containers are removed.
 
-NOTE: Multi-cluster mode has not been tested, as is not currently supported
-for IPv6 mode.
+NOTE: In multi-cluster, there will be DNS and NAT64 containers for each cluster,
+with thier names including the cluster suffix (e.g. bind9-cluster-50).
+
+NOTE: At this time, there is not isolation between clusters. Nodes on one cluster
+can ping nodes on another cluster (appears to be isolation iptables rules, instead
+of ip6tables rules).
+
+NOTE: The IPv4 mapping subnet used by NAT64, will have the cluster ID embedded in
+the prefix. When customizing, specify only the first octet of the subnet prefix,
+and the cluster ID will be added as the second prefix (zero, for single cluster).
+For example, if CLUSTER_ID="50", the default NAT64_V4_SUBNET_PREFIX will be
+"172.50", forming a subnet 172.50.0.0/16.
 
 NOTE: If you use `kube-router` for networking, IPv6 is not supported, as of
 July 2018.
@@ -229,40 +298,63 @@ The following information is currently stored in the dump:
 
 `dind-cluster.sh` can be used to create and manage multiple dind clusters.
 
-A cluster with `DIND_LABEL` *not* configured will use the default names for the
-docker resources and kubectl context, e.g. `kube-master` (container name),
-`kubeadm-dind-kube-master` (volume name), `dind` (context name), ...
+Normally, default names will be used for docker resources and the kubectl context.
+For example, `kube-master` (container name), `kubeadm-dind-kube-master` (volume name),
+`dind` (context name), etc. Likewise, the management, pod, and service IPs will use
+the defaults or user specified values (via environment variables). This would occur
+when CLUSTER_ID is not set, or set to "0".
 
-For every additional cluster `DIND_LABEL` needs to be set to an unique value.
-By doing so, all resources will be suffixed with `-<hash>`, where `<hash>` is
-the sha1 hash of the value of `DIND_LABEL`.
-Certain docker resources will be labeled with the value of `DIND_LABEL`, see
-the example below.
+For each additional cluster, the user can set a unique CLUSTER_ID to a string that
+represents a number from 1..254. The number will be used on all management network IP
+addresses.
 
-In any case, 'default' or 'additional' cluster, the subnet for the docker
-network and the port for the APIServer will be randomly assigned. You can
-change that by explicitly setting `DIND_SUBNET`/`DIND_SUBNET_SIZE` or
-`APISERVER_PORT`.
+For IPv4, the cluster ID will be used as the third octet of the management address
+(whether default or user specified). For example, with cluster ID "10", the default
+management network CIDR will be 10.192.10.0/24. For Ipv6, the cluster ID will be
+placed as the hextet before the double colon, for the management CIDR. For example,
+a management ntwork CIDR of fd00:20::/64 will become fd00:20:2::/64, for a cluster
+ID of '2'.
+
+Note: If the MGMT_CIDR (or legacy DIND_SUBNET/DIND_SUBNET_SIZE) environment variables
+are set for the management network, they must be able to accommodate the cluster ID
+injection.
+
+In addition to the management network, the resource names will have the suffix
+"-cluster-#", where # is the CLUSTER_ID. The context for kubectl will be "dind-cluster-#".
+
+For legacy support (or if a user wants a custom cluster name), if DIND_LABEL is set,
+then resources will have the suffix "-{DIND_LABEL}-#", with the number set to the cluster
+ID. If no cluster ID is specified, as would be for backwards-compatibility, or it is zero,
+the resource names will just use the DIND_LABEL, and a pseudo-random number from 1..254
+will be used for the management network.
 
 Example usage:
 
 ```shell
 $ # creates a 'default' cluster
 $ ./dind-cluster up
-$ # creates an additional cluster with the label 'example-custom-label'
-$ DIND_LABEL="example-custom-label" ./dind-cluster.sh up
+$ # creates a cluster with an ID of 10
+$ CLUSTER_ID="10" ./dind-cluster.sh up
+$ # creates an additional cluster with the label 'foo' and random cluster ID assigned
+$ DIND_LABEL="foo" ./dind-cluster.sh up
 ```
 
 Example containers:
 
 ```shell
-$ docker ps  --format '{{ .ID }} - {{ .Names }} -- {{ .Labels }}'                                                                                                                                           │
-923d2ab5c783 - kube-node-2 -- mirantis.kubeadm_dind_cluster=1
-c165e366499c - kube-node-1 -- mirantis.kubeadm_dind_cluster=1
-6499c923d2ab - kube-master -- mirantis.kubeadm_dind_cluster=1
-fd566cd6c41e - kube-node-2-d63d26399fd0d25b9edc9460af1841985d91bce8 -- mirantis.kubeadm_dind_cluster=1,example-custom-label=
-baaca6df2300 - kube-node-1-d63d26399fd0d25b9edc9460af1841985d91bce8 -- example-custom-label=,mirantis.kubeadm_dind_cluster=1
-b15b957a6554 - kube-master-d63d26399fd0d25b9edc9460af1841985d91bce8 -- example-custom-label=,mirantis.kubeadm_dind_cluster=1
+$ docker ps  --format '{{ .ID }} - {{ .Names }} -- {{ .Labels }}'
+
+8178227e567c - kube-node-2 -- mirantis.kubeadm_dind_cluster=1,mirantis.kubeadm_dind_cluster_runtime=
+6ea1822303bf - kube-node-1 -- mirantis.kubeadm_dind_cluster=1,mirantis.kubeadm_dind_cluster_runtime=
+7bc6b28be0b4 - kube-master -- mirantis.kubeadm_dind_cluster=1,mirantis.kubeadm_dind_cluster_runtime=
+
+ce3fa6eaecfe - kube-node-2-cluster-10 -- cluster-10=,mirantis.kubeadm_dind_cluster=1
+12c18cf3edb7 - kube-node-1-cluster-10 -- cluster-10=,mirantis.kubeadm_dind_cluster=1
+963a6e7c1e40 - kube-master-cluster-10 -- cluster-10=,mirantis.kubeadm_dind_cluster=1
+
+b05926f06642 - kube-node-2-foo -- mirantis.kubeadm_dind_cluster=1,foo=
+ddb961f1cc95 - kube-node-1-foo -- mirantis.kubeadm_dind_cluster=1,foo=
+2efc46f9dafd - kube-master-foo -- foo=,mirantis.kubeadm_dind_cluster=1
 ```
 
 Example `kubectl` access:
@@ -270,8 +362,9 @@ Example `kubectl` access:
 ```shell
 $ # to access the 'default' cluster
 $ kubectl --context dind get all
-$ # to access the additional cluster
-$ kubectl --context dind-d63d26399fd0d25b9edc9460af1841985d91bce8 get all
+$ # to access the additional clusters
+$ kubectl --context dind-cluster-10 get all
+$ kubectl --context dind-foo get all
 ```
 
 ## Motivation

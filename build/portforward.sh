@@ -21,11 +21,17 @@ if [[ ${1:-} = start ]]; then
          bobrik/socat -c "while true; do sleep 1000; done"
 elif [[ ${1} ]]; then
   port="${1}"
+  mode=""
+  localhost="localhost"
+  if [[ "${IP_MODE:-ipv4}" = "ipv6" ]]; then
+    mode="6"
+    localhost="[::1]"
+  fi
   socat "TCP-LISTEN:${port},reuseaddr,fork" \
-        EXEC:"'docker exec -i portforward socat STDIO TCP-CONNECT:localhost:${port}'" &
+        EXEC:"'docker exec -i portforward socat STDIO TCP${mode}:${localhost}:${port}'" &
   if [[ ${wait} ]]; then
     for ((n = 0; n < 20; n++)); do
-      if socat - "TCP:localhost:${port}" </dev/null; then
+      if socat - "TCP${mode}:localhost:${port}" </dev/null; then
         break
       fi
       sleep 0.5
