@@ -34,6 +34,8 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 
+DIND_STORAGE_DRIVER="${DIND_STORAGE_DRIVER:-overlay2}"
+
 # Ensure shared mount propagation to ensure volume mounting works for Kubernetes.
 # Took it from here:
 # https://github.com/marun/dkr-systemd-dind/blob/25702cf7a4a73bcc355a492f4e5ca96cc562a5a5/dind-setup.sh#L46
@@ -63,9 +65,14 @@ echo "Trying to load overlay module (this may fail)" >&2
 modprobe overlay || true
 
 storage_opts=
-if grep -q '[[:blank:]]overlay[[:blank:]]*' /proc/filesystems; then
-    # --storage-opt overlay2.override_kernel_check=true is needed for CentOS systems
-    storage_opts="--storage-driver=overlay2 --storage-opt overlay2.override_kernel_check=true"
+if [ "$DIND_STORAGE_DRIVER" == "overlay2" ]; then
+    DIND_STORAGE_OPTS="--storage-driver=${DIND_STORAGE_DRIVER} --storage-opt overlay2.override_kernel_check=true"
+    if grep -q '[[:blank:]]overlay[[:blank:]]*' /proc/filesystems; then
+        # --storage-opt overlay2.override_kernel_check=true is needed for CentOS systems
+        storage_opts="${DIND_STORAGE_OPTS}"
+    fi
+else
+    storage_opts="--storage-driver=${DIND_STORAGE_DRIVER}"
 fi
 
 # FIXME: this fix really concerns kubelet, so perhaps it should go
