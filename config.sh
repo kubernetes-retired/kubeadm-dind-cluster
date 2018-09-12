@@ -83,3 +83,9 @@ DNS_SERVICE="${DNS_SERVICE:-kube-dns}"
 # Extra component args for kube-scheduler
 # SCHEDULER_underscored_option_name will be converted --hyphenated-option-name
 # SCHEDULER_xxx=yyy
+
+# Enable Ceph support. DANGER: you must take care of unmapping all
+# the RBDs (e.g. by removing all the pods that use RBDs) before
+# stopping / restarting the cluster, or they'll get stuck possibly
+# blocking even system reboot.
+# ENABLE_CEPH=y

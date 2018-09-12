@@ -1,0 +1,4 @@
+#!/bin/bash
+# https://github.com/rook/rook/blob/cd2b69915958e7453b3fc5031f59179058163dcd/tests/scripts/dind-cluster-rbd
+echo "RUN: $*" >>/tmp/rbd.log
+DOCKER_HOST=unix:///opt/outer-docker.sock /usr/bin/docker run --rm -v /sys:/sys --net=host --privileged=true ceph/base rbd "$@"

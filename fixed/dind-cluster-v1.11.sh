@@ -318,6 +318,8 @@ if [[ ! ${LOCAL_KUBECTL_VERSION:-} && ${DIND_IMAGE:-} =~ :(v[0-9]+\.[0-9]+)$ ]];
   LOCAL_KUBECTL_VERSION="${BASH_REMATCH[1]}"
 fi
 
+ENABLE_CEPH="${ENABLE_CEPH:-}"
+
 # TODO: Test multi-cluster for IPv6, before enabling
 if [[ "${DIND_LABEL}" != "${DEFAULT_DIND_LABEL}"  && "${IP_MODE}" != 'ipv4' ]]; then
     echo "Multiple parallel clusters currently not supported for non-IPv4 mode" >&2
@@ -790,6 +792,12 @@ function dind::run {
 
   if [[ ! ${using_linuxkit} ]]; then
     opts+=(-v /boot:/boot -v /lib/modules:/lib/modules)
+  fi
+
+  if [[ ${ENABLE_CEPH} ]]; then
+    opts+=(-v /dev:/dev
+           -v /sys/bus:/sys/bus
+           -v /var/run/docker.sock:/opt/outer-docker.sock)
   fi
 
   local volume_name="kubeadm-dind-${container_name}"
