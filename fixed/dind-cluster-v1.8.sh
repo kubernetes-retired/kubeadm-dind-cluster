@@ -661,9 +661,6 @@ function dind::ensure-volume {
     if [[ ! ${reuse_volume} ]]; then
       docker volume rm "${name}" >/dev/null
     fi
-  elif [[ ${reuse_volume} ]]; then
-    echo "*** Failed to locate volume: ${name}" 1>&2
-    return 1
   fi
   dind::create-volume "${name}"
 }
@@ -869,7 +866,7 @@ function dind::set-master-opts {
     # share binaries pulled from the build container between nodes
     local dind_k8s_bin_vol_name
     dind_k8s_bin_vol_name="dind-k8s-binaries$(dind::clusterSuffix)"
-    dind::ensure-volume "${dind_k8s_bin_vol_name}"
+    dind::ensure-volume -r "${dind_k8s_bin_vol_name}"
     dind::set-build-volume-args
     master_opts+=("${build_volume_args[@]}" -v "${dind_k8s_bin_vol_name}:/k8s")
     local -a bins
