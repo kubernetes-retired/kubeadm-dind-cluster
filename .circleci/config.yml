@@ -223,30 +223,37 @@ test_multiple_clusters: &test_multiple_clusters
 
           function test-case-multiple-instances {
             local defaultLabel='mirantis.kubeadm_dind_cluster_runtime'
-            local customLabel='some.custom-label'
-            local customSha='e0f1032f845a2ea6653db1f9a997ac9572d4bc65'
+            local secondClusterID="20"
+            local thirdClusterLabel="third"
             local d="./dind-cluster.sh"
 
             export DIND_PORT_FORWARDER_WAIT=1
             export DIND_PORT_FORWARDER="${PWD}/build/portforward.sh"
 
             "${d}" up
-            DIND_LABEL="$customLabel" "${d}" up
+            CLUSTER_ID="$secondClusterID" "${d}" up
+            DIND_LABEL="$thirdClusterLabel" "${d}" up
 
             # masters
             test "$(countContainersWithExactName "kube-master")" -eq 1 || {
               fail 'Expected exactly one container with name "kube-master" to exist - cluster created with default label'
             }
-            test "$(countContainersWithExactName "kube-master-${customSha}")" -eq 1 || {
-              fail 'Expected exactly one container with name "kube-master-e0f1032f845a2ea6653db1f9a997ac9572d4bc65" to exist - cluster created with custom label'
+            test "$(countContainersWithExactName "kube-master-cluster-${secondClusterID}")" -eq 1 || {
+              fail "Expected exactly one container with name 'kube-master-cluster-${secondClusterID}' to exist - cluster created with custom ID"
+            }
+            test "$(countContainersWithExactName "kube-master-${thirdClusterLabel}")" -eq 1 || {
+              fail "Expected exactly one container with name 'kube-master-${thirdClusterLabel}' to exist - cluster created with custom label and assigned ID"
             }
 
             # nodes
             test "$(countContainersWithExactName "kube-node-\\d{1}")" -ge 1 || {
               fail 'Expected at least one container with name "kube-node-<nr>" to exist - cluster created with default label'
             }
-            test "$(countContainersWithExactName "kube-node-\\d{1}-${customSha}")" -ge 1 || {
-              fail 'Expected at least one container with name "kube-node-<nr>-e0f1032f845a2ea6653db1f9a997ac9572d4bc65" to exist - cluster created with custom label'
+            test "$(countContainersWithExactName "kube-node-\\d{1}-cluster-${secondClusterID}")" -ge 1 || {
+              fail "Expected at least one container with name 'kube-node-<nr>-cluster-${secondClusterID}' to exist - cluster created with custom ID"
+            }
+            test "$(countContainersWithExactName "kube-node-\\d{1}-${thirdClusterLabel}")" -ge 1 || {
+              fail "Expected at least one container with name 'kube-node-<nr>-${thirdClusterLabel}' to exist - cluster created with custom label and assigned ID"
             }
 
             # volumes
@@ -257,10 +264,17 @@ test_multiple_clusters: &test_multiple_clusters
               fail 'Expected one volume for the kube nodes to exist - cluster created with default label'
             }
 
-            test "$(countVolumesWithFilter "name=kubeadm-dind-kube-master-${customSha}$")" -eq 1 || {
+            test "$(countVolumesWithFilter "name=kubeadm-dind-kube-master-cluster-${secondClusterID}$")" -eq 1 || {
+              fail 'Expected one volume for the kube master to exist - cluster created with custom ID'
+            }
+            test "$(countVolumesWithFilter "name=kubeadm-dind-kube-node-\\d+-cluster-${secondClusterID}$")" -ge 1 || {
+              fail 'Expected one volume for the kube nodes to exist - cluster created with custom ID'
+            }
+
+            test "$(countVolumesWithFilter "name=kubeadm-dind-kube-master-${thirdClusterLabel}$")" -eq 1 || {
               fail 'Expected one volume for the kube master to exist - cluster created with custom label'
             }
-            test "$(countVolumesWithFilter "name=kubeadm-dind-kube-node-\\d+-${customSha}$")" -ge 1 || {
+            test "$(countVolumesWithFilter "name=kubeadm-dind-kube-node-\\d+-${thirdClusterLabel}$")" -ge 1 || {
               fail 'Expected one volume for the kube nodes to exist - cluster created with custom label'
             }
 
@@ -269,7 +283,10 @@ test_multiple_clusters: &test_multiple_clusters
               test "$(countVolumesWithFilter "name=kubeadm-dind-sys$")" -eq 1 || {
                 fail 'Expected one volume for the sys to exist - cluster created with default label'
               }
-              test "$(countVolumesWithFilter "name=kubeadm-dind-sys-${customSha}$")" -eq 1 || {
+              test "$(countVolumesWithFilter "name=kubeadm-dind-sys-cluster-${secondClusterID}$")" -eq 1 || {
+                fail 'Expected one volume for the sys to exist - cluster created with custom ID'
+              }
+              test "$(countVolumesWithFilter "name=kubeadm-dind-sys-${thirdClusterLabel}$")" -eq 1 || {
                 fail 'Expected one volume for the sys to exist - cluster created with custom label'
               }
             fi
@@ -278,7 +295,10 @@ test_multiple_clusters: &test_multiple_clusters
             test "$(countNetworksWithFilter "name=kubeadm-dind-net$")" -eq 1 || {
               fail 'Expected one network to exist - cluster created with default label'
             }
-            test "$(countNetworksWithFilter "name=kubeadm-dind-net-${customSha}$")" -eq 1 || {
+            test "$(countNetworksWithFilter "name=kubeadm-dind-net-cluster-${secondClusterID}$")" -eq 1 || {
+              fail 'Expected one network to exist - cluster created with custom ID'
+            }
+            test "$(countNetworksWithFilter "name=kubeadm-dind-net-${thirdClusterLabel}$")" -eq 1 || {
               fail 'Expected one network to exist - cluster created with custom label'
             }
 
@@ -286,12 +306,16 @@ test_multiple_clusters: &test_multiple_clusters
             hasKubeContext "dind" || {
               fail 'Expected to have context - cluster created with default label'
             }
-            hasKubeContext "dind-${customSha}" || {
+            hasKubeContext "dind-cluster-${secondClusterID}" || {
+              fail 'Expected to have context - cluster created with custom ID'
+            }
+            hasKubeContext "dind-${thirdClusterLabel}" || {
               fail 'Expected to have context - cluster created with custom label'
             }
 
             "${d}" clean
-            DIND_LABEL="$customLabel" "${d}" clean
+            CLUSTER_ID="$secondClusterID" "${d}" clean
+            DIND_LABEL="$thirdClusterLabel" "${d}" clean
           }
 
           function hasKubeContext() {
@@ -409,6 +433,14 @@ jobs:
     <<: *defaults
     environment:
       <<: *env
+      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.11
+    <<: *test_multiple_clusters
+
+  test_multiple_clusters_1.11_ipv6:
+    <<: *defaults
+    environment:
+      <<: *env
+      IP_MODE: ipv6
       DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.11
     <<: *test_multiple_clusters
 
@@ -723,6 +755,9 @@ workflows:
         requires:
         - build
     - test_multiple_clusters_1.11:
+        requires:
+        - build
+    - test_multiple_clusters_1.11_ipv6:
         requires:
         - build
     - test_1.8:
