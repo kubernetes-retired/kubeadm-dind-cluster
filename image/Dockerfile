@@ -100,6 +100,7 @@ COPY dindnet /usr/local/bin
 COPY snapshot /usr/local/bin
 COPY kubeadm.conf.tmpl /etc/kubeadm.conf.tmpl
 COPY dind-cluster-rbd /usr/bin/rbd
+COPY node-info /
 
 # Remove unwanted systemd services.
 # TODO: use 'systemctl mask' to disable units
