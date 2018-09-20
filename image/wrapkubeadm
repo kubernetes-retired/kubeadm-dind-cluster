@@ -58,7 +58,7 @@ function dind::proxy-cidr-and-no-conntrack {
 }
 
 is_master=
-if [[ "$(hostname)" = kube-master ]]; then
+if [[ "$(hostname)" == kube-master* ]]; then
   is_master=y
 fi
 
