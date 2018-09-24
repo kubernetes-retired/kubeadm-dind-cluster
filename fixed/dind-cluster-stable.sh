@@ -233,6 +233,37 @@ function dind::make-ip-from-cidr {
   fi
 }
 
+# dind::add-cluster-id-and-validate-nat64-prefix will modify the IPv4 mapping
+# subnet prefix, by adding the cluster ID (default 0) to the second octet.
+# It will produce an error, if the prefix is not in the 10.0.0.0/8 or
+# 172.16.0.0/12 private networks.
+function dind::add-cluster-id-and-validate-nat64-prefix {
+  local parts
+  IFS="." read -a parts <<<${NAT64_V4_SUBNET_PREFIX}
+  if [[ ${#parts[@]} -ne 2 ]]; then
+    echo "ERROR! NAT64_V4_SUBNET_PREFIX must be two octets (have '${NAT64_V4_SUBNET_PREFIX}')"
+    exit 1
+  fi
+  (( parts[1]+=${CLUSTER_ID} ))
+  NAT64_V4_SUBNET_PREFIX="${parts[0]}.${parts[1]}"
+  echo "Added cluster ID offset (${CLUSTER_ID}) to NAT64_V4_SUBNET_PREFIX giving prefix '${NAT64_V4_SUBNET_PREFIX}'"
+  if [[ ${parts[0]} -eq 10 ]]; then
+    if [[ ${parts[1]} > 253 ]]; then
+      echo "ERROR! NAT64_V4_SUBNET_PREFIX is too large for 10.0.0.0/8 private net"
+      exit 1
+    fi
+  elif [[ ${parts[0]} -eq 172 ]]; then
+    if [[ ${parts[1]} -lt 16 || ${parts[1]} -gt 31 ]]; then
+      echo "ERROR! NAT64_V4_SUBNET_PREFIX is outside of range for 172.16.0.0/12 private net"
+      exit 1
+    fi
+  else
+      echo "ERROR! NAT64_V4_SUBNET_PREFIX is not in 10.0.0.0/8 or 172.16.0.0/12 private networks"
+      exit 1
+  fi
+  echo "Using NAT64 V4 mapping network prefix: ${NAT64_V4_SUBNET_PREFIX}"
+}
+
 
 # START OF PROCESSING...
 
@@ -253,7 +284,14 @@ fi
 # using the new method, but want custom names), the resourse name will have the
 # suffix "-#" with the cluster ID. If no cluster ID is specified (for backward
 # compatibility), then the resource name will be just the DIND_LABEL, and a pseudo-
-# random number used for the cluster ID to be used in the management subnet creation.
+# random number from 1..13 will be generated for the cluster ID to be used in
+# management network. The range is limited, because, in IPv6 mode, the cluster ID
+# is used in the NAT64 V4 subnet prefix, which must be in a private network.
+# The default is 172.18, so the cluster ID cannot be larger than 13 to guarantee
+# a valid value.
+#
+# To get around that limitation, you can set the cluster ID, in addition to the
+# DIND_LABEL, and optionally, change the NAT64_V4_SUBNET_PREFIX value.
 #
 DEFAULT_DIND_LABEL='mirantis.kubeadm_dind_cluster_runtime'
 if [[ -z ${DIND_LABEL+x} ]]; then  # No legacy DIND_LABEL set
@@ -268,11 +306,11 @@ if [[ -z ${DIND_LABEL+x} ]]; then  # No legacy DIND_LABEL set
     fi
   fi
 else  # Legacy DIND_LABEL set for multi-cluster
-  if [[ -z ${CLUSTER_ID+x} ]]; then  # No cluster ID set, make one from 1..254, but don't use in resource names
-    CLUSTER_ID="$(( ($RANDOM % 253) + 1 ))"
+  if [[ -z ${CLUSTER_ID+x} ]]; then  # No cluster ID set, make one from 1..13, but don't use in resource names
+    CLUSTER_ID="$(( ($RANDOM % 12) + 1 ))"
   else
     if [[ ${CLUSTER_ID} = "0" ]]; then
-      CLUSTER_ID="$(( ($RANDOM % 253) + 1 ))"  # Force a pseudo-random cluster for additional legacy cluster
+      CLUSTER_ID="$(( ($RANDOM % 12) + 1 ))"  # Force a pseudo-random cluster for additional legacy cluster
     else
       DIND_LABEL="${DIND_LABEL}-${CLUSTER_ID}"
     fi
@@ -344,7 +382,8 @@ if [[ ${IP_MODE} == "ipv6" ]]; then
   DNS64_PREFIX_CIDR="${DNS64_PREFIX}/${DNS64_PREFIX_SIZE}"
 
   LOCAL_NAT64_SERVER="$( dind::make-ip-from-cidr ${mgmt_net_cidrs[0]} 0x200 )"
-  NAT64_V4_SUBNET_PREFIX="${NAT64_V4_SUBNET_PREFIX:-172}.${CLUSTER_ID}"
+  NAT64_V4_SUBNET_PREFIX="${NAT64_V4_SUBNET_PREFIX:-172.18}"
+  dind::add-cluster-id-and-validate-nat64-prefix
 else
   dns_server="${REMOTE_DNS64_V4SERVER}"
 fi
