@@ -441,6 +441,11 @@ jobs:
     environment:
       <<: *env
       IP_MODE: ipv6
+      # Ensure no collisions for NAT64 V4 mapping subnet prefix. First cluster will use 10.100,
+      # second will use 10.120 (cluster ID 20), and third will use random value from 10.101 to
+      # 10.113 (using legacy DIND_LABEL w/o cluster ID, causes random offet from 1..13 to be
+      # added to base prefix.
+      NAT64_V4_SUBNET_PREFIX: "10.100"
       DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.11
     <<: *test_multiple_clusters
 

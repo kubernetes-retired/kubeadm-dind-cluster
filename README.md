@@ -200,7 +200,7 @@ export EMBBEDDED_CONFIG=y
 export DNS64_PREFIX=fd00:77:64:ff9b::
 export DIND_SUBNET=fd00:77::
 export SERVICE_CIDR=fd00:77:30::/110
-export NAT64_V4_SUBNET_PREFIX=172
+export NAT64_V4_SUBNET_PREFIX=172.20
 ```
 
 NOTE: The DNS64 and NAT64 containers that are created on the host, persist
@@ -214,11 +214,14 @@ NOTE: At this time, there is not isolation between clusters. Nodes on one cluste
 can ping nodes on another cluster (appears to be isolation iptables rules, instead
 of ip6tables rules).
 
-NOTE: The IPv4 mapping subnet used by NAT64, will have the cluster ID embedded in
-the prefix. When customizing, specify only the first octet of the subnet prefix,
-and the cluster ID will be added as the second prefix (zero, for single cluster).
-For example, if CLUSTER_ID="50", the default NAT64_V4_SUBNET_PREFIX will be
-"172.50", forming a subnet 172.50.0.0/16.
+NOTE: The IPv4 mapping subnet used by NAT64, can be overridden from the default of
+172.18.0.0/16, by specifying the first two octets in NAT64_V4_SUBNET_PREFIX (you
+cannot change the size). This prefix must be within the 10.0.0.0/8 or 172.16.0.0/12
+private network ranges. Be aware, that, in a multi-cluster setup, the cluster ID,
+which defaults to zero, will be added to the second octet of the prefix. You must
+ensure that the resulting prefix is still within the private network's range. For
+example, if CLUSTER_ID="10", the default NAT64_V4_SUBNET_PREFIX will be
+"172.28", forming a subnet 172.28.0.0/16.
 
 NOTE: If you use `kube-router` for networking, IPv6 is not supported, as of
 July 2018.
@@ -310,10 +313,17 @@ addresses.
 
 For IPv4, the cluster ID will be used as the third octet of the management address
 (whether default or user specified). For example, with cluster ID "10", the default
-management network CIDR will be 10.192.10.0/24. For Ipv6, the cluster ID will be
+management network CIDR will be 10.192.10.0/24. For IPv6, the cluster ID will be
 placed as the hextet before the double colon, for the management CIDR. For example,
 a management ntwork CIDR of fd00:20::/64 will become fd00:20:2::/64, for a cluster
 ID of '2'.
+
+NOTE: The cluster ID can be limited in some cases. For IPv6 mode, the cluster ID is
+also used in the NAT64 prefix, and that prifix must be within one of the RFC-1918
+private network ranges. If the 172.16.0.0/12 private network is used, the cluster ID
+cannot be more than 15 (and less, if a higher base prefix is specified by the
+NAT64_V4_SUBNET_PREFIX, like the default 172.18, which would allow cluster IDs up to
+13).
 
 Note: If the MGMT_CIDR (or legacy DIND_SUBNET/DIND_SUBNET_SIZE) environment variables
 are set for the management network, they must be able to accommodate the cluster ID
@@ -322,11 +332,12 @@ injection.
 In addition to the management network, the resource names will have the suffix
 "-cluster-#", where # is the CLUSTER_ID. The context for kubectl will be "dind-cluster-#".
 
-For legacy support (or if a user wants a custom cluster name), if DIND_LABEL is set,
-then resources will have the suffix "-{DIND_LABEL}-#", with the number set to the cluster
-ID. If no cluster ID is specified, as would be for backwards-compatibility, or it is zero,
-the resource names will just use the DIND_LABEL, and a pseudo-random number from 1..254
-will be used for the management network.
+For legacy support (or if a user wants a custom cluster name), setting the DIND_LABEL
+will create a resource suffix "-{DIND_LABEL}-#", where # is the cluster ID. If no
+cluster ID is specified, as would be for backwards-compatibility, or it is zero, the
+resource names will just use the DIND_LABEL, and a pseudo-random number from 1..13 will
+be used for the cluster ID to be applied to the management network, and in case of IPv6,
+the NAT64 V4 mapping subnet prefix (hence the limitation).
 
 Example usage:
 
