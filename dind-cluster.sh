@@ -1174,9 +1174,17 @@ function dind::init {
   done
 
   kubeadm_version="$(dind::kubeadm-version)"
-  api_version="kubeadm.k8s.io/v1alpha2"
+  api_version="kubeadm.k8s.io/v1alpha3"
+  kind="ClusterConfiguration"
+  api_endpoint="apiEndpoint:"
   if [[ ${kubeadm_version} =~ 1\.(8|9|10)\. ]]; then
     api_version="kubeadm.k8s.io/v1alpha1"
+    kind="MasterConfiguration"
+    api_endpoint="api:"
+  elif [[ ${kubeadm_version} =~ 1\.(11|12)\. ]]; then
+    api_version="kubeadm.k8s.io/v1alpha2"
+    kind="MasterConfiguration"
+    api_endpoint="api:"
   fi
   local mgmt_cidr=${mgmt_net_cidrs[0]}
   if [[ ${IP_MODE} = "dual-stack" && $( dind::family-for ${SERVICE_CIDR} ) = "ipv6" ]]; then
@@ -1198,6 +1206,8 @@ sed -e "s|{{API_VERSION}}|${api_version}|" \
     -e "s|{{CONTROLLER_MANAGER_EXTRA_ARGS}}|${controller_manager_extra_args}|" \
     -e "s|{{SCHEDULER_EXTRA_ARGS}}|${scheduler_extra_args}|" \
     -e "s|{{KUBE_MASTER_NAME}}|${master_name}|" \
+    -e "s|{{KUBEADM_KIND}}|${kind}|" \
+    -e "s|{{API_ENDPOINT}}|${api_endpoint}|" \
     /etc/kubeadm.conf.tmpl > /etc/kubeadm.conf
 EOF
   init_args=(--config /etc/kubeadm.conf)

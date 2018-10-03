@@ -4,9 +4,9 @@
 #   SVC_SUBNET, BIND_ADDR
 apiVersion: {{API_VERSION}}
 unifiedControlPlaneImage: mirantis/hypokube:final
-kind: MasterConfiguration
+kind: "{{KUBEADM_KIND}}"
 kubernetesVersion: "{{KUBEADM_VERSION}}"
-api:
+{{API_ENDPOINT}}
   advertiseAddress: "{{ADV_ADDR}}"
 networking:
   {{POD_SUBNET_DISABLE}}podSubnet: "{{POD_NETWORK_CIDR}}"
