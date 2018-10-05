@@ -88,7 +88,7 @@ rebuilds if you use `BUILD_HYPERKUBE=y` like described below).
 
 ## Using with Kubernetes source
 ```shell
-$ git clone git@github.com:kubernetes-sigs/kubeadm-dind-cluster.git ~/dind
+$ git clone https://github.com/kubernetes-sigs/kubeadm-dind-cluster.git ~/dind
 
 $ cd ~/work/kubernetes/src/k8s.io/kubernetes
 
