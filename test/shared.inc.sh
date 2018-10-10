@@ -33,21 +33,22 @@ function fail() {
 
 function get-ip-for-pod() {
   local pod_name="$1"
-  local tries=100
+  local mode="$2"
+  local ip=""
 
   kubectl="${kubectl:-kubectl}"
 
-  while (( tries-- ))
-  do
-    ip="$( $kubectl get pod "$pod_name" -o 'go-template={{ .status.podIP }}' )"
-    if [ -n "$ip" ] && [ "$ip" != '<no value>' ]
-    then
+  if [[ ${mode} = "ipv6" ]]; then
+    ip="$( $kubectl exec $pod_name ip addr list eth0 | grep -i global | grep -w inet6 | head -1 | awk '$1 == "inet6" {print $2}' | cut -f 1 -d"/" )"
+  else
+    ip="$( $kubectl exec $pod_name ip addr list eth0 | grep -i global | grep -w inet | head -1 | awk '$1 == "inet" {print $2}' | cut -f 1 -d"/" )"
+  fi
+
+  if [[ -n "$ip" ]]; then
       echo "$ip"
-      return
-    fi
-    sleep 1
-  done
-  return 1
+  else
+      echo "UNKNOWN"
+  fi
 }
 
 function get-node-selector-override() {

@@ -120,11 +120,15 @@ function dind::add-cluster {
 #
 # NOTE: It is expected that the CIDR size is /24 for IPv4 management networks.
 #
-# TODO: Generalize so this can be used for pod network to support dual-stack.
+# For pod CIDRs, the size will be increased by 8, to leave room for the node ID to be
+# injected into the address.
+#
+# NOTE: For IPv4, the pod size is expected to be /16 -> /24 in usage.
 #
 function dind::get-and-validate-cidrs {
   IFS=', ' read -r -a cidrs <<< "$1"
   IFS=', ' read -r -a defaults <<< "$2"
+  local is_mgmt=$3
   case ${IP_MODE} in
     ipv4)
       case ${#cidrs[@]} in
@@ -142,7 +146,9 @@ function dind::get-and-validate-cidrs {
 	echo "ERROR! CIDR must be IPv4 value"
 	exit 1
       fi
-      cidrs[0]="$( dind::add-cluster "${cidrs[0]}" "${IP_MODE}" )"
+      if [[ ${is_mgmt} = true ]]; then
+        cidrs[0]="$( dind::add-cluster "${cidrs[0]}" "${IP_MODE}" )"
+      fi
       ;;
 
     ipv6)
@@ -161,7 +167,9 @@ function dind::get-and-validate-cidrs {
 	echo "ERROR! CIDR must be IPv6 value"
 	exit 1
       fi
-      cidrs[0]="$( dind::add-cluster "${cidrs[0]}" "${IP_MODE}" )"
+      if [[ ${is_mgmt} = true ]]; then
+        cidrs[0]="$( dind::add-cluster "${cidrs[0]}" "${IP_MODE}" )"
+      fi
       ;;
 
     dual-stack)
@@ -208,8 +216,10 @@ function dind::get-and-validate-cidrs {
         echo "ERROR! Missing IPv6 CIDR in '$1'"
         exit 1
       fi
-      cidrs[0]="$( dind::add-cluster "${cidrs[0]}" "${IP_MODE}" )"
-      cidrs[1]="$( dind::add-cluster "${cidrs[1]}" "${IP_MODE}" )"
+      if [[ ${is_mgmt} = true ]]; then
+        cidrs[0]="$( dind::add-cluster "${cidrs[0]}" "${IP_MODE}" )"
+        cidrs[1]="$( dind::add-cluster "${cidrs[1]}" "${IP_MODE}" )"
+      fi
       ;;
   esac
   echo "${cidrs[@]}"
@@ -268,6 +278,7 @@ function dind::add-cluster-id-and-validate-nat64-prefix {
 # START OF PROCESSING...
 
 IP_MODE="${IP_MODE:-ipv4}"  # ipv4, ipv6, dual-stack
+# FUTURE: Once dual-stack support is released, check K8s version, and reject for older versions.
 if [[ ! ${EMBEDDED_CONFIG:-} ]]; then
   source "${DIND_ROOT}/config.sh"
 fi
@@ -333,9 +344,10 @@ if [[ ${IP_MODE} = "dual-stack" ]]; then
   KUBE_RSYNC_ADDR="${KUBE_RSYNC_ADDR:-::1}"
   SERVICE_CIDR="${SERVICE_CIDR:-fd00:30::/110}"  # Will default to IPv6 service net family
 
-  DEFAULT_POD_NETWORK_CIDR="fd00:40::/72"  # TODO: convert for dual-stack
+  pod_net_defaults="10.244.0.0/16, fd00:40::/72"
 
   USE_HAIRPIN="${USE_HAIRPIN:-true}"  # Default is to use hairpin for dual-stack
+  DIND_ALLOW_AAAA_USE=true  # Forced, so can access external hosts via IPv6
   if [[ ${DIND_ALLOW_AAAA_USE} && ${GCE_HOSTED} ]]; then
     echo "ERROR! GCE does not support use of IPv6 for external addresses - aborting."
     exit 1
@@ -346,7 +358,7 @@ elif [[ ${IP_MODE} = "ipv6" ]]; then
   KUBE_RSYNC_ADDR="${KUBE_RSYNC_ADDR:-::1}"
   SERVICE_CIDR="${SERVICE_CIDR:-fd00:30::/110}"
 
-  DEFAULT_POD_NETWORK_CIDR="fd00:40::/72"  # TODO: convert for dual-stack
+  pod_net_defaults="fd00:40::/72"
 
   USE_HAIRPIN="${USE_HAIRPIN:-true}"  # Default is to use hairpin for IPv6
   if [[ ${DIND_ALLOW_AAAA_USE} && ${GCE_HOSTED} ]]; then
@@ -359,7 +371,7 @@ else  # IPv4 mode
   KUBE_RSYNC_ADDR="${KUBE_RSYNC_ADDR:-127.0.0.1}"
   SERVICE_CIDR="${SERVICE_CIDR:-10.96.0.0/12}"
 
-  DEFAULT_POD_NETWORK_CIDR="10.244.0.0/16"  # TODO: convert for dual-stack
+  pod_net_defaults="10.244.0.0/16"
 
   USE_HAIRPIN="${USE_HAIRPIN:-false}"  # Disabled for IPv4, as issue with Virtlet networking
   if [[ ${DIND_ALLOW_AAAA_USE} ]]; then
@@ -367,11 +379,11 @@ else  # IPv4 mode
     DIND_ALLOW_AAAA_USE=
   fi
   if [[ ${CNI_PLUGIN} = "calico" || ${CNI_PLUGIN} = "calico-kdd" ]]; then
-    DEFAULT_POD_NETWORK_CIDR="192.168.0.0/16"  # TODO: convert for dual-stack?
+    pod_net_defaults="192.168.0.0/16"
   fi
 fi
 
-IFS=' ' read -r -a mgmt_net_cidrs <<<$( dind::get-and-validate-cidrs "${MGMT_CIDRS:-${legacy_mgmt_cidr}}" "${mgmt_net_defaults[@]}" )
+IFS=' ' read -r -a mgmt_net_cidrs <<<$( dind::get-and-validate-cidrs "${MGMT_CIDRS:-${legacy_mgmt_cidr}}" "${mgmt_net_defaults[@]}" true )
 
 REMOTE_DNS64_V4SERVER="${REMOTE_DNS64_V4SERVER:-8.8.8.8}"
 if [[ ${IP_MODE} == "ipv6" ]]; then
@@ -393,40 +405,82 @@ DNS_SVC_IP="$( dind::make-ip-from-cidr ${SERVICE_CIDR} 10 )"
 
 ETCD_HOST="${ETCD_HOST:-$( dind::localhost )}"
 
-POD_NETWORK_CIDR="${POD_NETWORK_CIDR:-${DEFAULT_POD_NETWORK_CIDR}}"
-if [[ ${IP_MODE} = "ipv6" ]]; then
-    # For IPv6 will extract the network part and size from pod cluster CIDR.
-    # The size will be increased by eight, as the pod network will be split
-    # into subnets for each node. The network part will be converted into a
-    # prefix that will get the node ID appended, for each node. In some cases
-    # this means padding the prefix. In other cases, the prefix must be
-    # trimmed, so that when the node ID is added, it forms a correct prefix.
-    POD_NET_PREFIX="$(echo ${POD_NETWORK_CIDR} | sed 's,::/.*,:,')"
-    cluster_size="$(echo ${POD_NETWORK_CIDR} | sed 's,.*::/,,')"
-    POD_NET_SIZE=$((${cluster_size}+8))
+IFS=' ' read -r -a pod_net_cidrs <<<$( dind::get-and-validate-cidrs "${POD_NETWORK_CIDR:-}" "${pod_net_defaults[@]}" false )
 
-    num_colons="$(grep -o ":" <<< "${POD_NET_PREFIX}" | wc -l)"
+declare -a pod_prefixes
+declare -a pod_sizes
+# Extract the prefix and size from the provided pod CIDR(s), based on the IP mode of each. The
+# size will be increased by 8, to make room for the node ID to be added to the prefix later.
+# Bridge and PTP plugins can process IPv4 and IPv6 pod CIDRs, other plugins must be IPv4 only.
+for pod_cidr in "${pod_net_cidrs[@]}"; do
+  if [[ $( dind::family-for "${pod_cidr}" ) = "ipv4" ]]; then
+    actual_size=$( echo ${pod_cidr} | sed 's,.*/,,' )
+    if [[ ${actual_size} -ne 16 ]]; then
+	echo "ERROR! For IPv4 CIDRs, the size must be /16. Have '${pod_cidr}'"
+	exit 1
+    fi
+    pod_sizes+=( 24 )
+    pod_prefixes+=( "$(echo ${pod_cidr} | sed 's/^\([0-9]*\.[0-9]*\.\).*/\1/')" )
+  else  # IPv6
+    if [[ ${CNI_PLUGIN} != "bridge" && ${CNI_PLUGIN} != "ptp" ]]; then
+      echo "ERROR! IPv6 pod networks are only supported by bridge adn PTP CNI plugins"
+      exit 1
+    fi
+    # There are several cases to address. First, is normal split of prefix and size:
+    #   fd00:10:20:30::/64  --->  fd00:10:20:30:  /72
+    #
+    # Second, is when the prefix needs to be padded, so that node ID can be added later:
+    #   fd00:10::/64  --->  fd00:10:0:0:  /72
+    #
+    # Third, is when the low order part of the address, must be removed for the prefix,
+    # as the node ID will be placed in the lower byte:
+    #   fd00:10:20:30:4000::/72  --->  fd00:10:20:30:40  /80
+    #
+    # We will attempt to check for three error cases. One is when the address part is
+    # way too big for the size specified:
+    #   fd00:10:20:30:40::/48  --->  fd00:10:20:  /56 desired, but conflict with 30:40:
+    #
+    # Another is when the address part, once trimmed for the size, would loose info:
+    #   fd00:10:20:1234::/56  --->  fd00:10:20:12  /64, but lost 34:, which conflicts
+    #
+    # Lastly, again, trimming would leave high byte in hextet, conflicting with
+    # the node ID:
+    #   fd00:10:20:30:1200::/64  --->  fd00:10:20:30:12  /72, but 12 conflicts
+    #
+    # Note: later, the node ID will be appended to the prefix generated.
+    #
+    cluster_size="$(echo ${pod_cidr} | sed 's,.*::/,,')"
+    pod_sizes+=( $((${cluster_size}+8)) )
+
+    pod_prefix="$(echo ${pod_cidr} | sed 's,::/.*,:,')"
+    num_colons="$(grep -o ":" <<< "${pod_prefix}" | wc -l)"
     need_zero_pads=$((${cluster_size}/16))
 
-    # Will be replacing lowest byte with node ID, so pull off last byte and colon
+    if [[ ${num_colons} -gt $((need_zero_pads + 1)) ]]; then
+	echo "ERROR! Address part of CIDR (${pod_prefix}) is too large for /${cluster_size}"
+	exit 1
+    fi
     if [[ ${num_colons} -gt ${need_zero_pads} ]]; then
-	POD_NET_PREFIX=${POD_NET_PREFIX::-3}
+      # Will be replacing lowest byte with node ID, so pull off lower byte and colon
+	if [[ ${pod_prefix: -3} != "00:" ]]; then   # last byte is not zero
+	  echo "ERROR! Cannot trim address part of CIDR (${pod_prefix}) to fit in /${cluster_size}"
+	  exit 1
+	fi
+	pod_prefix=${pod_prefix::-3}
+	if [[ $(( ${cluster_size} % 16 )) -eq 0 && $( ${pod_prefix: -1} ) != ":" ]]; then  # should not be upper byte for this size CIDR
+	  echo "ERROR! Trimmed address part of CIDR (${pod_prefix}) is still too large for /${cluster_size}"
+	  exit 1
+	fi
     fi
     # Add in zeros to pad 16 bits at a time, up to the padding needed, which is
     # need_zero_pads - num_colons.
     while [ ${num_colons} -lt ${need_zero_pads} ]; do
-	POD_NET_PREFIX+="0:"
-        num_colons+=1
+	pod_prefix+="0:"
+      ((num_colons++))
     done
-elif [[ ${CNI_PLUGIN} = "bridge" || ${CNI_PLUGIN} = "ptp" ]]; then # IPv4, bridge or ptp
-    # For IPv4, will assume user specifies /16 CIDR and will use a /24 subnet
-    # on each node.
-    POD_NET_PREFIX="$(echo ${POD_NETWORK_CIDR} | sed 's/^\([0-9]*\.[0-9]*\.\).*/\1/')"
-    POD_NET_SIZE=24
-else
-    POD_NET_PREFIX=
-    POD_NET_SIZE=
-fi
+    pod_prefixes+=( "${pod_prefix}" )
+  fi
+done
 
 DIND_IMAGE="${DIND_IMAGE:-}"
 BUILD_KUBEADM="${BUILD_KUBEADM:-}"
@@ -792,16 +846,16 @@ function dind::ensure-network {
     for cidr in "${mgmt_net_cidrs[@]}"; do
       if [[ $( dind::family-for ${cidr} ) = "ipv6" ]]; then
                 args+=(--ipv6)
-        fi
-        args+=(--subnet="${cidr}")
-        local gw=$( dind::make-ip-from-cidr ${cidr} 1 )
-        args+=(--gateway="${gw}")
-      done
-        if [[ ${IP_MODE} = "ipv6" ]]; then
-            # Need second network for NAT64 V4 mapping network
-            args+=(--subnet=${NAT64_V4_SUBNET_PREFIX}.0.0/16)
-        fi
-        docker network create ${args[@]} $(dind::net-name) >/dev/null
+      fi
+      args+=(--subnet="${cidr}")
+      local gw=$( dind::make-ip-from-cidr ${cidr} 1 )
+      args+=(--gateway="${gw}")
+    done
+    if [[ ${IP_MODE} = "ipv6" ]]; then
+      # Need second network for NAT64 V4 mapping network
+      args+=(--subnet=${NAT64_V4_SUBNET_PREFIX}.0.0/16)
+    fi
+    docker network create ${args[@]} $(dind::net-name) >/dev/null
   fi
 }
 
@@ -915,23 +969,33 @@ function dind::run {
     opts+=(--dns ${dns_server})
     args+=("systemd.setenv=DNS64_PREFIX_CIDR=${DNS64_PREFIX_CIDR}")
     args+=("systemd.setenv=LOCAL_NAT64_SERVER=${LOCAL_NAT64_SERVER}")
+  fi
 
+  declare -a pod_nets
+  local i=0
+  if [[ ${IP_MODE} = "ipv4" || ${IP_MODE} = "dual-stack" ]]; then
+    pod_nets+=("${pod_prefixes[$i]}${node_id}")
+    i=$((i+1))
+  fi
+  if [[ ${IP_MODE} = "ipv6" || ${IP_MODE} = "dual-stack" ]]; then
     # For prefix, if node ID will be in the upper byte, push it over
-    if [[ $((${POD_NET_SIZE} % 16)) -ne 0 ]]; then
-      node_id=$(printf "%02x00\n" "${node_id}")
+    if [[ $((${pod_sizes[$i]} % 16)) -ne 0 ]]; then
+      n_id=$(printf "%02x00\n" "${node_id}")
     else
-      if [[ "${POD_NET_PREFIX: -1}" = ":" ]]; then
-	node_id=$(printf "%x\n" "${node_id}")
+      if [[ "${pod_prefixes[$i]: -1}" = ":" ]]; then
+	n_id=$(printf "%x\n" "${node_id}")
       else
-        node_id=$(printf "%02x\n" "${node_id}")  # In lower byte, so ensure two chars
+        n_id=$(printf "%02x\n" "${node_id}")  # In lower byte, so ensure two chars
       fi
     fi
+    pod_nets+=("${pod_prefixes[$i]}${n_id}")
   fi
 
-  if [[ ${POD_NET_PREFIX} ]]; then
-    args+=("systemd.setenv=POD_NET_PREFIX=${POD_NET_PREFIX}${node_id}")
-  fi
-  args+=("systemd.setenv=POD_NET_SIZE=${POD_NET_SIZE}")
+  args+=("systemd.setenv=POD_NET_PREFIX=\"${pod_nets[0]}\"")
+  args+=("systemd.setenv=POD_NET_SIZE=\"${pod_sizes[0]}\"")
+  args+=("systemd.setenv=POD_NET2_PREFIX=\"${pod_nets[1]:-}\"")
+  args+=("systemd.setenv=POD_NET2_SIZE=\"${pod_sizes[1]:-}\"")
+  args+=("systemd.setenv=SERVICE_NET_MODE=${SERVICE_NET_MODE}")
   args+=("systemd.setenv=USE_HAIRPIN=${USE_HAIRPIN}")
   args+=("systemd.setenv=DNS_SVC_IP=${DNS_SVC_IP}")
   args+=("systemd.setenv=DNS_SERVICE=${DNS_SERVICE}")
@@ -1108,6 +1172,20 @@ function dind::kubeadm-skip-checks-flag {
   fi
 }
 
+function dind::verify-image-compatibility {
+  # We can't tell in advance, if the image selected supports dual-stack,
+  # but will do the next best thing, and check as soon as start up kube-master
+  local master_name=$1
+  if [[ ${IP_MODE} = "dual-stack" ]]; then
+    local dual_stack_support="$(docker exec ${master_name} cat /node-info 2>/dev/null | grep "dual-stack-support" | wc -l)"
+    if [[ ${dual_stack_support} -eq 0 ]]; then
+      echo "ERROR! DinD image (${DIND_IMAGE}) does not support dual-stack mode - aborting!"
+      dind::remove-images "${DIND_LABEL}"
+      exit 1
+    fi
+  fi
+}
+
 function dind::init {
   local -a opts
   dind::set-master-opts
@@ -1115,6 +1193,9 @@ function dind::init {
   master_name="$(dind::master-name)"
   local_host="$( dind::localhost )"
   container_id=$(dind::run "${master_name}" 1 "${local_host}:$(dind::apiserver-port):${INTERNAL_APISERVER_PORT}" ${master_opts[@]+"${master_opts[@]}"})
+
+  dind::verify-image-compatibility ${master_name}
+
   # FIXME: I tried using custom tokens with 'kubeadm ex token create' but join failed with:
   # 'failed to parse response as JWS object [square/go-jose: compact JWS format must have three parts]'
   # So we just pick the line from 'kubeadm init' output
@@ -1127,7 +1208,7 @@ function dind::init {
     pod_subnet_disable=""
   fi
   local bind_address="0.0.0.0"
-  if [[ ${IP_MODE} = "ipv6" ]]; then
+  if [[ ${SERVICE_NET_MODE} = "ipv6" ]]; then
     bind_address="::"
   fi
   dind::proxy "$master_name"
@@ -1135,7 +1216,7 @@ function dind::init {
 
   # HACK: Indicating mode, so that wrapkubeadm will not set a cluster CIDR for kube-proxy
   # in IPv6 (only) mode.
-  if [[ ${IP_MODE} = "ipv6" ]]; then
+  if [[ ${SERVICE_NET_MODE} = "ipv6" ]]; then
     docker exec --privileged -i "$master_name" touch /v6-mode
   fi
 
@@ -1187,7 +1268,7 @@ function dind::init {
     api_endpoint="api:"
   fi
   local mgmt_cidr=${mgmt_net_cidrs[0]}
-  if [[ ${IP_MODE} = "dual-stack" && $( dind::family-for ${SERVICE_CIDR} ) = "ipv6" ]]; then
+  if [[ ${IP_MODE} = "dual-stack" && ${SERVICE_NET_MODE} = "ipv6" ]]; then
       mgmt_cidr=${mgmt_net_cidrs[1]}
   fi
   local master_ip=$( dind::make-ip-from-cidr ${mgmt_cidr} 2 )
@@ -1195,7 +1276,7 @@ function dind::init {
 sed -e "s|{{API_VERSION}}|${api_version}|" \
     -e "s|{{ADV_ADDR}}|${master_ip}|" \
     -e "s|{{POD_SUBNET_DISABLE}}|${pod_subnet_disable}|" \
-    -e "s|{{POD_NETWORK_CIDR}}|${POD_NETWORK_CIDR}|" \
+    -e "s|{{POD_NETWORK_CIDR}}|${pod_net_cidrs[0]}|" \
     -e "s|{{SVC_SUBNET}}|${SERVICE_CIDR}|" \
     -e "s|{{BIND_ADDR}}|${bind_address}|" \
     -e "s|{{BIND_PORT}}|${INTERNAL_APISERVER_PORT}|" \
@@ -1312,19 +1393,25 @@ function dind::create-static-routes {
         dest_node="$(dind::node-name $j)"
       fi
       id=$((${j}+1))
-      if [[ ${IP_MODE} = "ipv4" ]]; then
+      if [[ ${IP_MODE} = "ipv4" || ${IP_MODE} = "dual-stack" ]]; then
 	# Assuming pod subnets will all be /24
-        dest="${POD_NET_PREFIX}${id}.0/24"
+        dest="${pod_prefixes[0]}${id}.0/24"
         gw=`docker exec ${dest_node} ip addr show eth0 | grep -w inet | awk '{ print $2 }' | sed 's,/.*,,'`
-      else
+        docker exec "${node}" ip route add "${dest}" via "${gw}"
+      fi
+      if [[ ${IP_MODE} = "ipv6" || ${IP_MODE} = "dual-stack" ]]; then
+	local position=0
+	if [[ ${IP_MODE} = "dual-stack" ]]; then
+	    position=1
+	fi
 	instance=$(printf "%02x" ${id})
-	if [[ $((${POD_NET_SIZE} % 16)) -ne 0 ]]; then
+	if [[ $((${pod_sizes[$position]} % 16)) -ne 0 ]]; then
 	  instance+="00" # Move node ID to upper byte
 	fi
-	dest="${POD_NET_PREFIX}${instance}::/${POD_NET_SIZE}"
+	dest="${pod_prefixes[$position]}${instance}::/${pod_sizes[$position]}"
         gw=`docker exec ${dest_node} ip addr show eth0 | grep -w inet6 | grep -i global | head -1 | awk '{ print $2 }' | sed 's,/.*,,'`
+        docker exec "${node}" ip route add "${dest}" via "${gw}"
       fi
-      docker exec "${node}" ip route add "${dest}" via "${gw}"
     done
   done
 }
@@ -1337,12 +1424,15 @@ function dind::setup_external_access_on_host {
     return
   fi
   local main_if=`ip route | grep default | awk '{print $5}'`
-  local bridge_if=`ip route | grep ${NAT64_V4_SUBNET_PREFIX}.0.0 | awk '{print $3}'`
   dind::ip6tables-on-hostnet -t nat -A POSTROUTING -o $main_if -j MASQUERADE
+  if [[ ${IP_MODE} = "dual-stack" ]]; then
+    return
+  fi
+  local bridge_if=`ip route | grep ${NAT64_V4_SUBNET_PREFIX}.0.0 | awk '{print $3}'`
   if [[ -n "$bridge_if" ]]; then
     dind::ip6tables-on-hostnet -A FORWARD -i $bridge_if -j ACCEPT
   else
-    echo "WARNING! No $(dind::net-name) bridge - unable to setup forwarding/SNAT"
+    echo "WARNING! No $(dind::net-name) bridge with NAT64 - unable to setup forwarding/SNAT"
   fi
 }
 
@@ -1353,14 +1443,17 @@ function dind::remove_external_access_on_host {
   fi
   local have_rule
   local main_if="$(ip route | grep default | awk '{print $5}')"
-  local bridge_if="$(ip route | grep ${NAT64_V4_SUBNET_PREFIX}.0.0 | awk '{print $3}')"
-
   have_rule="$(dind::ip6tables-on-hostnet -S -t nat | grep "\-o $main_if" || true)"
   if [[ -n "$have_rule" ]]; then
     dind::ip6tables-on-hostnet -t nat -D POSTROUTING -o $main_if -j MASQUERADE
   else
     echo "Skipping delete of ip6tables rule for SNAT, as rule non-existent"
   fi
+
+  if [[ ${IP_MODE} = "dual-stack" ]]; then
+    return
+  fi
+  local bridge_if="$(ip route | grep ${NAT64_V4_SUBNET_PREFIX}.0.0 | awk '{print $3}')"
   if [[ -n "$bridge_if" ]]; then
     have_rule="$(dind::ip6tables-on-hostnet -S | grep "\-i $bridge_if" || true)"
     if [[ -n "$have_rule" ]]; then
@@ -1369,7 +1462,7 @@ function dind::remove_external_access_on_host {
       echo "Skipping delete of ip6tables rule for forwarding, as rule non-existent"
     fi
   else
-    echo "Skipping delete of ip6tables rule for forwarding, as no bridge interface"
+    echo "Skipping delete of ip6tables rule for forwarding, as no bridge interface using NAT64"
   fi
 }
 
@@ -1527,7 +1620,7 @@ function dind::up {
   echo "Cluster ID: ${CLUSTER_ID}"
   echo "Management CIDR(s): ${mgmt_net_cidrs[@]}"
   echo "Service CIDR/mode: ${SERVICE_CIDR}/${SERVICE_NET_MODE}"
-  echo "Pod CIDR(s): ${POD_NETWORK_CIDR}"
+  echo "Pod CIDR(s): ${pod_net_cidrs[@]}"
 }
 
 function dind::fix-mounts {
@@ -1574,7 +1667,7 @@ function dind::restore_container {
 function dind::restore {
   local apiserver_port local_host pid pids
   dind::down
-  dind::step "Restoring master container"
+  dind::step "Restoring containers"
   dind::set-master-opts
   local_host="$( dind::localhost )"
   apiserver_port="$( dind::apiserver-port )"
@@ -1583,6 +1676,7 @@ function dind::restore {
       if [[ n -eq 0 ]]; then
         dind::step "Restoring master container"
         dind::restore_container "$(dind::run -r "$(dind::master-name)" 1 "${local_host}:${apiserver_port}:${INTERNAL_APISERVER_PORT}" ${master_opts[@]+"${master_opts[@]}"})"
+        dind::verify-image-compatibility "$(dind::master-name)"
         dind::step "Master container restored"
       else
         dind::step "Restoring node container:" ${n}

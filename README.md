@@ -153,9 +153,9 @@ the nodes would be fd00:10:20:0::2, fd00:10:20:0::3, etc.
 
 The defaults are 10.192.0.0/24 for IPv4, and fd00:20::/64 for IPv6.
 
-TODO: Dual stack will allow MGMT_CIDRS to be a comman separated list
-of CIDRS (one IPv4, one IPv6), with defaults above used for unspecified
-values.
+For dual-stack mode, a comma separated list with IPv4 and IPv6 can be
+specified. Any omitted CIDR will use the default value above, based on
+the IP mode.
 
 ### Service network
 The service network CIDR, can be specified by SERVICE_CIDR. For IPv4, the
@@ -169,7 +169,7 @@ in the cluster.
 For IPv4, the value must be a /16, of which this will be split into multiple
 /24 subnets. The master node will set the third octet to 2, and the minion
 nodes will set the third octet to 3+. For example, with 10.244.0.0/16, pods
-on the master node will be 10.244.2.X, on minionnkube-node-1 will be 10.244.3.Y,
+on the master node will be 10.244.2.X, on minion kube-node-1 will be 10.244.3.Y,
 on minion kube-node-2 will be 10.244.4.Z, etc.
 
 For IPv6, the CIDR will again be split into subnets, eigth bits smaller. For
@@ -179,6 +179,10 @@ instead was fd00:10:20:30::/64, the master node woudl have a CIDR of
 fd00:10:20:30:0200::/72, and pods would be fd00:10:20:30:0200::X.
 
 The defaults are 10.244.0.0/16 for IPv4, and fd00:40::/72 for IPv6.
+
+For dual-stack mode, a comma separated list with IPv4 and IPv6 CIDR can be
+specified. Any omitted CIDR will use the default value above, based on the
+IP mode.
 
 ## Kube-router
 Instead of using kube-proxy and static routes (with bridge CNI plugin),
@@ -210,7 +214,7 @@ down/up cycles. When `clean` is done, these containers are removed.
 NOTE: In multi-cluster, there will be DNS and NAT64 containers for each cluster,
 with thier names including the cluster suffix (e.g. bind9-cluster-50).
 
-NOTE: At this time, there is not isolation between clusters. Nodes on one cluster
+NOTE: At this time, there is no isolation between clusters. Nodes on one cluster
 can ping nodes on another cluster (appears to be isolation iptables rules, instead
 of ip6tables rules).
 
@@ -378,6 +382,38 @@ $ kubectl --context dind-cluster-10 get all
 $ kubectl --context dind-foo get all
 ```
 
+## Dual-stack Operation
+By setting the `IP_MODE` environment variable to `dual-stack`, the cluster
+created will be in dual-stack mode. This means there will be an IPv4 and
+IPv6 address for pods (pod net) and nodes (mgmt net). The service network
+will still be single mode, based on the CIDR used (default is IPv6 mode
+with fd00:30::/110).
+
+The MGMT_CIDRS and POD_NETWORK_CIDR environment variables can be used to
+customize the management and pod networks, respectively.
+
+For this mode, static routes will be created on each node, for both IPv4
+and IPv6, to allow pods to communicate across nodes.
+
+### Limitations
+Dual-stack mode for k-d-c is only available when using the bridge or PTP
+CNI plugins.
+
+The initial version will not be using DNS64/NAT64, meaning that the cluster
+must have access to the outside via IPv6 (or use an external DNS64/NAT64).
+This implies that it will not work, out of the box, with GCE, which provides
+only IPv4 access to the outside world.
+
+The functionality of the cluster in dual-stack mode, depends on the
+implementation of the dual-stack KEP. As of this commit, implementation
+of the KEP is only beginning, so some things will not work yet. Consider
+this commit as support for a WIP.
+
+One known current limitation is that the service network must use the IPv4
+family, as currently IPv4 is preferred, when both are available and logic
+doesn't force famliy to IPv6. As a result, endpoints are still IPv4, when
+service network is IPv6 (and doesn't work correctly).
+
 ## Motivation
 `hack/local-up-cluster.sh` is widely used for k8s development. It has
 a couple of serious issues though. First of all, it only supports
@@ -425,6 +461,12 @@ currently have some issues. You may still try running them though:
 ```
 $ dind/dind-cluster.sh e2e-serial
 ```
+
+When restoring a cluster (either using `restore` or by doing `down` and
+then `up`), be sure to use the same IP mode. The DinD network that is
+created as part of the `up` operation, will persist after a `down`
+command and will not have the correct configuration, if the IP mode has
+changed.
 
 ## Contributing to & Testing `kubeadm-dind-cluster`
 

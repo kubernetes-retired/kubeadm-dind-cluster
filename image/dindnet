@@ -23,7 +23,7 @@ function get_interface_info_for {
   local from_intf=$1
   IPV4_CIDR=$(ip addr show $from_intf | grep -w inet | awk '{ print $2; }')
   IPV4="$(echo ${IPV4_CIDR} | sed 's,/.*,,')"
-  if [[ "${IP_MODE}" = "ipv6" ]]; then
+  if [[ "${IP_MODE}" = "ipv6" || ${IP_MODE} = "dual-stack" ]]; then
     IPV6_CIDR="$(ip addr show $from_intf | grep -w inet6 | grep -i global | head -1 | awk '{ print $2; }')"
     IPV6="$(echo ${IPV6_CIDR} | sed 's,/.*,,')"
   fi
@@ -39,10 +39,13 @@ function dind::setup-bridge {
   fi
 
   ip link add dind0 type bridge
-  if [[ "${IP_MODE}" = "ipv6" ]]; then
-    ip -6 addr add "${POD_NET_PREFIX}::1/${POD_NET_SIZE}" dev dind0
-  else
-    ip addr add "${POD_NET_PREFIX}.1/${POD_NET_SIZE}" dev dind0
+  local i=0
+  if [[ ${IP_MODE} = "ipv4" || ${IP_MODE} = "dual-stack" ]]; then
+    ip addr add "${pod_prefixes[$i]}.1/${pod_sizes[$i]}" dev dind0
+    i=$(( i+1 ))
+  fi
+  if [[ "${IP_MODE}" = "ipv6" || ${IP_MODE} = "dual-stack" ]]; then
+    ip -6 addr add "${pod_prefixes[$i]}::1/${pod_sizes[$i]}" dev dind0
   fi
   # To prevent MAC on dind0 from dynamically changing, create a dummy I/F enslaved in
   # dind0 and set the MAC of dind0 to match.
@@ -54,25 +57,17 @@ function dind::setup-bridge {
   ip link set dind0 up
 }
 
-function ptp-cni-contents {
+function ptp-cni-contents-start {
   cat <<PTP_CONTENTS
 {
   "cniVersion": "0.3.1",
   "name": "dindnet",
   "type": "ptp",
   "ipMasq": true,
-  "ipam": {
-    "type": "host-local",
-    "subnet": "${NETWORK}/${POD_NET_SIZE}",
-    "routes": [
-      {"dst": "${DEFAULT_ROUTE}"}
-    ]
-  }
-}
 PTP_CONTENTS
 }
 
-function bridge-cni-contents {
+function bridge-cni-contents-start {
   # NOTE: hairpin mode for CNI bridge breaks Virtlet networking,
   # to be investigated & fixed. For now, default is false for IPv4
   # and true for IPv6, unless overridden.
@@ -85,47 +80,90 @@ function bridge-cni-contents {
   "isDefaultGateway": true,
   "hairpinMode": ${USE_HAIRPIN},
   "ipMasq": true,
-  "ipam": {
-      "type": "host-local",
-      "subnet": "${NETWORK}/${POD_NET_SIZE}",
-      "gateway": "${DEFAULT_GW}"
-  }
-}
 BRIDGE_CONTENTS
 }
 
+function dind::ipam-cni-contents-end {
+  cat <<IPAM_HEADER
+
+  "ipam": {
+    "type": "host-local",
+    "ranges": [
+IPAM_HEADER
+
+  local last_entry=$(( ${#pod_prefixes[@]} - 1 ))
+  for i in ${!pod_prefixes[@]}; do
+    local net_suffix=".0"
+    local gw_suffix=".1"
+    if [[ ${IP_MODE} = "ipv6" || $i -eq 1 ]]; then  # IPv6 only or second entry for dual-stack
+      net_suffix="::"
+      gw_suffix="::1"
+    fi
+    cat <<RANGE_ENTRY
+      [
+        {
+          "subnet": "${pod_prefixes[$i]}${net_suffix}/${pod_sizes[$i]}",
+          "gateway": "${pod_prefixes[$i]}${gw_suffix}"
+        }
+RANGE_ENTRY
+    if [[ $i -eq $last_entry ]]; then
+      echo "      ]"
+    else
+      echo "      ],"
+    fi
+  done
+
+  cat <<RANGE_END
+    ],
+    "routes": [
+RANGE_END
+
+  for i in ${!pod_prefixes[@]}; do
+    local default_route="0.0.0.0/0"
+    if [[ ${IP_MODE} = "ipv6" || $i -eq 1 ]]; then  # IPv6 only or second entry for dual-stack
+      default_route="::/0"
+    fi
+    cat <<ROUTE_ENTRY
+      {
+        "dst": "${default_route}"
+ROUTE_ENTRY
+    if [[ $i -eq $last_entry ]]; then
+      echo "      }"
+    else
+      echo "      },"
+    fi
+  done
+
+  cat <<IPAM_TRAILER
+    ]
+  }
+}
+IPAM_TRAILER
+}
+
 function dind::setup-config-file {
-  if [[ "${IP_MODE}" = "ipv6" ]]; then
-    NETWORK="${POD_NET_PREFIX}::"
-    DEFAULT_GW="${POD_NET_PREFIX}::1"
-    DEFAULT_ROUTE="::/0"
-  else
-    NETWORK="${POD_NET_PREFIX}.0"
-    DEFAULT_GW="${POD_NET_PREFIX}.1"
-    DEFAULT_ROUTE="0.0.0.0/0"
-  fi
-  echo "Subnet ${NETWORK}/${POD_NET_SIZE}"
   CONFIG_FILE="/etc/cni/net.d/cni.conf"
   mkdir -p "$(dirname "${CONFIG_FILE}")"
   if [[ ${CNI_PLUGIN} = "ptp" ]]; then
-    contents="$(ptp-cni-contents)"
+    contents="$(ptp-cni-contents-start)"
   else
-    contents="$(bridge-cni-contents)"
+    contents="$(bridge-cni-contents-start)"
   fi
+  contents+="$(dind::ipam-cni-contents-end)"
   echo "${contents}" >${CONFIG_FILE}
   echo "Config file created: ${CONFIG_FILE}"
 }
 
 function dind::make-kubelet-extra-dns-args {
-    if [[ "${IP_MODE}" = "ipv6" ]]; then
-	# Create drop-in file here, where we know the DNS IP.
-	mkdir -p /etc/systemd/system/kubelet.service.d
-	cat >/etc/systemd/system/kubelet.service.d/20-extra-dns-args.conf <<EOF
+  if [[ "${SERVICE_NET_MODE}" = "ipv6" ]]; then
+    # Create drop-in file here, where we know the DNS IP.
+    mkdir -p /etc/systemd/system/kubelet.service.d
+    cat >/etc/systemd/system/kubelet.service.d/20-extra-dns-args.conf <<EOF
 [Service]
 Environment="KUBELET_DNS_ARGS=--cluster-dns=${DNS_SVC_IP} --cluster-domain=cluster.local"
 EOF
-	echo "Using DNS ${DNS_SVC_IP} for kubelet in IPv6 mode"
-    fi
+    echo "Using DNS ${DNS_SVC_IP} for kubelet in IPv6 mode"
+  fi
 }
 
 function dind::setup-external-access {
@@ -134,23 +172,31 @@ function dind::setup-external-access {
   fi
 }
 
+
 # ******************** START ********************
 get_interface_info_for eth0
 
-if [[ ! -z "${POD_NET_PREFIX:-}" && ${POD_NET_SIZE:-0} -ne 0 ]]; then
+if [[ ${CNI_PLUGIN} = "bridge" || ${CNI_PLUGIN} = "ptp" ]]; then
+  IFS=" " read -r -a pod_sizes <<< "${POD_NET_SIZE} ${POD_NET2_SIZE}"
+  IFS=" " read -r -a pod_prefixes <<< "${POD_NET_PREFIX} ${POD_NET2_PREFIX}"
+
   dind::setup-bridge
   dind::setup-external-access
   dind::setup-config-file
   dind::make-kubelet-extra-dns-args
 fi
 
+if [[ ${SERVICE_NET_MODE} = "ipv6" ]]; then
+  # INTERIM: Set host IP to match service family so that kube-system pods use that family
+  # TODO: check if this trickery is still needed, esp. for the hosts file
+  # (instead of using sed -i)
+  sed -e "s/^${IPV4}/${IPV6}/g" /etc/hosts > /etc/hosts.updated
+  cp /etc/hosts /etc/hosts.orig
+  cat /etc/hosts.updated >/etc/hosts
+fi
+
 if [[ "${IP_MODE}" = "ipv6" ]]; then
   if ! grep -q '#fixed#' /etc/resolv.conf; then
-    # TODO: check if this trickery is still needed, esp. for the hosts file
-    # (instead of using sed -i)  
-    sed -e "s/^${IPV4}/${IPV6}/g" /etc/hosts > /etc/hosts.updated
-    cp /etc/hosts /etc/hosts.orig
-    cat /etc/hosts.updated >/etc/hosts
     # Removed embedded docker DNS, as we'll only be using IPv6, which is already in resolv.conf
     sed "s/^nameserver.*127\.0\.0\.11/# Removed 127.0.0.11/" /etc/resolv.conf >/etc/resolv.conf.updated
     cp /etc/resolv.conf /etc/resolv.conf.orig
@@ -158,13 +204,13 @@ if [[ "${IP_MODE}" = "ipv6" ]]; then
     (echo; echo '#fixed#') >>/etc/resolv.conf
     echo "Host and DNS info updated"
   fi
-  echo "Setup completed for IPv6"
+  echo "Setup completed for IPv6 mode"
   set +x
   while true; do
       sleep 1  # Keep service running, so actions not attempted multiple times
   done
-else
-  if ! grep -q '#fixed#' /etc/resolv.conf; then
+else  # IPv4 or dual-stack
+    if ! grep -q '#fixed#' /etc/resolv.conf; then
     # make docker's kube-dns friendly
     old_ns="$(awk '/^nameserver/ {print $2; exit}' /etc/resolv.conf)"
     if [[ -z ${old_ns} ]]; then
@@ -176,7 +222,7 @@ else
     cp /etc/resolv.conf /etc/resolv.conf.orig
     cat /etc/resolv.conf.updated >/etc/resolv.conf
     (echo; echo '#fixed#') >>/etc/resolv.conf
-    echo "Setup completed for IPv4"
+    echo "Setup completed for ${IP_MODE} mode"
   else
     # Already switched from built-in DNS server, so use original value for socat 
     old_ns="127.0.0.11"

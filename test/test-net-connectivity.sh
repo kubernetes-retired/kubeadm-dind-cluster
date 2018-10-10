@@ -21,14 +21,16 @@ set -o errtrace
 
 . "$( dirname "$0" )/shared.inc.sh"
 
-function setup-ipv6-only-test() {
-  export IP_MODE='ipv6'
+function setup-test() {
+  export IP_MODE="${IP_MODE:-ipv6}"
 
   # set TEST_K8S_VER to something specific, by default testing v1.11 for now
   local v="${TEST_K8S_VER:-v1.11}"
   export LOCAL_KUBECTL_VERSION="$v"
   export DIND_IMAGE="mirantis/kubeadm-dind-cluster:${v}"
-  docker pull "${DIND_IMAGE}"
+  if [[ -z ${DIND_SKIP_PULL+x} ]]; then
+    docker pull "${DIND_IMAGE}"
+  fi
 
   # Add the directory we will download kubectl into to the PATH
   # Make sure the kubectl path has precedence so we use the donwloaded binary
@@ -96,26 +98,75 @@ function create-persistent-pod() {
     --command -- /bin/sh -c 'hostname ; /bin/sleep 3600' \
     >/dev/null 2>&1
 
-  echo "$( get-ip-for-pod 'pod-on-node1' )"
+  # Wait for the pod to be up...
+  local tries=100
+  local is_up=""
+  while (( tries-- ))
+  do
+    is_up="$( kubectl get pod pod-on-node1 -o 'go-template={{ .status.phase }}' )"
+    if [[ "${is_up}" = 'Running' ]]; then
+      break
+    fi
+    sleep 1
+  done
+  echo "${is_up}"
 }
 
 function ping-tests-external() {
-  kubectl exec -ti pod-on-node1 -- ping6 -n -c1 $ipv6_enabled_host || {
-    fail "Expected ping6 to $ipv6_enabled_host to succeed"
-  }
-
-  kubectl exec -ti pod-on-node1 -- ping6 -n -c1 $ipv4_only_host || {
-    fail "Expected ping6 to $ipv4_only_host to succeed"
-  }
+  if [[ ${IP_MODE} = "ipv4" || ${IP_MODE} = "dual-stack" ]]; then
+    kubectl exec -ti pod-on-node1 -- ping -n -c1 $ipv4_only_host || {
+      fail "Expected ping to $ipv4_only_host to succeed"
+    }
+  fi
+  if [[ ${IP_MODE} = "ipv6" || ${IP_MODE} = "dual-stack" ]]; then
+    if [ -z "${DIND_ALLOW_AAAA_USE:-}" ]; then
+      kubectl exec -ti pod-on-node1 -- ping6 -n -c1 $ipv6_enabled_host || {
+        fail "Expected ping6 to $ipv6_enabled_host (using synthesized address) to succeed"
+      }
+    else
+      echo 'NOTE: Skipping direct IPv6 external ping - as not supported by CI' >&2
+    fi
+  fi
+  if [[ ${IP_MODE} = "ipv6" ]]; then  # NOTE: IPv5 only does not have direct access to IPv4 hosts
+    kubectl exec -ti pod-on-node1 -- ping6 -n -c1 $ipv4_only_host || {
+      fail "Expected ping6 to $ipv4_only_host (using synthesized address) to succeed"
+    }
+  fi
 }
 
 function ping-tests-internal() {
-  pod_on_node1_ip="$1"
-  kubectl run pod-on-node2 --attach --image=${k8s_img} --restart=Never --rm \
-    --overrides="$( get-node-selector-override kube-node-2 )" \
-    --command -- /bin/ping6 -n -c 1 "$pod_on_node1_ip" || {
-    fail 'Expected to be able to ping6 a pod by IP on a different node'
-  }
+  if [[ ${IP_MODE} = "ipv4" || ${IP_MODE} = "dual-stack" ]]; then
+    pod_on_node1_ip="$( get-ip-for-pod pod-on-node1 ipv4 )"
+    kubectl run pod-on-node2 --attach --image=${k8s_img} --restart=Never --rm \
+      --overrides="$( get-node-selector-override kube-node-2 )" \
+      --command -- /bin/ping -n -c 1 "$pod_on_node1_ip" || {
+      fail 'Expected to be able to ping a pod by IP on a different node'
+    }
+  fi
+  if [[ ${IP_MODE} = "ipv6" || ${IP_MODE} = "dual-stack" ]]; then
+    pod_on_node1_ip="$( get-ip-for-pod pod-on-node1 ipv6 )"
+    kubectl run pod-on-node2 --attach --image=${k8s_img} --restart=Never --rm \
+      --overrides="$( get-node-selector-override kube-node-2 )" \
+      --command -- /bin/ping6 -n -c 1 "$pod_on_node1_ip" || {
+      fail 'Expected to be able to ping6 a pod by IP on a different node'
+    }
+  fi
+}
+
+function test-namespace-lookup() {
+  if [[ ${IP_MODE} = "ipv4" || ${IP_MODE} = "dual-stack" ]]; then
+    verify-lookup-using-ipv4-for-ipv4-hosts "${ipv4_only_host}"
+  fi
+  if [[ ${IP_MODE} = "ipv6" || ${IP_MODE} = "dual-stack" ]]; then
+    if [[ -z "${DIND_ALLOW_AAAA_USE:-}" ]]; then
+      verify-lookup-always-using-dns64-prefix "${ipv6_enabled_host}"
+      if [[ ${IP_MODE} = "ipv6" ]]; then
+        verify-lookup-using-dns64-prefix-for-ipv4-hosts "${ipv4_only_host}"
+      fi
+    else
+      verify-lookup-using-ipv6-address-for-ipv6-hosts "${ipv6_enabled_host}"
+    fi
+  fi
 }
 
 function resolve-host() {
@@ -142,6 +193,22 @@ function resolve-host() {
   local aaaa_from_k8s="${aaaa_from_pod}"
 
   echo "${aaaa_from_host},${aaaa_from_k8s}"
+}
+
+function verify-lookup-using-ipv4-for-ipv4-hosts() {
+  local target="$1"
+
+  a_from_node="$( dns-lookup-ip-by-type-on-node 'kube-node-1' "${target}" A )" || {
+    fail "Expected to successfully resolve ${target}'s IPv4 address on kube-node-1"
+  }
+
+  a_from_pod="$( dns-lookup-ip-by-type-on-pod 'pod-on-node1' "${target}" A )" || {
+    fail "Expected to successfully resolve ${target}'s IPv4 address on a pod"
+  }
+
+  test "${a_from_node}" = "${a_from_pod}" || {
+    fail "Expected ${target} to resolve to the same IPv4 address on a node and on a pod"
+  }
 }
 
 function verify-lookup-always-using-dns64-prefix() {
@@ -198,50 +265,35 @@ function verify-lookup-using-dns64-prefix-for-ipv4-hosts() {
   fi
 }
 
-function test-case-ipv6-only() {
-  setup-ipv6-only-test
+# Testing based on IP_MODE:
+#
+# MODE       PING ACROSS NODES  EXTERNAL PING                NS LOOKUPS
+# ipv4       using v4           v4 using v4                  v4 using v4
+# ipv6       using v6           v4/v6s/v6 using v6*/v6+/v6-  v4/v6s/v6 using v6*/v6+/v6
+# dual-stack using v4, v6       v4/v6s/v6 using v4/v6%/v6-   v4/v6s/v6 using v4/v6%/v6
+#
+# v4 = IPv4, v6 = IPv6, v6s = IPv6 synthesized address (with IPv4 embedded)
+#
+# (*) NOTE: using synthesized IPv6 address with embedded IPv4 address.
+# (+) NOTE: uses A record for IPv4 address and embeds in synthesized IPv6 address.
+# (-) NOTE: pinging direct IPv6 address is not supported by CI.
+# (%) NOTE: using synthesized IPv6 address is not supported currently.
+#
+function test-case-net-connectivity() {
+  setup-test
 
   bash ${dind_run_flags} ./dind-cluster.sh up
 
-  persistent_pod_ip="$( create-persistent-pod )"
-
-  for target in "${ipv6_enabled_host}" "${ipv4_only_host}"
-  do
-    if [ -z "${DIND_ALLOW_AAAA_USE:-}" ]
-    then
-      verify-lookup-always-using-dns64-prefix "${target}"
-    else
-      if [ "$target" = "$ipv6_enabled_host" ]
-      then
-        verify-lookup-using-ipv6-address-for-ipv6-hosts "${target}"
-      else
-        verify-lookup-using-dns64-prefix-for-ipv4-hosts "${target}"
-      fi
-    fi
-  done
-
-  ping-tests-internal "$persistent_pod_ip"
-
-  if [ -z "${DIND_ALLOW_AAAA_USE:-}" ]
-  then
+  if [[ "$( create-persistent-pod )" = "Running" ]]; then
+    ping-tests-internal
     ping-tests-external
-  else
-    {
-      echo ''
-      echo 'NOTE: not testing direct external IPv6 connectivity.'
-      echo '  ... right now IPv6 in CI is only tested through NAT64 as'
-      echo '      we do not have access to an IPv6 enabled CI system.'
-      echo ''
-      echo '  ... "ping-tests-external" is skipped'
-      echo ''
-    } >&2
+    test-namespace-lookup
   fi
-
   bash ${dind_run_flags} ./dind-cluster.sh clean
 }
 
 function main() {
-  test-case-ipv6-only
+  test-case-net-connectivity
   echo "*** OK: $0 ***"
 }
 

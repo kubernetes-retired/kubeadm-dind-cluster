@@ -197,10 +197,46 @@ test_ipv6_only: &test_ipv6_only
         command: |
           docker load -i _save/images.tar
     - run:
-        name: Run ipv6 only tests
+        name: Run IPv6 connectivity tests
         no_output_timeout: 25m
         command: |
-          "${PWD}/test/test-ipv6-only.sh"
+          "${PWD}/test/test-net-connectivity.sh"
+
+test_dual_stack: &test_dual_stack
+  machine: true
+  working_directory: ~/kubeadm-dind-cluster
+  steps:
+    - checkout
+    - attach_workspace:
+        at: _save
+    - run:
+        name: Restore images
+        command: |
+          docker load -i _save/images.tar
+    - run:
+        name: Run dual stack connectivity tests
+        no_output_timeout: 25m
+        command: |
+          export IP_MODE=dual-stack
+          "${PWD}/test/test-net-connectivity.sh"
+
+test_ipv4_only: &test_ipv4_only
+  machine: true
+  working_directory: ~/kubeadm-dind-cluster
+  steps:
+    - checkout
+    - attach_workspace:
+        at: _save
+    - run:
+        name: Restore images
+        command: |
+          docker load -i _save/images.tar
+    - run:
+        name: Run IPv4 connectivity tests
+        no_output_timeout: 25m
+        command: |
+          export IP_MODE=ipv4
+          "${PWD}/test/test-net-connectivity.sh"
 
 test_multiple_clusters: &test_multiple_clusters
   steps:
@@ -449,6 +485,8 @@ jobs:
       DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.11
     <<: *test_multiple_clusters
 
+  # TODO: Test multicluster dual stack, when implemented
+
   test_1.8:
     <<: *defaults
     environment:
@@ -637,6 +675,12 @@ jobs:
       CNI_PLUGIN: ptp
     <<: *test
 
+  test_1.11_ipv4_only:
+    environment:
+      <<: *env
+      TEST_K8S_VER: 'v1.9'
+    <<: *test_ipv4_only
+
   test_1.9_ipv6_only_nat64:
     environment:
       <<: *env
@@ -675,6 +719,17 @@ jobs:
       TEST_K8S_VER: 'v1.11'
       DIND_ALLOW_AAAA_USE: 'true'
     <<: *test_ipv6_only
+
+  test_1.11_dual_stack_v4_svc_net:
+    environment:
+      <<: *env
+      TEST_K8S_VER: 'v1.11'
+      SERVICE_CIDR: "10.96.0.0/12"
+      DIND_ALLOW_AAAA_USE: 'true'
+    <<: *test_dual_stack
+
+  # TODO: test dual stack with IPv6 service network, when implemented
+  # TODO: test dual stack with NAT64/DNS64, if/when implemented
 
   test_src_release:
     <<: *defaults
@@ -837,6 +892,9 @@ workflows:
     - test_1.11_ptp:
         requires:
         - build
+    - test_1.11_ipv4_only:
+        requires:
+        - build
     - test_1.9_ipv6_only_nat64:
         requires:
         - build
@@ -853,6 +911,9 @@ workflows:
         requires:
         - build
     - test_1.11_ipv6_only_ext_aaaa:
+        requires:
+        - build
+    - test_1.11_dual_stack_v4_svc_net:
         requires:
         - build
     - test_src_release:
@@ -892,9 +953,11 @@ workflows:
         - test_1.11_weave
         - test_1.11_kube_router
         - test_1.11_ptp
+        - test_1.11_ipv4_only
         - test_1.9_ipv6_only_nat64
         - test_1.10_ipv6_only_nat64
         - test_1.11_ipv6_only_nat64
         - test_1.9_ipv6_only_ext_aaaa
         - test_1.10_ipv6_only_ext_aaaa
         - test_1.11_ipv6_only_ext_aaaa
+        - test_1.11_dual_stack_v4_svc_net
