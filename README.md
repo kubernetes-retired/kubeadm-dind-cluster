@@ -193,6 +193,12 @@ required for pods to communicate across nodes.
 
 To use kube-router, set the CNI_PLUGIN environment variable to "kube-router".
 
+NOTE: Currently pinning kube-router to v0.2.0, because of issue seen with
+cleanup, when using newer (latest) kube-router.
+
+NOTE: This has only been tested with Kubernetes 1.11, and currently fails,
+when using Kuberentes 1.12 (alpha).
+
 ## IPv6 Mode
 To run Kubernetes in IPv6 only mode, set the environment variable IP_MODE
 to "ipv6". There are additional customizations that you can make for IPv6,
