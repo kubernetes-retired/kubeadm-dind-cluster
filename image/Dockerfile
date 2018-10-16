@@ -98,7 +98,10 @@ COPY start_services /usr/local/bin/
 COPY rundocker /usr/local/bin
 COPY dindnet /usr/local/bin
 COPY snapshot /usr/local/bin
-COPY kubeadm.conf.tmpl /etc/kubeadm.conf.tmpl
+COPY kubeadm.conf.1.10.tmpl /etc/kubeadm.conf.1.10.tmpl
+COPY kubeadm.conf.1.11.tmpl /etc/kubeadm.conf.1.11.tmpl
+COPY kubeadm.conf.1.12.tmpl /etc/kubeadm.conf.1.12.tmpl
+COPY kubeadm.conf.1.13.tmpl /etc/kubeadm.conf.1.13.tmpl
 COPY dind-cluster-rbd /usr/bin/rbd
 COPY node-info /
 

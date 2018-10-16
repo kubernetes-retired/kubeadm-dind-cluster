@@ -242,6 +242,18 @@ You may edit `config.sh` to override default settings. See comments in
 CNI plugin to use via `CNI_PLUGIN` variable (`bridge`, `ptp`, `flannel`,
 `calico`, `weave`, `kube-router`).
 
+You can also edit the version appropriate kubeadm.conf.#.##.tmpl file
+in the image/ directory, to customize how KubeAdm works. This will require
+that you build a new image using build/build-local.sh and then setting this
+env variable:
+
+```
+export DIND_IMAGE==mirantis/kubeadm-dind-cluster:local
+```
+
+Just keep in mind, there are some parameters in double curly-brackets that
+are used to substitue settings, based on other dind-cluster.sh config settings.
+
 ## Remote Docker / GCE
 It's possible to build Kubernetes on a remote machine running Docker.
 kubeadm-dind-cluster can consume binaries directly from the build
