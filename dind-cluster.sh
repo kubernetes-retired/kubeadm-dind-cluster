@@ -331,6 +331,7 @@ fi
 CNI_PLUGIN="${CNI_PLUGIN:-bridge}"
 GCE_HOSTED="${GCE_HOSTED:-}"
 DIND_ALLOW_AAAA_USE="${DIND_ALLOW_AAAA_USE:-}"  # Default is to use DNS64 always for IPv6 mode
+KUBE_ROUTER_VERSION="${KUBE_ROUTER_VERSION:-v0.2.0}"
 
 # Use legacy DIND_SUBNET/DIND_SUBNET_SIZE, only if MGMT_CIDRS is not set.
 legacy_mgmt_cidr=""
@@ -423,7 +424,7 @@ for pod_cidr in "${pod_net_cidrs[@]}"; do
     pod_prefixes+=( "$(echo ${pod_cidr} | sed 's/^\([0-9]*\.[0-9]*\.\).*/\1/')" )
   else  # IPv6
     if [[ ${CNI_PLUGIN} != "bridge" && ${CNI_PLUGIN} != "ptp" ]]; then
-      echo "ERROR! IPv6 pod networks are only supported by bridge adn PTP CNI plugins"
+      echo "ERROR! IPv6 pod networks are only supported by bridge and PTP CNI plugins"
       exit 1
     fi
     # There are several cases to address. First, is normal split of prefix and size:
@@ -1535,6 +1536,190 @@ function dind::wait-for-ready {
   dind::step "Access dashboard at:" "http://${local_host}:$(dind::apiserver-port)/api/v1/namespaces/kube-system/services/kubernetes-dashboard:/proxy"
 }
 
+# dind::make-kube-router-yaml creates a temp file with contents of the configuration needed for the kube-router CNI
+# plugin at a specific version, instead of using the publically available file, which uses the latest version. This
+# allows us to control the version used. If/when updating, be sure to update the KUBE_ROUTER_VERSION env variable
+# ensure the YAML contents below, reflect the configuration in:
+#
+# https://raw.githubusercontent.com/cloudnativelabs/kube-router/master/daemonset/kubeadm-kuberouter-all-feature.yaml
+#
+# FUTURE: May be able to remove this, if/when kube-router "latest" is stable, and use the public YAML file instead.
+function dind::make-kube-router-yaml {
+  tmp_yaml=$(mktemp /tmp/kube-router-yaml.XXXXXX)
+  cat >${tmp_yaml} <<KUBE_ROUTER_YAML
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kube-router-cfg
+  namespace: kube-system
+  labels:
+    tier: node
+    k8s-app: kube-router
+data:
+  cni-conf.json: |
+    {
+      "name":"kubernetes",
+      "type":"bridge",
+      "bridge":"kube-bridge",
+      "isDefaultGateway":true,
+      "ipam": {
+        "type":"host-local"
+      }
+    }
+---
+apiVersion: extensions/v1beta1
+kind: DaemonSet
+metadata:
+  labels:
+    k8s-app: kube-router
+    tier: node
+  name: kube-router
+  namespace: kube-system
+spec:
+  template:
+    metadata:
+      labels:
+        k8s-app: kube-router
+        tier: node
+      annotations:
+        scheduler.alpha.kubernetes.io/critical-pod: ''
+    spec:
+      serviceAccountName: kube-router
+      serviceAccount: kube-router
+      containers:
+      - name: kube-router
+        image: cloudnativelabs/kube-router:${KUBE_ROUTER_VERSION}
+        imagePullPolicy: Always
+        args:
+        - --run-router=true
+        - --run-firewall=true
+        - --run-service-proxy=true
+        - --kubeconfig=/var/lib/kube-router/kubeconfig
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 20244
+          initialDelaySeconds: 10
+          periodSeconds: 3
+        resources:
+          requests:
+            cpu: 250m
+            memory: 250Mi
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: lib-modules
+          mountPath: /lib/modules
+          readOnly: true
+        - name: cni-conf-dir
+          mountPath: /etc/cni/net.d
+        - name: kubeconfig
+          mountPath: /var/lib/kube-router
+          readOnly: true
+      initContainers:
+      - name: install-cni
+        image: busybox
+        imagePullPolicy: Always
+        command:
+        - /bin/sh
+        - -c
+        - set -e -x;
+          if [ ! -f /etc/cni/net.d/10-kuberouter.conf ]; then
+            TMP=/etc/cni/net.d/.tmp-kuberouter-cfg;
+            cp /etc/kube-router/cni-conf.json \${TMP};
+            mv \${TMP} /etc/cni/net.d/10-kuberouter.conf;
+          fi
+        volumeMounts:
+        - name: cni-conf-dir
+          mountPath: /etc/cni/net.d
+        - name: kube-router-cfg
+          mountPath: /etc/kube-router
+      hostNetwork: true
+      tolerations:
+      - key: CriticalAddonsOnly
+        operator: Exists
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/master
+        operator: Exists
+      volumes:
+      - name: lib-modules
+        hostPath:
+          path: /lib/modules
+      - name: cni-conf-dir
+        hostPath:
+          path: /etc/cni/net.d
+      - name: kube-router-cfg
+        configMap:
+          name: kube-router-cfg
+      - name: kubeconfig
+        configMap:
+          name: kube-proxy
+          items:
+          - key: kubeconfig.conf
+            path: kubeconfig
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kube-router
+  namespace: kube-system
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: kube-router
+  namespace: kube-system
+rules:
+  - apiGroups:
+    - ""
+    resources:
+      - namespaces
+      - pods
+      - services
+      - nodes
+      - endpoints
+    verbs:
+      - list
+      - get
+      - watch
+  - apiGroups:
+    - "networking.k8s.io"
+    resources:
+      - networkpolicies
+    verbs:
+      - list
+      - get
+      - watch
+  - apiGroups:
+    - extensions
+    resources:
+      - networkpolicies
+    verbs:
+      - get
+      - list
+      - watch
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: kube-router
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kube-router
+subjects:
+- kind: ServiceAccount
+  name: kube-router
+  namespace: kube-system
+KUBE_ROUTER_YAML
+  echo $tmp_yaml
+}
+
 function dind::up {
   dind::down
   dind::init
@@ -1597,7 +1782,9 @@ function dind::up {
       dind::retry "${kubectl}" --context "$ctx" apply -f "https://github.com/weaveworks/weave/blob/master/prog/weave-kube/weave-daemonset-k8s-1.6.yaml?raw=true"
       ;;
     kube-router)
-      dind::retry "${kubectl}" --context "$ctx" apply -f "https://raw.githubusercontent.com/cloudnativelabs/kube-router/master/daemonset/kubeadm-kuberouter-all-features.yaml"
+      kube_router_config="$( dind::make-kube-router-yaml )"
+      dind::retry "${kubectl}" --context "$ctx" apply -f ${kube_router_config}
+      rm "${kube_router_config}"
       dind::retry "${kubectl}" --context "$ctx" -n kube-system delete ds kube-proxy
       docker run --privileged --net=host k8s.gcr.io/kube-proxy-amd64:v1.10.2 kube-proxy --cleanup
       ;;
@@ -1711,7 +1898,10 @@ function dind::down {
   if [[ ${CNI_PLUGIN} = "bridge" || ${CNI_PLUGIN} = "ptp" ]]; then
     dind::remove_external_access_on_host
   elif [[ "${CNI_PLUGIN}" = "kube-router" ]]; then
-    docker run --privileged --net=host cloudnativelabs/kube-router --cleanup-config
+    if [[ ${COMMAND} = "down" || ${COMMAND} = "clean" ]]; then
+      # FUTURE: Updated pinned version, after verifying operation 
+      docker run --privileged --net=host cloudnativelabs/kube-router:${KUBE_ROUTER_VERSION} --cleanup-config
+    fi
   fi
 }
 
@@ -2044,7 +2234,9 @@ function dind::custom-docker-opts {
   fi
 }
 
-case "${1:-}" in
+COMMAND="${1:-}"
+
+case ${COMMAND} in
   up)
     if [[ ! ( ${DIND_IMAGE} =~ local ) && ! ${DIND_SKIP_PULL:-} ]]; then
       dind::step "Making sure DIND image is up to date"
