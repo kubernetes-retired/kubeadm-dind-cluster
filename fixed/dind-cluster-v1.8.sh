@@ -1779,7 +1779,7 @@ function dind::up {
       dind::retry "${kubectl}" --context "$ctx" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/kubernetes-datastore/calico-networking/1.7/calico.yaml
       ;;
     weave)
-      dind::retry "${kubectl}" --context "$ctx" apply -f "https://github.com/weaveworks/weave/blob/master/prog/weave-kube/weave-daemonset-k8s-1.6.yaml?raw=true"
+      dind::retry "${kubectl}" --context "$ctx" apply -f "https://cloud.weave.works/k8s/net?k8s-version=$(${kubectl} --context "$ctx" version | base64 | tr -d '\n')"
       ;;
     kube-router)
       kube_router_config="$( dind::make-kube-router-yaml )"
