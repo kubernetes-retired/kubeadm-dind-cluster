@@ -21,7 +21,7 @@ better to have `kubectl` executable in your path matching the
 version of k8s binaries you're using (i.e. for example better don't
 use `kubectl` 1.10.x with `hyperkube` 1.9.x).
 
-`kubeadm-dind-cluster` supports k8s versions 1.8.x, 1.9.x and 1.10.x.
+`kubeadm-dind-cluster` supports k8s versions 1.9.x through 1.12.x.
 
 **As of now, running `kubeadm-dind-cluster` on Docker with `btrfs`
 storage driver is not supported.**
@@ -49,39 +49,39 @@ IPv6 and thus clusters cannot be formed using IPv6 addresses.
 
 ## Using preconfigured scripts
 `kubeadm-dind-cluster` currently provides preconfigured scripts for
-Kubernetes 1.8, 1.9 and 1.10. This may be convenient for use with
+Kubernetes versions 1.9 through 1.12. This may be convenient for use with
 projects that extend or use Kubernetes. For example, you can start
-Kubernetes 1.8 like this:
+Kubernetes 1.12 like this:
 
 ```shell
-$ wget https://cdn.rawgit.com/kubernetes-sigs/kubeadm-dind-cluster/master/fixed/dind-cluster-v1.8.sh
-$ chmod +x dind-cluster-v1.8.sh
+$ wget https://cdn.rawgit.com/kubernetes-sigs/kubeadm-dind-cluster/master/fixed/dind-cluster-v1.12.sh
+$ chmod +x dind-cluster-v1.12.sh
 
 $ # start the cluster
-$ ./dind-cluster-v1.8.sh up
+$ ./dind-cluster-v1.12.sh up
 
 $ # add kubectl directory to PATH
 $ export PATH="$HOME/.kubeadm-dind-cluster:$PATH"
 
 $ kubectl get nodes
-NAME                      STATUS    AGE       VERSION
-kube-master   Ready     6m        v1.8.6
-kube-node-1   Ready     5m        v1.8.6
-kube-node-2   Ready     5m        v1.8.6
+NAME          STATUS    ROLES     AGE       VERSION
+kube-master   Ready     master    4m        v1.12.1
+kube-node-1   Ready     <none>    2m        v1.12.1
+kube-node-2   Ready     <none>    2m        v1.12.1
 
 $ # k8s dashboard available at http://localhost:8080/api/v1/namespaces/kube-system/services/kubernetes-dashboard:/proxy
 
 $ # restart the cluster, this should happen much quicker than initial startup
-$ ./dind-cluster-v1.8.sh up
+$ ./dind-cluster-v1.12.sh up
 
 $ # stop the cluster
-$ ./dind-cluster-v1.8.sh down
+$ ./dind-cluster-v1.12.sh down
 
 $ # remove DIND containers and volumes
-$ ./dind-cluster-v1.8.sh clean
+$ ./dind-cluster-v1.12.sh clean
 ```
 
-Replace 1.8 with 1.9 or 1.10 to use other Kubernetes versions.
+Replace 1.12 with 1.9 .. 1.11 to use other Kubernetes versions.
 **Important note:** you need to do `./dind-cluster....sh clean` when
 you switch between Kubernetes versions (but no need to do this between
 rebuilds if you use `BUILD_HYPERKUBE=y` like described below).
