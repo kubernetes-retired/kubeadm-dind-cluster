@@ -1,0 +1,27 @@
+# Customize this, as needed, for your situation, but keep
+# the variables defined herein:
+#   ADV_ADDR, POD_SUBNET_DISABLE, POD_NETWORK_CIDR, KUBE_MASTER_NAME
+#   SVC_SUBNET, BIND_ADDR, BIND_PORT, KUBEADM_VERSION
+api:
+  advertiseAddress: "{{ADV_ADDR}}"
+apiServerExtraArgs:
+  insecure-bind-address: "{{BIND_ADDR}}"
+  insecure-port: "{{BIND_PORT}}"
+  {{COMPONENT_FEATURE_GATES}}
+{{APISERVER_EXTRA_ARGS}}
+apiVersion: kubeadm.k8s.io/v1alpha1
+controllerManagerExtraArgs:
+  {{COMPONENT_FEATURE_GATES}}
+{{CONTROLLER_MANAGER_EXTRA_ARGS}}
+featureGates: {{FEATURE_GATES}}
+kind: MasterConfiguration
+kubernetesVersion: "{{KUBEADM_VERSION}}"
+networking:
+  {{POD_SUBNET_DISABLE}}podSubnet: "{{POD_NETWORK_CIDR}}"
+  serviceSubnet: "{{SVC_SUBNET}}"
+tokenTTL: 0s
+nodeName: {{KUBE_MASTER_NAME}}
+schedulerExtraArgs:
+  {{COMPONENT_FEATURE_GATES}}
+{{SCHEDULER_EXTRA_ARGS}}
+unifiedControlPlaneImage: mirantis/hypokube:final

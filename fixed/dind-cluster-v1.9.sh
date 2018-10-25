@@ -1200,7 +1200,7 @@ function dind::init {
   # FIXME: I tried using custom tokens with 'kubeadm ex token create' but join failed with:
   # 'failed to parse response as JWS object [square/go-jose: compact JWS format must have three parts]'
   # So we just pick the line from 'kubeadm init' output
-  # Using a template file in the image to build a kubeadm.conf file and to customize
+  # Using a template file in the image (based on version) to build a kubeadm.conf file and to customize
   # it based on CNI plugin, IP mode, and environment settings. User can add additional
   # customizations to template and then rebuild the image used (build/build-local.sh).
   local pod_subnet_disable="# "
@@ -1256,26 +1256,28 @@ function dind::init {
   done
 
   kubeadm_version="$(dind::kubeadm-version)"
-  api_version="kubeadm.k8s.io/v1alpha3"
-  kind="ClusterConfiguration"
-  api_endpoint="apiEndpoint:"
-  if [[ ${kubeadm_version} =~ 1\.(8|9|10)\. ]]; then
-    api_version="kubeadm.k8s.io/v1alpha1"
-    kind="MasterConfiguration"
-    api_endpoint="api:"
-  elif [[ ${kubeadm_version} =~ 1\.(11|12)\. ]]; then
-    api_version="kubeadm.k8s.io/v1alpha2"
-    kind="MasterConfiguration"
-    api_endpoint="api:"
-  fi
+  case $kubeadm_version in
+    1\.[89]\.* | 1\.10\.*)
+      template="1.10"
+      ;;
+    1\.11\.*)
+      template="1.11"
+      ;;
+    1\.12\.*)
+      template="1.12"
+      ;;
+    *)  # Includes master branch
+      template="1.13"
+      ;;
+  esac
+
   local mgmt_cidr=${mgmt_net_cidrs[0]}
   if [[ ${IP_MODE} = "dual-stack" && ${SERVICE_NET_MODE} = "ipv6" ]]; then
       mgmt_cidr=${mgmt_net_cidrs[1]}
   fi
   local master_ip=$( dind::make-ip-from-cidr ${mgmt_cidr} 2 )
   docker exec -i "$master_name" bash <<EOF
-sed -e "s|{{API_VERSION}}|${api_version}|" \
-    -e "s|{{ADV_ADDR}}|${master_ip}|" \
+sed -e "s|{{ADV_ADDR}}|${master_ip}|" \
     -e "s|{{POD_SUBNET_DISABLE}}|${pod_subnet_disable}|" \
     -e "s|{{POD_NETWORK_CIDR}}|${pod_net_cidrs[0]}|" \
     -e "s|{{SVC_SUBNET}}|${SERVICE_CIDR}|" \
@@ -1288,9 +1290,8 @@ sed -e "s|{{API_VERSION}}|${api_version}|" \
     -e "s|{{CONTROLLER_MANAGER_EXTRA_ARGS}}|${controller_manager_extra_args}|" \
     -e "s|{{SCHEDULER_EXTRA_ARGS}}|${scheduler_extra_args}|" \
     -e "s|{{KUBE_MASTER_NAME}}|${master_name}|" \
-    -e "s|{{KUBEADM_KIND}}|${kind}|" \
-    -e "s|{{API_ENDPOINT}}|${api_endpoint}|" \
-    /etc/kubeadm.conf.tmpl > /etc/kubeadm.conf
+    -e "s|{{DNS_SVC_IP}}|${DNS_SVC_IP}|" \
+    /etc/kubeadm.conf.${template}.tmpl > /etc/kubeadm.conf
 EOF
   init_args=(--config /etc/kubeadm.conf)
   skip_preflight_arg="$(dind::kubeadm-skip-checks-flag)"
