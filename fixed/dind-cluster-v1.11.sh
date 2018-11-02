@@ -486,6 +486,10 @@ done
 DIND_IMAGE="${DIND_IMAGE:-}"
 BUILD_KUBEADM="${BUILD_KUBEADM:-}"
 BUILD_HYPERKUBE="${BUILD_HYPERKUBE:-}"
+if [[ ! -z ${DIND_K8S_BIN_DIR:-} ]]; then
+  BUILD_KUBEADM=""
+  BUILD_HYPERKUBE=""
+fi
 KUBEADM_SOURCE="${KUBEADM_SOURCE-}"
 HYPERKUBE_SOURCE="${HYPERKUBE_SOURCE-}"
 NUM_NODES=${NUM_NODES:-2}
@@ -1019,6 +1023,9 @@ function dind::run {
 
   dind::step "Starting DIND container:" "${container_name}"
 
+  if [[ ${DIND_K8S_BIN_DIR} ]]; then
+      opts+=(-v ${DIND_K8S_BIN_DIR}:/k8s)
+  fi
   if [[ ! ${using_linuxkit} ]]; then
     opts+=(-v /boot:/boot -v /lib/modules:/lib/modules)
   fi

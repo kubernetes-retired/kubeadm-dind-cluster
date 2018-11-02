@@ -26,6 +26,13 @@ DIND_IMAGE="${DIND_IMAGE:-mirantis/kubeadm-dind-cluster:stable}"
 # Set to non-empty string to enable building hyperkube
 # BUILD_HYPERKUBE=y
 
+# Use pre-built Kubernetes binaries (hyperkube and kubeadm) on the
+# host, located in the specified directory. When this environment
+# variable is set, BUILD_KUBEADM and BUILD_HYPERKUBE will be ignored.
+# This will not work with a remote docker engine (e.g. started via
+# docker-machine on GCE) unless the file is placed on the target machine.
+DIND_K8S_BIN_DIR="${DIND_K8S_BIN_DIR:-}"
+
 # download kubectl on the host
 # Set automatically based on DIND image version tag
 # if image version tag is of the form vNNN.NNN
