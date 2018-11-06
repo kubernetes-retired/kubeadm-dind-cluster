@@ -1781,10 +1781,6 @@ function dind::up {
     # FIXME: check for taint & retry if it's there
     "${kubectl}" --context "$ctx" taint nodes $(dind::master-name) node-role.kubernetes.io/master- || true
   fi
-  if [[ ${CNI_PLUGIN} = "calico" ]] && dind::kubeadm-version-at-least 1 12; then
-    echo >&2 "WARNING: for Kubernetes 1.12+, CNI_PLUGIN=calico is the same as CNI_PLUGIN=calico-kdd"
-    CNI_PLUGIN=calico-kdd
-  fi
   case "${CNI_PLUGIN}" in
     bridge | ptp)
       dind::create-static-routes
@@ -1795,7 +1791,9 @@ function dind::up {
       dind::retry "${kubectl}" --context "$ctx" apply --validate=false -f "https://github.com/coreos/flannel/blob/master/Documentation/kube-flannel.yml?raw=true"
       ;;
     calico)
-      dind::retry "${kubectl}" --context "$ctx" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/kubeadm/1.6/calico.yaml
+      dind::retry "${kubectl}" --context "$ctx" apply -f https://docs.projectcalico.org/v3.3/getting-started/kubernetes/installation/hosted/etcd.yaml
+      dind::retry "${kubectl}" --context "$ctx" apply -f https://docs.projectcalico.org/v3.3/getting-started/kubernetes/installation/rbac.yaml
+      dind::retry "${kubectl}" --context "$ctx" apply -f https://docs.projectcalico.org/v3.3/getting-started/kubernetes/installation/hosted/calico.yaml
       ;;
     calico-kdd)
       dind::retry "${kubectl}" --context "$ctx" apply -f https://docs.projectcalico.org/v3.3/getting-started/kubernetes/installation/hosted/rbac-kdd.yaml
