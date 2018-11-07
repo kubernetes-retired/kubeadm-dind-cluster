@@ -38,7 +38,7 @@ fi
 using_linuxkit=
 if ! docker info|grep -s '^Operating System: .*Docker for Windows' > /dev/null 2>&1 ; then
     if docker info|grep -s '^Kernel Version: .*-moby$' >/dev/null 2>&1 ||
-         docker info|grep -s '^Kernel Version: .*-linuxkit-' > /dev/null 2>&1 ; then
+         docker info|grep -s '^Kernel Version: .*-linuxkit' > /dev/null 2>&1 ; then
         using_linuxkit=1
     fi
 fi
