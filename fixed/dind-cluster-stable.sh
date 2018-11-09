@@ -2212,20 +2212,26 @@ function dind::proxy {
 function dind::custom-docker-opts {
   local container_id="$1"
   local -a jq=()
+  local got_changes=""
   if [[ ! -f ${DIND_DAEMON_JSON_FILE} ]] ; then
     jq[0]="{}"
   else
     jq+=("$(cat ${DIND_DAEMON_JSON_FILE})")
+    if [[ ${DIND_DAEMON_JSON_FILE} != "/etc/docker/daemon.json" ]]; then
+      got_changes=1
+    fi
   fi
   if [[ ${DIND_REGISTRY_MIRROR} ]] ; then
     dind::step "+ Setting up registry mirror on ${container_id}"
     jq+=("{\"registry-mirrors\": [\"${DIND_REGISTRY_MIRROR}\"]}")
+    got_changes=1
   fi
   if [[ ${DIND_INSECURE_REGISTRIES} ]] ; then
     dind::step "+ Setting up insecure-registries on ${container_id}"
     jq+=("{\"insecure-registries\": ${DIND_INSECURE_REGISTRIES}}")
+    got_changes=1
   fi
-  if [[ ${jq} ]] ; then
+  if [[ ${got_changes} ]] ; then
     local json=$(IFS="+"; echo "${jq[*]}")
     docker exec -i ${container_id} /bin/sh -c "mkdir -p /etc/docker && jq -n '${json}' > /etc/docker/daemon.json"
     docker exec ${container_id} systemctl daemon-reload
