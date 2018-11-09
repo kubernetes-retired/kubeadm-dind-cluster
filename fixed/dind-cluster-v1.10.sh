@@ -956,7 +956,7 @@ function dind::run {
     opts+=("${ip_mode}" "$( dind::make-ip-from-cidr ${cidr} $((${node_id}+1)) )")
   done
   opts+=("$@")
-  
+
   local -a args=("systemd.setenv=CNI_PLUGIN=${CNI_PLUGIN}")
   args+=("systemd.setenv=IP_MODE=${IP_MODE}")
   args+=("systemd.setenv=DIND_STORAGE_DRIVER=${DIND_STORAGE_DRIVER}")
@@ -1251,7 +1251,7 @@ function dind::init {
 
   kubeadm_version="$(dind::kubeadm-version)"
   case $kubeadm_version in
-    1\.[89]\.* | 1\.10\.*)
+    1\.9\.* | 1\.10\.*)
       template="1.10"
       ;;
     1\.11\.*)
@@ -1757,6 +1757,10 @@ function dind::up {
     # FIXME: check for taint & retry if it's there
     "${kubectl}" --context "$ctx" taint nodes $(dind::master-name) node-role.kubernetes.io/master- || true
   fi
+  if [[ ${CNI_PLUGIN} = "calico" && ! ( $(dind::kubeadm-version) =~ ^1\.(9|10|11)\. ) ]]; then
+    echo >&2 "WARNING: for Kubernetes 1.12+, CNI_PLUGIN=calico is the same as CNI_PLUGIN=calico-kdd"
+    CNI_PLUGIN=calico-kdd
+  fi
   case "${CNI_PLUGIN}" in
     bridge | ptp)
       dind::create-static-routes
@@ -1770,8 +1774,8 @@ function dind::up {
       dind::retry "${kubectl}" --context "$ctx" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/kubeadm/1.6/calico.yaml
       ;;
     calico-kdd)
-      dind::retry "${kubectl}" --context "$ctx" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/rbac-kdd.yaml
-      dind::retry "${kubectl}" --context "$ctx" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/kubernetes-datastore/calico-networking/1.7/calico.yaml
+      dind::retry "${kubectl}" --context "$ctx" apply -f https://docs.projectcalico.org/v3.3/getting-started/kubernetes/installation/hosted/rbac-kdd.yaml
+      dind::retry "${kubectl}" --context "$ctx" apply -f https://docs.projectcalico.org/v3.3/getting-started/kubernetes/installation/hosted/kubernetes-datastore/calico-networking/1.7/calico.yaml
       ;;
     weave)
       dind::retry "${kubectl}" --context "$ctx" apply -f "https://cloud.weave.works/k8s/net?k8s-version=$(${kubectl} --context "$ctx" version | base64 | tr -d '\n')"
@@ -1894,7 +1898,7 @@ function dind::down {
     dind::remove_external_access_on_host
   elif [[ "${CNI_PLUGIN}" = "kube-router" ]]; then
     if [[ ${COMMAND} = "down" || ${COMMAND} = "clean" ]]; then
-      # FUTURE: Updated pinned version, after verifying operation 
+      # FUTURE: Updated pinned version, after verifying operation
       docker run --privileged --net=host cloudnativelabs/kube-router:${KUBE_ROUTER_VERSION} --cleanup-config
     fi
   fi
@@ -2006,7 +2010,7 @@ function dind::do-run-e2e {
   local host="$(dind::localhost)"
   if [[ -z "$using_local_linuxdocker" ]]; then
     host="127.0.0.1"
-  fi  
+  fi
   dind::need-source
   local kubeapi test_args term=
   local -a e2e_volume_opts=()

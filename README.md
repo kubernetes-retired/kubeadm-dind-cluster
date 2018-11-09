@@ -239,8 +239,10 @@ July 2018.
 ## Configuration
 You may edit `config.sh` to override default settings. See comments in
 [the file](config.sh) for more info. In particular, you can specify
-CNI plugin to use via `CNI_PLUGIN` variable (`bridge`, `ptp`, `flannel`,
-`calico`, `weave`, `kube-router`).
+CNI plugin to use via `CNI_PLUGIN` variable (`bridge`, `ptp`,
+`flannel`, `calico`, `calico-kdd`, `weave`, `kube-router`). Note that
+for Kubernetes 1.12+, `calico` means the same as `calico-kdd` (i.e. using
+Kubernetes Datastore Driver).
 
 You can also edit the version appropriate kubeadm.conf.#.##.tmpl file
 in the image/ directory, to customize how KubeAdm works. This will require
