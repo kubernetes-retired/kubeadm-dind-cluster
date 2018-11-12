@@ -49,7 +49,7 @@ if [[ $(uname) == Linux && -z ${DOCKER_HOST:-} ]]; then
     using_local_linuxdocker=1
 fi
 
-EMBEDDED_CONFIG=y;DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.8
+EMBEDDED_CONFIG=y;DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.12
 
 # dind::localhost provides the local host IP based on the address family used for service subnet.
 function dind::localhost() {
@@ -751,25 +751,25 @@ function dind::ensure-downloaded-kubectl {
   local full_kubectl_version
 
   case "${LOCAL_KUBECTL_VERSION}" in
-    v1.8)
-      full_kubectl_version=v1.8.15
-      kubectl_sha1_linux=52a1ee321e1e8c0ecfd6e83c38bf972c2c60adf2
-      kubectl_sha1_darwin=ac3f823d7aa104237929a1e35ea400c6aa3cc356
-      ;;
     v1.9)
-      full_kubectl_version=v1.9.9
-      kubectl_sha1_linux=c8163a6360119c56d163fbd8cef8727e9841e712
-      kubectl_sha1_darwin=09585552eb7616954481789489ec382c633a0162
+      full_kubectl_version=v1.9.11
+      kubectl_sha1_linux=3dedd41a077be12668c2ee322958dd3e9e554861
+      kubectl_sha1_darwin=3b436f60ff0399b3f521d549044513358487ce20
       ;;
     v1.10)
-      full_kubectl_version=v1.10.5
-      kubectl_sha1_linux=dbe431b2684f8ff4188335b3b3cea185d5a9ec44
-      kubectl_sha1_darwin=08e58440949c71053b45bfadf80532ea3d752d12
+      full_kubectl_version=v1.10.9
+      kubectl_sha1_linux=bf3914630fe45b4f9ec1bc5e56f10fb30047f958
+      kubectl_sha1_darwin=6833874e0b24fa1857925423e4dc8aeaa322b7b3
       ;;
     v1.11)
-      full_kubectl_version=v1.11.0
-      kubectl_sha1_linux=e23f251ca0cb848802f3cb0f69a4ba297d07bfc6
-      kubectl_sha1_darwin=6eff29a328c4bc00879fd6a0c8b33690c6f75908
+      full_kubectl_version=v1.11.3
+      kubectl_sha1_linux=5a336ea470a0053b1893fda89a538b6197566137
+      kubectl_sha1_darwin=4f519f6c225f2dd663a26c5c2390849324a577cb
+      ;;
+    v1.12)
+      full_kubectl_version=v1.12.1
+      kubectl_sha1_linux=2135356e8e205816829f612062e1b5b4e1c81a17
+      kubectl_sha1_darwin=a99adb19c1fa0334ab9be37b3918e5de84436acd
       ;;
     "")
       return 0
@@ -956,7 +956,7 @@ function dind::run {
     opts+=("${ip_mode}" "$( dind::make-ip-from-cidr ${cidr} $((${node_id}+1)) )")
   done
   opts+=("$@")
-  
+
   local -a args=("systemd.setenv=CNI_PLUGIN=${CNI_PLUGIN}")
   args+=("systemd.setenv=IP_MODE=${IP_MODE}")
   args+=("systemd.setenv=DIND_STORAGE_DRIVER=${DIND_STORAGE_DRIVER}")
@@ -1221,15 +1221,9 @@ function dind::init {
     docker exec --privileged -i "$master_name" touch /v6-mode
   fi
 
-  feature_gates="{}"
+  feature_gates="{CoreDNS: false}"
   if [[ ${DNS_SERVICE} == "coredns" ]]; then
-    # can't just use 'CoreDNS: false' because
-    # it'll break k8s 1.8. FIXME: simplify
-    # after 1.8 support is removed
     feature_gates="{CoreDNS: true}"
-  elif docker exec "$master_name" kubeadm init --help 2>&1 | grep -q CoreDNS; then
-    # FIXME: CoreDNS should be the default in 1.11
-    feature_gates="{CoreDNS: false}"
   fi
 
   component_feature_gates=""
@@ -1257,7 +1251,7 @@ function dind::init {
 
   kubeadm_version="$(dind::kubeadm-version)"
   case $kubeadm_version in
-    1\.[89]\.* | 1\.10\.*)
+    1\.9\.* | 1\.10\.*)
       template="1.10"
       ;;
     1\.11\.*)
@@ -1763,6 +1757,10 @@ function dind::up {
     # FIXME: check for taint & retry if it's there
     "${kubectl}" --context "$ctx" taint nodes $(dind::master-name) node-role.kubernetes.io/master- || true
   fi
+  if [[ ${CNI_PLUGIN} = "calico" && ! ( $(dind::kubeadm-version) =~ ^1\.(9|10|11)\. ) ]]; then
+    echo >&2 "WARNING: for Kubernetes 1.12+, CNI_PLUGIN=calico is the same as CNI_PLUGIN=calico-kdd"
+    CNI_PLUGIN=calico-kdd
+  fi
   case "${CNI_PLUGIN}" in
     bridge | ptp)
       dind::create-static-routes
@@ -1776,8 +1774,8 @@ function dind::up {
       dind::retry "${kubectl}" --context "$ctx" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/kubeadm/1.6/calico.yaml
       ;;
     calico-kdd)
-      dind::retry "${kubectl}" --context "$ctx" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/rbac-kdd.yaml
-      dind::retry "${kubectl}" --context "$ctx" apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/kubernetes-datastore/calico-networking/1.7/calico.yaml
+      dind::retry "${kubectl}" --context "$ctx" apply -f https://docs.projectcalico.org/v3.3/getting-started/kubernetes/installation/hosted/rbac-kdd.yaml
+      dind::retry "${kubectl}" --context "$ctx" apply -f https://docs.projectcalico.org/v3.3/getting-started/kubernetes/installation/hosted/kubernetes-datastore/calico-networking/1.7/calico.yaml
       ;;
     weave)
       dind::retry "${kubectl}" --context "$ctx" apply -f "https://cloud.weave.works/k8s/net?k8s-version=$(${kubectl} --context "$ctx" version | base64 | tr -d '\n')"
@@ -1900,7 +1898,7 @@ function dind::down {
     dind::remove_external_access_on_host
   elif [[ "${CNI_PLUGIN}" = "kube-router" ]]; then
     if [[ ${COMMAND} = "down" || ${COMMAND} = "clean" ]]; then
-      # FUTURE: Updated pinned version, after verifying operation 
+      # FUTURE: Updated pinned version, after verifying operation
       docker run --privileged --net=host cloudnativelabs/kube-router:${KUBE_ROUTER_VERSION} --cleanup-config
     fi
   fi
@@ -2012,7 +2010,7 @@ function dind::do-run-e2e {
   local host="$(dind::localhost)"
   if [[ -z "$using_local_linuxdocker" ]]; then
     host="127.0.0.1"
-  fi  
+  fi
   dind::need-source
   local kubeapi test_args term=
   local -a e2e_volume_opts=()
@@ -2214,20 +2212,26 @@ function dind::proxy {
 function dind::custom-docker-opts {
   local container_id="$1"
   local -a jq=()
+  local got_changes=""
   if [[ ! -f ${DIND_DAEMON_JSON_FILE} ]] ; then
     jq[0]="{}"
   else
     jq+=("$(cat ${DIND_DAEMON_JSON_FILE})")
+    if [[ ${DIND_DAEMON_JSON_FILE} != "/etc/docker/daemon.json" ]]; then
+      got_changes=1
+    fi
   fi
   if [[ ${DIND_REGISTRY_MIRROR} ]] ; then
     dind::step "+ Setting up registry mirror on ${container_id}"
     jq+=("{\"registry-mirrors\": [\"${DIND_REGISTRY_MIRROR}\"]}")
+    got_changes=1
   fi
   if [[ ${DIND_INSECURE_REGISTRIES} ]] ; then
     dind::step "+ Setting up insecure-registries on ${container_id}"
     jq+=("{\"insecure-registries\": ${DIND_INSECURE_REGISTRIES}}")
+    got_changes=1
   fi
-  if [[ ${jq} ]] ; then
+  if [[ ${got_changes} ]] ; then
     local json=$(IFS="+"; echo "${jq[*]}")
     docker exec -i ${container_id} /bin/sh -c "mkdir -p /etc/docker && jq -n '${json}' > /etc/docker/daemon.json"
     docker exec ${container_id} systemctl daemon-reload
