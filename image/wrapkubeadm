@@ -164,6 +164,18 @@ function dind::ensure-binaries-and-hypokube {
     # After we "frob" the cluster, the hyperkube image is taken from /k8s directory.
     cp "${hyperkube_bin}" /hypokube/
     docker build -t "${hypokube_final_image}" -f /hypokube/hypokube.dkr /hypokube
+    hypokube_extra_tags=()
+    # In k8s 1.14+, we can't use unifiedControlPlaneImage anymore,
+    # so we have to resort to a hack by pretending we have already
+    # pulled the hyperkube image
+    # https://github.com/kubernetes/kubernetes/pull/70793
+    if kubeadm version -o short >&/dev/null; then
+        image_version="$(kubeadm version -o short|sed 's/-.*//')"
+        hypokube_extra_tags=("k8s.gcr.io/hyperkube:${image_version}")
+    fi
+    for tag in "${hypokube_extra_tags[@]}"; do
+        docker tag "${hypokube_final_image}" "${tag}"
+    done
   fi
 }
 

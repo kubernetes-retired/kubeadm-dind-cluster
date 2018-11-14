@@ -1164,13 +1164,25 @@ function dind::kubeadm-version {
   fi
 }
 
-function dind::kubeadm-skip-checks-flag {
-  kubeadm_version="$(dind::kubeadm-version)"
-  if [[ ${kubeadm_version} =~ 1\.8\. ]]; then
-    echo -n "--skip-preflight-checks"
-  else
-    echo -n "--ignore-preflight-errors=all"
+function dind::kubeadm-version-at-least {
+  local major="${1}"
+  local minor="${2}"
+  if [[ ! ( $(dind::kubeadm-version) =~ ^([0-9]+)\.([0-9]+) ) ]]; then
+    echo >&2 "WARNING: can't parse kubeadm version: $(dind::kubeadm-version)"
+    return 1
   fi
+  local act_major="${BASH_REMATCH[1]}"
+  local act_minor="${BASH_REMATCH[2]}"
+  if [[ ${act_major} -gt ${major} ]]; then
+    return 0
+  fi
+  if [[ ${act_major} -lt ${major} ]]; then
+    return 1
+  fi
+  if [[ ${act_minor} -ge ${minor} ]]; then
+    return 0
+  fi
+  return 1
 }
 
 function dind::verify-image-compatibility {
@@ -1184,6 +1196,13 @@ function dind::verify-image-compatibility {
       dind::remove-images "${DIND_LABEL}"
       exit 1
     fi
+  fi
+}
+
+function dind::check-dns-service-type {
+  if [[ ${DNS_SERVICE} = "kube-dns" ]] && dind::kubeadm-version-at-least 1 14; then
+    echo >&2 "WARNING: for 1.13+, only coredns can be used as the DNS service"
+    DNS_SERVICE="coredns"
   fi
 }
 
@@ -1226,6 +1245,29 @@ function dind::init {
     feature_gates="{CoreDNS: true}"
   fi
 
+  kubeadm_version="$(dind::kubeadm-version)"
+  case "${kubeadm_version}" in
+    1\.9\.* | 1\.10\.*)
+      template="1.10"
+      ;;
+    1\.11\.*)
+      template="1.11"
+      ;;
+    1\.12\.*)
+      template="1.12"
+      ;;
+    1\.13\.*)
+      template="1.13"
+      ;;
+    *)  # Includes master branch
+      # Will make a separate template if/when it becomes incompatible
+      template="1.13"
+      # CoreDNS can no longer be switched off
+      feature_gates="{}"
+      ;;
+  esac
+  dind::check-dns-service-type
+
   component_feature_gates=""
   if [ "${FEATURE_GATES}" != "none" ]; then
     component_feature_gates="feature-gates: \\\"${FEATURE_GATES}\\\""
@@ -1248,22 +1290,6 @@ function dind::init {
     opt_name=$(echo ${e#SCHEDULER_} | sed 's/_/-/g')
     scheduler_extra_args+="  ${opt_name}: \\\"$(eval echo \$$e)\\\"\\n"
   done
-
-  kubeadm_version="$(dind::kubeadm-version)"
-  case $kubeadm_version in
-    1\.9\.* | 1\.10\.*)
-      template="1.10"
-      ;;
-    1\.11\.*)
-      template="1.11"
-      ;;
-    1\.12\.*)
-      template="1.12"
-      ;;
-    *)  # Includes master branch
-      template="1.13"
-      ;;
-  esac
 
   local mgmt_cidr=${mgmt_net_cidrs[0]}
   if [[ ${IP_MODE} = "dual-stack" && ${SERVICE_NET_MODE} = "ipv6" ]]; then
@@ -1288,12 +1314,11 @@ sed -e "s|{{ADV_ADDR}}|${master_ip}|" \
     /etc/kubeadm.conf.${template}.tmpl > /etc/kubeadm.conf
 EOF
   init_args=(--config /etc/kubeadm.conf)
-  skip_preflight_arg="$(dind::kubeadm-skip-checks-flag)"
   # required when building from source
   if [[ ${BUILD_KUBEADM} || ${BUILD_HYPERKUBE} ]]; then
     docker exec "$master_name" mount --make-shared /k8s
   fi
-  kubeadm_join_flags="$(dind::kubeadm "${container_id}" init "${init_args[@]}" "${skip_preflight_arg}" "$@" | grep '^ *kubeadm join' | sed 's/^ *kubeadm join //')"
+  kubeadm_join_flags="$(dind::kubeadm "${container_id}" init "${init_args[@]}" --ignore-preflight-errors=all "$@" | grep '^ *kubeadm join' | sed 's/^ *kubeadm join //')"
   dind::configure-kubectl
   dind::start-port-forwarder
 }
@@ -1328,8 +1353,7 @@ function dind::join {
   shift
   dind::proxy "${container_id}"
   dind::custom-docker-opts "${container_id}"
-  skip_preflight_arg="$(dind::kubeadm-skip-checks-flag)"
-  dind::kubeadm "${container_id}" join "${skip_preflight_arg}" "$@" >/dev/null
+  dind::kubeadm "${container_id}" join --ignore-preflight-errors=all "$@" >/dev/null
 }
 
 function dind::escape-e2e-name {
@@ -1757,7 +1781,7 @@ function dind::up {
     # FIXME: check for taint & retry if it's there
     "${kubectl}" --context "$ctx" taint nodes $(dind::master-name) node-role.kubernetes.io/master- || true
   fi
-  if [[ ${CNI_PLUGIN} = "calico" && ! ( $(dind::kubeadm-version) =~ ^1\.(9|10|11)\. ) ]]; then
+  if [[ ${CNI_PLUGIN} = "calico" ]] && dind::kubeadm-version-at-least 1 12; then
     echo >&2 "WARNING: for Kubernetes 1.12+, CNI_PLUGIN=calico is the same as CNI_PLUGIN=calico-kdd"
     CNI_PLUGIN=calico-kdd
   fi
@@ -1853,6 +1877,7 @@ function dind::restore_container {
 function dind::restore {
   local apiserver_port local_host pid pids
   dind::down
+  dind::check-dns-service-type
   dind::step "Restoring containers"
   dind::set-master-opts
   local_host="$( dind::localhost )"
