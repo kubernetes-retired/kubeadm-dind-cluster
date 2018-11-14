@@ -43,7 +43,7 @@ etcd:
     dataDir: /var/lib/etcd
     image: ""
 featureGates: {{FEATURE_GATES}}
-imageRepository: k8s.gcr.io
+useHyperKubeImage: true
 kind: ClusterConfiguration
 kubernetesVersion: "{{KUBEADM_VERSION}}"
 networking:
