@@ -18,7 +18,6 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 
-
 HYPERKUBE_SOURCE="${HYPERKUBE_SOURCE:-keep://}"
 KUBEADM_SOURCE="${KUBEADM_SOURCE:-keep://}"
 
@@ -176,6 +175,10 @@ function dind::ensure-binaries-and-hypokube {
     for tag in "${hypokube_extra_tags[@]}"; do
         docker tag "${hypokube_final_image}" "${tag}"
     done
+  fi
+  if [[ ${DIND_CRI} = containerd ]]; then
+    docker image save mirantis/hypokube:final "${hypokube_extra_tags[@]}" |
+      ctr -n k8s.io images import -
   fi
 }
 

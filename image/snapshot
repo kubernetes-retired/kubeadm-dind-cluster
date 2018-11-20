@@ -27,8 +27,6 @@ function snapshot::retry {
 }
 
 function snapshot::prepare {
-
-
   if [[ -f /etc/kubernetes/manifests/kube-controller-manager.json || -f /etc/kubernetes/manifests/kube-controller-manager.yaml ]]; then
     # remove kube-dns and kube-dashboard pods to avoid 'blinking'
     # FIXME: when using k8s 1.6 kube-dns pods stay in 'Terminating' state
@@ -41,7 +39,7 @@ function snapshot::prepare {
     while kubectl get pods -n kube-system -o name | egrep -q "^pods*/(${DNS_SERVICE}-|kubernetes-dashboard-)"; do
       if ((--n == 0)); then
         echo "WARNING: controller manager glitch: dns & dashboard won't stop; pods may 'blink' for some time after restore" >&2
-        systemctl stop kubelet docker
+        systemctl stop kubelet docker containerd
         return
       fi
       sleep 0.3
@@ -96,7 +94,7 @@ function snapshot::save {
     tar -C / -cf /dind/var-run-kubernetes.tar var/run/kubernetes
   fi
 
-  systemctl start kubelet docker
+  systemctl start kubelet docker containerd
 }
 
 function snapshot::restore {
@@ -107,7 +105,7 @@ function snapshot::restore {
   if [[ ${1:-} = "-u" ]]; then
     wrapkubeadm ensure-binaries
   fi
-  start_services docker kubelet
+  start_services docker kubelet containerd
 }
 
 case "${1:-}" in
