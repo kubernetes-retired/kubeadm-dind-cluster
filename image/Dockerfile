@@ -133,6 +133,7 @@ RUN chmod +x /usr/local/bin/rundocker /usr/local/bin/dindnet /usr/local/bin/snap
       rm -f "/tmp/${CNI_ARCHIVE}" && \
     mkdir -p /etc/systemd/system/docker.service.wants && \
     ln -s /lib/systemd/system/dindnet.service /etc/systemd/system/docker.service.wants/ && \
+    ln -s /dind/containerd /var/lib/containerd && \
     ln -s /k8s/hyperkube /usr/bin/kubectl && \
     ln -s /k8s/hyperkube /usr/bin/kubelet && \
     ln -s /k8s/kubeadm /usr/bin/kubeadm

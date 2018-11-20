@@ -66,6 +66,9 @@ if [[ -f /dind-sys/sys.tar ]]; then
   tar -C / -xf /dind-sys/sys.tar
 fi
 
+# make data dir for containerd (symlinked to /var/lib/containerd in the Dockerfile)
+mkdir -p /dind/containerd
+
 function dind::retry {
   # based on retry function in hack/jenkins/ scripts in k8s source
   for i in {1..10}; do

@@ -91,4 +91,8 @@ grep "/var/lib/kubelet/pods[[:space:]]" /proc/mounts  || mount --bind /dind/pods
 mkdir -p /dind/logs /var/log/pods
 grep "/var/log/pods[[:space:]]" /proc/mounts || mount --bind /dind/logs /var/log/pods
 
+if [[ ${DIND_CRI} = containerd ]]; then
+  extra_opts+=("--cri-containerd")
+fi
+
 exec /usr/bin/dockerd -H unix:// "${extra_opts[@]}" --data-root /dind/docker "$@"

@@ -10,8 +10,12 @@ Environment="KUBELET_DNS_ARGS=--cluster-dns=10.96.0.10 --cluster-domain=cluster.
 Environment="KUBELET_EVICTION_ARGS=--eviction-hard='memory.available<100Mi,nodefs.available<100Mi,nodefs.inodesFree<1000'"
 Environment="KUBELET_DIND_ARGS="
 Environment="KUBELET_LOG_ARGS=--v=4"
+# FIXME: this breaks k8s 1.10
+# Environment="KUBELET_CONFIG_ARGS=--config=/var/lib/kubelet/config.yaml"
+EnvironmentFile=-/var/lib/kubelet/kubeadm-flags.env
+EnvironmentFile=-/etc/default/kubelet
 ExecStart=
-ExecStart=/k8s/hyperkube kubelet $KUBELET_KUBECONFIG_ARGS $KUBELET_FEATURE_ARGS $KUBELET_SYSTEM_PODS_ARGS $KUBELET_NETWORK_ARGS $KUBELET_DNS_ARGS $KUBELET_EVICTION_ARGS $KUBELET_DIND_ARGS $KUBELET_LOG_ARGS $KUBELET_EXTRA_ARGS
+ExecStart=/k8s/hyperkube kubelet $KUBELET_KUBECONFIG_ARGS $KUBELET_CONFIG_ARGS $KUBELET_KUBEADM_ARGS $KUBELET_FEATURE_ARGS $KUBELET_SYSTEM_PODS_ARGS $KUBELET_NETWORK_ARGS $KUBELET_DNS_ARGS $KUBELET_EVICTION_ARGS $KUBELET_DIND_ARGS $KUBELET_LOG_ARGS $KUBELET_EXTRA_ARGS
 Restart=always
 StartLimitInterval=0
 RestartSec=10

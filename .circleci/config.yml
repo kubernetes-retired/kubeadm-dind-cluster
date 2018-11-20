@@ -588,6 +588,14 @@ jobs:
       DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.11
     <<: *test
 
+  test_1.11_containerd:
+    <<: *defaults
+    environment:
+      <<: *env
+      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.11
+      DIND_CRI: 'containerd'
+    <<: *test
+
   test_1.11_flannel:
     <<: *defaults
     environment:
@@ -647,6 +655,14 @@ jobs:
     environment:
       <<: *env
       DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.12
+    <<: *test
+
+  test_1.12_containerd:
+    <<: *defaults
+    environment:
+      <<: *env
+      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.12
+      DIND_CRI: 'containerd'
     <<: *test
 
   test_1.12_flannel:
@@ -886,6 +902,9 @@ workflows:
     - test_1.11:
         requires:
         - build
+    - test_1.11_containerd:
+        requires:
+        - build
     # - test_1.11_flannel:
     #     requires:
     #     - build
@@ -917,6 +936,9 @@ workflows:
         requires:
         - build
     - test_1.12:
+        requires:
+        - build
+    - test_1.12_containerd:
         requires:
         - build
     - test_1.12_flannel:
@@ -978,6 +1000,7 @@ workflows:
         # - test_1.10_kube_router
         # - test_1.10_ptp
         - test_1.11
+        - test_1.11_containerd
         # - test_1.11_flannel
         # - test_1.11_calico
         # - test_1.11_calico_kdd
@@ -986,6 +1009,7 @@ workflows:
         # - test_1.11_ptp
         # - test_1.11_ipv4_only
         - test_1.12
+        - test_1.12_containerd
         - test_1.12_flannel
         # calico is the same for 1.12 as for 1.11
         # - test_1.12_calico
