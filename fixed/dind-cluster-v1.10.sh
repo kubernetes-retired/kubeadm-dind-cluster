@@ -519,6 +519,19 @@ fi
 
 ENABLE_CEPH="${ENABLE_CEPH:-}"
 
+DIND_CRI="${DIND_CRI:-docker}"
+case "${DIND_CRI}" in
+  docker)
+    CRI_SOCKET=/var/run/dockershim.sock
+    ;;
+  containerd)
+    CRI_SOCKET=/var/run/containerd/containerd.sock
+    ;;
+  *)
+    echo >&2 "Bad DIND_CRI. Please specify 'docker' or 'containerd'"
+    ;;
+esac
+
 # TODO: Test multi-cluster for IPv6, before enabling
 if [[ "${DIND_LABEL}" != "${DEFAULT_DIND_LABEL}"  && "${IP_MODE}" == 'dual-stack' ]]; then
     echo "Multiple parallel clusters currently not supported for dual-stack mode" >&2
@@ -960,6 +973,7 @@ function dind::run {
   local -a args=("systemd.setenv=CNI_PLUGIN=${CNI_PLUGIN}")
   args+=("systemd.setenv=IP_MODE=${IP_MODE}")
   args+=("systemd.setenv=DIND_STORAGE_DRIVER=${DIND_STORAGE_DRIVER}")
+  args+=("systemd.setenv=DIND_CRI=${DIND_CRI}")
 
   if [[ ${IP_MODE} != "ipv4" ]]; then
     opts+=(--sysctl net.ipv6.conf.all.disable_ipv6=0)
@@ -1061,8 +1075,9 @@ function dind::kubeadm {
   status=0
   # See image/bare/wrapkubeadm.
   # Capturing output is necessary to grab flags for 'kubeadm join'
-  kubelet_feature_gates="-e KUBELET_FEATURE_GATES=${KUBELET_FEATURE_GATES}"
-  if ! docker exec ${kubelet_feature_gates} "${container_id}" /usr/local/bin/wrapkubeadm "$@" 2>&1 | tee /dev/fd/2; then
+  local -a env=(-e KUBELET_FEATURE_GATES="${KUBELET_FEATURE_GATES}"
+                -e DIND_CRI="${DIND_CRI}")
+  if ! docker exec "${env[@]}" "${container_id}" /usr/local/bin/wrapkubeadm "$@" 2>&1 | tee /dev/fd/2; then
     echo "*** kubeadm failed" >&2
     return 1
   fi
@@ -1311,6 +1326,7 @@ sed -e "s|{{ADV_ADDR}}|${master_ip}|" \
     -e "s|{{SCHEDULER_EXTRA_ARGS}}|${scheduler_extra_args}|" \
     -e "s|{{KUBE_MASTER_NAME}}|${master_name}|" \
     -e "s|{{DNS_SVC_IP}}|${DNS_SVC_IP}|" \
+    -e "s|{{CRI_SOCKET}}|${CRI_SOCKET}|" \
     /etc/kubeadm.conf.${template}.tmpl > /etc/kubeadm.conf
 EOF
   init_args=(--config /etc/kubeadm.conf)
@@ -1854,7 +1870,11 @@ function dind::fix-mounts {
 
 function dind::snapshot_container {
   local container_name="$1"
-  docker exec -i ${container_name} /usr/local/bin/snapshot prepare
+  # we must pass DIND_CRI here because in case of containerd
+  # a special care must be taken to stop the containers during
+  # the snapshot
+  docker exec -e DIND_CRI="${DIND_CRI}" -i ${container_name} \
+         /usr/local/bin/snapshot prepare
   # remove the hidden *plnk directories
   docker diff ${container_name} | grep -v plnk | docker exec -i ${container_name} /usr/local/bin/snapshot save
 }

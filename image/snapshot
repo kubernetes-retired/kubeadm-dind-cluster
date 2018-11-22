@@ -26,9 +26,23 @@ function snapshot::retry {
   "$@"
 }
 
+function snapshot::clean-containerd {
+  if [[ ${DIND_CRI} != containerd ]]; then
+    return
+  fi
+  crictl="crictl -r unix:///var/run/containerd/containerd.sock"
+  # first, we need to stop the containers
+  ${crictl} ps -q   | xargs -r ${crictl} stop -t 0
+  # then we remove the containers
+  ${crictl} ps -qa  | xargs -r ${crictl} rm
+  # then we stop the pod sandboxes
+  ${crictl} pods -q | xargs -r ${crictl} stopp
+  # and then we remove the pod sandboxes
+  ${crictl} pods -q | xargs -r ${crictl} rmp
+  systemctl stop containerd
+}
+
 function snapshot::prepare {
-
-
   if [[ -f /etc/kubernetes/manifests/kube-controller-manager.json || -f /etc/kubernetes/manifests/kube-controller-manager.yaml ]]; then
     # remove kube-dns and kube-dashboard pods to avoid 'blinking'
     # FIXME: when using k8s 1.6 kube-dns pods stay in 'Terminating' state
@@ -42,6 +56,7 @@ function snapshot::prepare {
       if ((--n == 0)); then
         echo "WARNING: controller manager glitch: dns & dashboard won't stop; pods may 'blink' for some time after restore" >&2
         systemctl stop kubelet docker
+        snapshot::clean-containerd
         return
       fi
       sleep 0.3
@@ -71,11 +86,13 @@ function snapshot::prepare {
     done
     snapshot::retry kubectl get pods -n kube-system
     systemctl stop kubelet docker
+    snapshot::clean-containerd
     # now it's safe to put back the manifest
     mv /manifests.bak/* /etc/kubernetes/manifests/
     rmdir /manifests.bak
   else
     systemctl stop kubelet docker
+    snapshot::clean-containerd
   fi
 }
 
@@ -83,7 +100,7 @@ function snapshot::save {
   # the scripts expects output the output of 'docker diff' as input
   grep -v '^D ' |
     sed 's@^. /@@' |
-    egrep -v '^(tmp|var/log|etc/mtab|run/)' |
+    egrep -v '^(tmp|var/log|etc/mtab|run/|var/lib/containerd)' |
     while read path; do
       # Here we only add dirs if they're empty, as non-empty dirs will
       # be added automatically by tar

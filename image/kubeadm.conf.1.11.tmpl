@@ -147,6 +147,7 @@ networking:
   serviceSubnet: "{{SVC_SUBNET}}"
 nodeRegistration:
   name: {{KUBE_MASTER_NAME}}
+  criSocket: "{{CRI_SOCKET}}"
 schedulerExtraArgs:
   {{COMPONENT_FEATURE_GATES}}
 {{SCHEDULER_EXTRA_ARGS}}

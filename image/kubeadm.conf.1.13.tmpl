@@ -16,7 +16,7 @@ bootstrapTokens:
   - authentication
 kind: InitConfiguration
 nodeRegistration:
-  criSocket: /var/run/dockershim.sock
+  criSocket: "{{CRI_SOCKET}}"
   name: {{KUBE_MASTER_NAME}}
   taints:
   - effect: NoSchedule

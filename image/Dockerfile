@@ -38,6 +38,8 @@ STOPSIGNAL SIGRTMIN+3
 LABEL mirantis.kubeadm_dind_cluster=1
 
 ENV ARCH amd64
+ENV CRICTL_VERSION=v1.12.0
+ENV CRICTL_SHA256=e7d913bcce40bf54e37ab1d4b75013c823d0551e6bc088b217bc1893207b4844
 ENV CNI_VERSION=v0.7.1
 ENV CNI_ARCHIVE=cni-plugins-"${ARCH}"-"${CNI_VERSION}".tgz
 ENV CNI_SHA1=fb29e20401d3e9598a1d8e8d7992970a36de5e05
@@ -85,7 +87,13 @@ RUN curl -fsSL https://download.docker.com/linux/debian/gpg | apt-key add - && a
     "deb [arch=amd64] https://download.docker.com/linux/debian \
     $(lsb_release -cs) \
     stable"
-RUN clean-install docker-ce=17.03.2~ce-0~debian-stretch
+RUN clean-install docker-ce=5:18.09.0~3-0~debian-stretch && \
+    sed -i '/^disabled_plugins/d' /etc/containerd/config.toml
+
+RUN curl -sSL --retry 5 https://github.com/kubernetes-sigs/cri-tools/releases/download/${CRICTL_VERSION}/crictl-${CRICTL_VERSION}-linux-amd64.tar.gz >/tmp/crictl.tar.gz && \
+    echo "${CRICTL_SHA256}  /tmp/crictl.tar.gz" | sha256sum -c && \
+    tar -C /usr/local/bin -xvzf /tmp/crictl.tar.gz && \
+    rm -f /tmp/crictl.tar.gz
 
 RUN mkdir -p /hypokube /etc/systemd/system/docker.service.d /var/lib/kubelet
 
@@ -125,6 +133,7 @@ RUN chmod +x /usr/local/bin/rundocker /usr/local/bin/dindnet /usr/local/bin/snap
       rm -f "/tmp/${CNI_ARCHIVE}" && \
     mkdir -p /etc/systemd/system/docker.service.wants && \
     ln -s /lib/systemd/system/dindnet.service /etc/systemd/system/docker.service.wants/ && \
+    ln -s /dind/containerd /var/lib/containerd && \
     ln -s /k8s/hyperkube /usr/bin/kubectl && \
     ln -s /k8s/hyperkube /usr/bin/kubelet && \
     ln -s /k8s/kubeadm /usr/bin/kubeadm
