@@ -1376,7 +1376,9 @@ function dind::join {
   shift
   dind::proxy "${container_id}"
   dind::custom-docker-opts "${container_id}"
-  dind::kubeadm "${container_id}" join --ignore-preflight-errors=all "$@" >/dev/null
+  local -a join_opts=(--ignore-preflight-errors=all
+                      --cri-socket="${CRI_SOCKET}")
+  dind::kubeadm "${container_id}" join "${join_opts[@]}" "$@" >/dev/null
 }
 
 function dind::escape-e2e-name {
