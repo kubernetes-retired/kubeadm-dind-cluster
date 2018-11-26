@@ -1037,7 +1037,7 @@ function dind::run {
 
   dind::step "Starting DIND container:" "${container_name}"
 
-  if [[ ${DIND_K8S_BIN_DIR} ]]; then
+  if [[ ! -z ${DIND_K8S_BIN_DIR:-} ]]; then
       opts+=(-v ${DIND_K8S_BIN_DIR}:/k8s)
   fi
   if [[ ! ${using_linuxkit} ]]; then
