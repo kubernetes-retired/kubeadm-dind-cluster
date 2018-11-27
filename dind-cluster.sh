@@ -1791,13 +1791,18 @@ function dind::up {
       dind::retry "${kubectl}" --context "$ctx" apply --validate=false -f "https://github.com/coreos/flannel/blob/master/Documentation/kube-flannel.yml?raw=true"
       ;;
     calico)
-      dind::retry "${kubectl}" --context "$ctx" apply -f https://docs.projectcalico.org/v3.3/getting-started/kubernetes/installation/hosted/etcd.yaml
-      dind::retry "${kubectl}" --context "$ctx" apply -f https://docs.projectcalico.org/v3.3/getting-started/kubernetes/installation/rbac.yaml
-      dind::retry "${kubectl}" --context "$ctx" apply -f https://docs.projectcalico.org/v3.3/getting-started/kubernetes/installation/hosted/calico.yaml
+      manifest_base=https://docs.projectcalico.org/${CALICO_VERSION:-v3.3}/getting-started/kubernetes/installation
+      dind::retry "${kubectl}" --context "$ctx" apply -f ${manifest_base}/hosted/etcd.yaml
+      if [ "${CALICO_VERSION:-v3.3}" != master ]; then
+	  dind::retry "${kubectl}" --context "$ctx" apply -f ${manifest_base}/rbac.yaml
+      fi
+      dind::retry "${kubectl}" --context "$ctx" apply -f ${manifest_base}/hosted/calico.yaml
+      dind::retry "${kubectl}" --context "$ctx" apply -f ${manifest_base}/hosted/calicoctl.yaml
       ;;
     calico-kdd)
-      dind::retry "${kubectl}" --context "$ctx" apply -f https://docs.projectcalico.org/v3.3/getting-started/kubernetes/installation/hosted/rbac-kdd.yaml
-      dind::retry "${kubectl}" --context "$ctx" apply -f https://docs.projectcalico.org/v3.3/getting-started/kubernetes/installation/hosted/kubernetes-datastore/calico-networking/1.7/calico.yaml
+      manifest_base=https://docs.projectcalico.org/${CALICO_VERSION:-v3.3}/getting-started/kubernetes/installation
+      dind::retry "${kubectl}" --context "$ctx" apply -f ${manifest_base}/hosted/rbac-kdd.yaml
+      dind::retry "${kubectl}" --context "$ctx" apply -f ${manifest_base}/hosted/kubernetes-datastore/calico-networking/1.7/calico.yaml
       ;;
     weave)
       dind::retry "${kubectl}" --context "$ctx" apply -f "https://cloud.weave.works/k8s/net?k8s-version=$(${kubectl} --context "$ctx" version | base64 | tr -d '\n')"
