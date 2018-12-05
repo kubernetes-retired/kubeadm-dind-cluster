@@ -580,7 +580,7 @@ function dind::retry {
 }
 
 busybox_image="busybox:1.26.2"
-e2e_base_image="golang:1.9.2"
+e2e_base_image="golang:1.10.5"
 sys_volume_args=()
 build_volume_args=()
 
