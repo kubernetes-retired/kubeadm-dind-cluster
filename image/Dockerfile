@@ -44,6 +44,12 @@ ENV CNI_VERSION=v0.7.1
 ENV CNI_ARCHIVE=cni-plugins-"${ARCH}"-"${CNI_VERSION}".tgz
 ENV CNI_SHA1=fb29e20401d3e9598a1d8e8d7992970a36de5e05
 
+# Specify CONTAINERD_VERSION if containerd which ships with Docker needs to be
+# replaced. Note that containerd version must be specified w/o "v" prefix,
+# e.g. v1.2.1
+ENV CONTAINERD_VERSION=1.2.1
+ENV CONTAINERD_SHA256=9818e3af4f9aac8d55fc3f66114346db1d1acd48d45f88b2cefd3d3bafb380e0
+
 # make systemd behave correctly in Docker container
 # (e.g. accept systemd.setenv args, etc.)
 ENV container docker
@@ -93,7 +99,13 @@ RUN clean-install docker-ce=5:18.09.0~3-0~debian-stretch && \
 RUN curl -sSL --retry 5 https://github.com/kubernetes-sigs/cri-tools/releases/download/${CRICTL_VERSION}/crictl-${CRICTL_VERSION}-linux-amd64.tar.gz >/tmp/crictl.tar.gz && \
     echo "${CRICTL_SHA256}  /tmp/crictl.tar.gz" | sha256sum -c && \
     tar -C /usr/local/bin -xvzf /tmp/crictl.tar.gz && \
-    rm -f /tmp/crictl.tar.gz
+    rm -f /tmp/crictl.tar.gz && \
+    if [ ${CONTAINERD_VERSION} ]; then \
+      curl -sSL --retry 5 https://github.com/containerd/containerd/releases/download/v${CONTAINERD_VERSION}/containerd-${CONTAINERD_VERSION}.linux-amd64.tar.gz >/tmp/containerd.tar.gz && \
+      echo "${CONTAINERD_SHA256}  /tmp/containerd.tar.gz" | sha256sum -c && \
+      tar -C /usr -xvzf /tmp/containerd.tar.gz && \
+      rm -f /tmp/containerd.tar.gz; \
+    fi
 
 RUN mkdir -p /hypokube /etc/systemd/system/docker.service.d /var/lib/kubelet
 
