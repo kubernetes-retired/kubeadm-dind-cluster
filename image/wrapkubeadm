@@ -167,16 +167,16 @@ function dind::ensure-binaries-and-hypokube {
     cp "${hyperkube_bin}" /hypokube/
     docker build -t "${hypokube_final_image}" -f /hypokube/hypokube.dkr /hypokube
     hypokube_extra_tags=()
-    # In k8s 1.14+, we can't use unifiedControlPlaneImage anymore,
+    # In k8s 1.13+, we can't use unifiedControlPlaneImage anymore,
     # so we have to resort to a hack by pretending we have already
     # pulled the hyperkube image
     # https://github.com/kubernetes/kubernetes/pull/70793
     if kubeadm version -o short >&/dev/null; then
-        image_version="$(kubeadm version -o short|sed 's/-.*//')"
-        hypokube_extra_tags=("k8s.gcr.io/hyperkube:${image_version}")
+      image_version="$(kubeadm version -o short|sed 's/-.*//')"
+      hypokube_extra_tags=("k8s.gcr.io/hyperkube:${image_version}")
     fi
     for tag in "${hypokube_extra_tags[@]}"; do
-        docker tag "${hypokube_final_image}" "${tag}"
+      docker tag "${hypokube_final_image}" "${tag}"
     done
   fi
   if [[ ${DIND_CRI} = containerd ]]; then
@@ -320,15 +320,18 @@ function dind::wait-for-apiserver {
 }
 
 function dind::frob-cluster {
-  systemctl stop kubelet
-  docker ps -a -q --filter=label=io.kubernetes.pod.uid | while read container_id; do
-    docker rm -f "${container_id}"
-  done
-  dind::frob-apiserver
-  dind::frob-scheduler
-  dind::frob-controller-manager
-  start_services kubelet
-  dind::wait-for-apiserver
+  # with k8s 1.10, trying to mount hyperkube into the image fails
+  if kubeadm version -o short | grep -q '^v1\.10\.'; then
+    systemctl stop kubelet
+    docker ps -a -q --filter=label=io.kubernetes.pod.uid | while read container_id; do
+      docker rm -f "${container_id}"
+    done
+    dind::frob-apiserver
+    dind::frob-scheduler
+    dind::frob-controller-manager
+    start_services kubelet
+    dind::wait-for-apiserver
+  fi
   dind::frob-proxy
 }
 
@@ -357,6 +360,10 @@ function dind::set-kubelet-dind-args {
   dind::fix-cgroups
   if [[ ${#kubelet_dind_args[@]} -gt 0 ]]; then
     sed -i "s@KUBELET_DIND_ARGS=@KUBELET_DIND_ARGS=${kubelet_dind_args[*]}@" /lib/systemd/system/kubelet.service
+  fi
+  if kubeadm version -o short | grep -q '^v1\.10\.'; then
+    # config is not created by kubeadm 1.10
+    sed -i '/KUBELET_CONFIG_ARGS=--config/d' /lib/systemd/system/kubelet.service
   fi
 }
 

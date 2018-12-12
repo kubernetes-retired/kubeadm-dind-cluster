@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright 2017 Mirantis
+# Copyright 2018 Mirantis
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -49,7 +49,7 @@ if [[ $(uname) == Linux && -z ${DOCKER_HOST:-} ]]; then
     using_local_linuxdocker=1
 fi
 
-EMBEDDED_CONFIG=y;DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.10
+EMBEDDED_CONFIG=y;DIND_IMAGE=mirantis/kubeadm-dind-cluster:${DIND_FIXED_IMAGE_TAG:-v1.10};DOWNLOAD_KUBECTL=y;KUBECTL_VERSION=v1.10.11;KUBECTL_LINUX_SHA1=9ee2f78491cbf8dc76d644c23cfc8c955c34d55d;KUBECTL_LINUX_URL=https://storage.googleapis.com/kubernetes-release/release/v1.10.11/bin/linux/amd64/kubectl;KUBECTL_DARWIN_SHA1=1cfafe21222e7f5f809ba4e3e7a1471421998d37;KUBECTL_DARWIN_URL=https://storage.googleapis.com/kubernetes-release/release/v1.10.11/bin/darwin/amd64/kubectl
 
 # dind::localhost provides the local host IP based on the address family used for service subnet.
 function dind::localhost() {
@@ -500,7 +500,7 @@ DASHBOARD_URL="${DASHBOARD_URL:-https://rawgit.com/kubernetes/dashboard/bfab1015
 SKIP_SNAPSHOT="${SKIP_SNAPSHOT:-}"
 E2E_REPORT_DIR="${E2E_REPORT_DIR:-}"
 DIND_NO_PARALLEL_E2E="${DIND_NO_PARALLEL_E2E:-}"
-DNS_SERVICE="${DNS_SERVICE:-kube-dns}"
+DNS_SERVICE="${DNS_SERVICE:-coredns}"
 DIND_STORAGE_DRIVER="${DIND_STORAGE_DRIVER:-overlay2}"
 
 DIND_CA_CERT_URL="${DIND_CA_CERT_URL:-}"
@@ -516,10 +516,6 @@ DIND_INSECURE_REGISTRIES="${DIND_INSECURE_REGISTRIES:-}"  # json list format
 FEATURE_GATES="${FEATURE_GATES:-MountPropagation=true}"
 # you can set special value 'none' not to set any kubelet's feature gates.
 KUBELET_FEATURE_GATES="${KUBELET_FEATURE_GATES:-MountPropagation=true,DynamicKubeletConfig=true}"
-
-if [[ ! ${LOCAL_KUBECTL_VERSION:-} && ${DIND_IMAGE:-} =~ :(v[0-9]+\.[0-9]+)$ ]]; then
-  LOCAL_KUBECTL_VERSION="${BASH_REMATCH[1]}"
-fi
 
 ENABLE_CEPH="${ENABLE_CEPH:-}"
 
@@ -564,7 +560,7 @@ if [[ ${use_k8s_source} ]]; then
     build_tools_dir="build-tools"
   fi
 else
-  if [[ ! ${LOCAL_KUBECTL_VERSION:-} ]] && ! hash kubectl 2>/dev/null; then
+  if [[ ! ${DOWNLOAD_KUBECTL:-} ]] && ! hash kubectl 2>/dev/null; then
     echo "You need kubectl binary in your PATH to use prebuilt DIND image" 1>&2
     exit 1
   fi
@@ -765,47 +761,21 @@ function dind::ensure-downloaded-kubectl {
   local kubectl_sha1_darwin
   local kubectl_link
   local kubectl_os
-  local full_kubectl_version
 
-  case "${LOCAL_KUBECTL_VERSION}" in
-    v1.9)
-      full_kubectl_version=v1.9.11
-      kubectl_sha1_linux=3dedd41a077be12668c2ee322958dd3e9e554861
-      kubectl_sha1_darwin=3b436f60ff0399b3f521d549044513358487ce20
-      ;;
-    v1.10)
-      full_kubectl_version=v1.10.9
-      kubectl_sha1_linux=bf3914630fe45b4f9ec1bc5e56f10fb30047f958
-      kubectl_sha1_darwin=6833874e0b24fa1857925423e4dc8aeaa322b7b3
-      ;;
-    v1.11)
-      full_kubectl_version=v1.11.3
-      kubectl_sha1_linux=5a336ea470a0053b1893fda89a538b6197566137
-      kubectl_sha1_darwin=4f519f6c225f2dd663a26c5c2390849324a577cb
-      ;;
-    v1.12)
-      full_kubectl_version=v1.12.1
-      kubectl_sha1_linux=2135356e8e205816829f612062e1b5b4e1c81a17
-      kubectl_sha1_darwin=a99adb19c1fa0334ab9be37b3918e5de84436acd
-      ;;
-    "")
-      return 0
-      ;;
-    *)
-      echo "Invalid kubectl version" >&2
-      exit 1
-  esac
+  if [[ ! ${DOWNLOAD_KUBECTL:-} ]]; then
+    return 0
+  fi
 
   export PATH="${KUBECTL_DIR}:$PATH"
 
   if [ $(uname) = Darwin ]; then
-    kubectl_sha1="${kubectl_sha1_darwin}"
-    kubectl_os=darwin
+    kubectl_sha1="${KUBECTL_DARWIN_SHA1}"
+    kubectl_url="${KUBECTL_DARWIN_URL}"
   else
-    kubectl_sha1="${kubectl_sha1_linux}"
-    kubectl_os=linux
+    kubectl_sha1="${KUBECTL_LINUX_SHA1}"
+    kubectl_url="${KUBECTL_LINUX_URL}"
   fi
-  local link_target="kubectl-${full_kubectl_version}"
+  local link_target="kubectl-${KUBECTL_VERSION}"
   local link_name="${KUBECTL_DIR}"/kubectl
   if [[ -h "${link_name}" && "$(readlink "${link_name}")" = "${link_target}" ]]; then
     return 0
@@ -814,7 +784,7 @@ function dind::ensure-downloaded-kubectl {
   local path="${KUBECTL_DIR}/${link_target}"
   if [[ ! -f "${path}" ]]; then
     mkdir -p "${KUBECTL_DIR}"
-    curl -sSLo "${path}" "https://storage.googleapis.com/kubernetes-release/release/${full_kubectl_version}/bin/${kubectl_os}/amd64/kubectl"
+    curl -sSLo "${path}" "${kubectl_url}"
     echo "${kubectl_sha1}  ${path}" | sha1sum -c
     chmod +x "${path}"
   fi
@@ -1222,7 +1192,7 @@ function dind::verify-image-compatibility {
 }
 
 function dind::check-dns-service-type {
-  if [[ ${DNS_SERVICE} = "kube-dns" ]] && dind::kubeadm-version-at-least 1 14; then
+  if [[ ${DNS_SERVICE} = "kube-dns" ]] && dind::kubeadm-version-at-least 1 13; then
     echo >&2 "WARNING: for 1.13+, only coredns can be used as the DNS service"
     DNS_SERVICE="coredns"
   fi
@@ -1278,10 +1248,7 @@ function dind::init {
     1\.12\.*)
       template="1.12"
       ;;
-    1\.13\.*)
-      template="1.13"
-      ;;
-    *)  # Includes master branch
+    *)  # Includes 1.13 master branch
       # Will make a separate template if/when it becomes incompatible
       template="1.13"
       # CoreDNS can no longer be switched off
@@ -1298,19 +1265,19 @@ function dind::init {
   apiserver_extra_args=""
   for e in $(set -o posix ; set | grep -E "^APISERVER_[a-z_]+=" | cut -d'=' -f 1); do
     opt_name=$(echo ${e#APISERVER_} | sed 's/_/-/g')
-    apiserver_extra_args+="  ${opt_name}: \\\"$(eval echo \$$e)\\\"\\n"
+    apiserver_extra_args+="    ${opt_name}: \\\"$(eval echo \$$e)\\\"\\n"
   done
 
   controller_manager_extra_args=""
   for e in $(set -o posix ; set | grep -E "^CONTROLLER_MANAGER_[a-z_]+=" | cut -d'=' -f 1); do
     opt_name=$(echo ${e#CONTROLLER_MANAGER_} | sed 's/_/-/g')
-    controller_manager_extra_args+="  ${opt_name}: \\\"$(eval echo \$$e)\\\"\\n"
+    controller_manager_extra_args+="    ${opt_name}: \\\"$(eval echo \$$e)\\\"\\n"
   done
 
   scheduler_extra_args=""
   for e in $(set -o posix ; set | grep -E "^SCHEDULER_[a-z_]+=" | cut -d'=' -f 1); do
     opt_name=$(echo ${e#SCHEDULER_} | sed 's/_/-/g')
-    scheduler_extra_args+="  ${opt_name}: \\\"$(eval echo \$$e)\\\"\\n"
+    scheduler_extra_args+="    ${opt_name}: \\\"$(eval echo \$$e)\\\"\\n"
   done
 
   local mgmt_cidr=${mgmt_net_cidrs[0]}

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright 2017 Mirantis
+# Copyright 2018 Mirantis
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -64,9 +64,9 @@ function dind::localhost() {
 function dind::family-for {
     local addr=$1
     if [[ "$addr" = *":"* ]]; then
-	echo "ipv6"
+        echo "ipv6"
     else
-	echo "ipv4"
+        echo "ipv4"
     fi
 }
 
@@ -133,7 +133,7 @@ function dind::get-and-validate-cidrs {
     ipv4)
       case ${#cidrs[@]} in
         0)
-	  cidrs[0]="${defaults[0]}"
+          cidrs[0]="${defaults[0]}"
           ;;
         1)
           ;;
@@ -143,8 +143,8 @@ function dind::get-and-validate-cidrs {
           ;;
       esac
       if [[ $( dind::family-for "${cidrs[0]}" ) != "ipv4" ]]; then
-	echo "ERROR! CIDR must be IPv4 value"
-	exit 1
+        echo "ERROR! CIDR must be IPv4 value"
+        exit 1
       fi
       if [[ ${is_mgmt} = true ]]; then
         cidrs[0]="$( dind::add-cluster "${cidrs[0]}" "${IP_MODE}" )"
@@ -155,17 +155,17 @@ function dind::get-and-validate-cidrs {
       case ${#cidrs[@]} in
         0)
           cidrs[0]="${defaults[0]}"
-	  ;;
+          ;;
         1)
-	  ;;
+          ;;
         *)
           echo "ERROR! More than one CIDR provided '$1'"
           exit 1
           ;;
       esac
       if [[ $( dind::family-for "${cidrs[0]}" ) != "ipv6" ]]; then
-	echo "ERROR! CIDR must be IPv6 value"
-	exit 1
+        echo "ERROR! CIDR must be IPv6 value"
+        exit 1
       fi
       if [[ ${is_mgmt} = true ]]; then
         cidrs[0]="$( dind::add-cluster "${cidrs[0]}" "${IP_MODE}" )"
@@ -180,19 +180,19 @@ function dind::get-and-validate-cidrs {
           ;;
         1)
           if [[ $( dind::family-for "${cidrs[0]}" ) = "ipv6" ]]; then
-	    cidrs[1]=${cidrs[0]}
-	    cidrs[0]="${defaults[0]}"  # Assuming first default is a V4 address
-	  else
-	    cidrs[1]="${defaults[1]}"
-	  fi
+            cidrs[1]=${cidrs[0]}
+            cidrs[0]="${defaults[0]}"  # Assuming first default is a V4 address
+          else
+            cidrs[1]="${defaults[1]}"
+          fi
           ;;
         2)
-	  # Force ordering to have V4 address first
+          # Force ordering to have V4 address first
           if [[ $( dind::family-for "${cidrs[0]}" ) = "ipv6" ]]; then
-	    local temp=${cidrs[0]}
-	    cidrs[0]=${cidrs[1]}
-	    cidrs[1]=${temp}
-	  fi
+            local temp=${cidrs[0]}
+            cidrs[0]=${cidrs[1]}
+            cidrs[1]=${temp}
+          fi
           ;;
         *)
           echo "ERROR! More than two CIDRs provided '$1'"
@@ -203,10 +203,10 @@ function dind::get-and-validate-cidrs {
       local have_v6=""
       for cidr in ${cidrs[@]}; do
         if [[ $( dind::family-for "${cidr}" ) = "ipv6" ]]; then
-	  have_v6=1
-	else
-	  have_v4=1
-	fi
+          have_v6=1
+        else
+          have_v4=1
+        fi
       done
       if [[ -z ${have_v4} ]]; then
         echo "ERROR! Missing IPv4 CIDR in '$1'"
@@ -417,8 +417,8 @@ for pod_cidr in "${pod_net_cidrs[@]}"; do
   if [[ $( dind::family-for "${pod_cidr}" ) = "ipv4" ]]; then
     actual_size=$( echo ${pod_cidr} | sed 's,.*/,,' )
     if [[ ${actual_size} -ne 16 ]]; then
-	echo "ERROR! For IPv4 CIDRs, the size must be /16. Have '${pod_cidr}'"
-	exit 1
+        echo "ERROR! For IPv4 CIDRs, the size must be /16. Have '${pod_cidr}'"
+        exit 1
     fi
     pod_sizes+=( 24 )
     pod_prefixes+=( "$(echo ${pod_cidr} | sed 's/^\([0-9]*\.[0-9]*\.\).*/\1/')" )
@@ -458,32 +458,45 @@ for pod_cidr in "${pod_net_cidrs[@]}"; do
     need_zero_pads=$((${cluster_size}/16))
 
     if [[ ${num_colons} -gt $((need_zero_pads + 1)) ]]; then
-	echo "ERROR! Address part of CIDR (${pod_prefix}) is too large for /${cluster_size}"
-	exit 1
+        echo "ERROR! Address part of CIDR (${pod_prefix}) is too large for /${cluster_size}"
+        exit 1
     fi
     if [[ ${num_colons} -gt ${need_zero_pads} ]]; then
       # Will be replacing lowest byte with node ID, so pull off lower byte and colon
-	if [[ ${pod_prefix: -3} != "00:" ]]; then   # last byte is not zero
-	  echo "ERROR! Cannot trim address part of CIDR (${pod_prefix}) to fit in /${cluster_size}"
-	  exit 1
-	fi
-	pod_prefix=${pod_prefix::-3}
-	if [[ $(( ${cluster_size} % 16 )) -eq 0 && $( ${pod_prefix: -1} ) != ":" ]]; then  # should not be upper byte for this size CIDR
-	  echo "ERROR! Trimmed address part of CIDR (${pod_prefix}) is still too large for /${cluster_size}"
-	  exit 1
-	fi
+        if [[ ${pod_prefix: -3} != "00:" ]]; then   # last byte is not zero
+          echo "ERROR! Cannot trim address part of CIDR (${pod_prefix}) to fit in /${cluster_size}"
+          exit 1
+        fi
+        pod_prefix=${pod_prefix::-3}
+        if [[ $(( ${cluster_size} % 16 )) -eq 0 && $( ${pod_prefix: -1} ) != ":" ]]; then  # should not be upper byte for this size CIDR
+          echo "ERROR! Trimmed address part of CIDR (${pod_prefix}) is still too large for /${cluster_size}"
+          exit 1
+        fi
     fi
     # Add in zeros to pad 16 bits at a time, up to the padding needed, which is
     # need_zero_pads - num_colons.
     while [ ${num_colons} -lt ${need_zero_pads} ]; do
-	pod_prefix+="0:"
+        pod_prefix+="0:"
       ((num_colons++))
     done
     pod_prefixes+=( "${pod_prefix}" )
   fi
 done
 
-DIND_IMAGE="${DIND_IMAGE:-}"
+DIND_IMAGE_BASE="${DIND_IMAGE_BASE:-mirantis/kubeadm-dind-cluster}"
+if [[ ${DIND_COMMIT:-} ]]; then
+  if [[ ${DIND_COMMIT} = current ]]; then
+    DIND_COMMIT="$(cd "${DIND_ROOT}"; git rev-parse HEAD)"
+  fi
+  DIND_K8S_VERSION="${DIND_K8S_VERSION:-v1.13}"
+  DIND_IMAGE="${DIND_IMAGE:-${DIND_IMAGE_BASE}:${DIND_COMMIT}-${DIND_K8S_VERSION}}"
+else
+  DIND_IMAGE="${DIND_IMAGE:-${DIND_IMAGE_BASE}:local}"
+fi
+if [[ ${DIND_IMAGE_DIGEST:-} ]]; then
+  DIND_IMAGE="${DIND_IMAGE}@${DIND_IMAGE_DIGEST}"
+fi
+
 BUILD_KUBEADM="${BUILD_KUBEADM:-}"
 BUILD_HYPERKUBE="${BUILD_HYPERKUBE:-}"
 if [[ ! -z ${DIND_K8S_BIN_DIR:-} ]]; then
@@ -500,7 +513,7 @@ DASHBOARD_URL="${DASHBOARD_URL:-https://rawgit.com/kubernetes/dashboard/bfab1015
 SKIP_SNAPSHOT="${SKIP_SNAPSHOT:-}"
 E2E_REPORT_DIR="${E2E_REPORT_DIR:-}"
 DIND_NO_PARALLEL_E2E="${DIND_NO_PARALLEL_E2E:-}"
-DNS_SERVICE="${DNS_SERVICE:-kube-dns}"
+DNS_SERVICE="${DNS_SERVICE:-coredns}"
 DIND_STORAGE_DRIVER="${DIND_STORAGE_DRIVER:-overlay2}"
 
 DIND_CA_CERT_URL="${DIND_CA_CERT_URL:-}"
@@ -516,10 +529,6 @@ DIND_INSECURE_REGISTRIES="${DIND_INSECURE_REGISTRIES:-}"  # json list format
 FEATURE_GATES="${FEATURE_GATES:-MountPropagation=true}"
 # you can set special value 'none' not to set any kubelet's feature gates.
 KUBELET_FEATURE_GATES="${KUBELET_FEATURE_GATES:-MountPropagation=true,DynamicKubeletConfig=true}"
-
-if [[ ! ${LOCAL_KUBECTL_VERSION:-} && ${DIND_IMAGE:-} =~ :(v[0-9]+\.[0-9]+)$ ]]; then
-  LOCAL_KUBECTL_VERSION="${BASH_REMATCH[1]}"
-fi
 
 ENABLE_CEPH="${ENABLE_CEPH:-}"
 
@@ -564,7 +573,7 @@ if [[ ${use_k8s_source} ]]; then
     build_tools_dir="build-tools"
   fi
 else
-  if [[ ! ${LOCAL_KUBECTL_VERSION:-} ]] && ! hash kubectl 2>/dev/null; then
+  if [[ ! ${DOWNLOAD_KUBECTL:-} ]] && ! hash kubectl 2>/dev/null; then
     echo "You need kubectl binary in your PATH to use prebuilt DIND image" 1>&2
     exit 1
   fi
@@ -765,47 +774,23 @@ function dind::ensure-downloaded-kubectl {
   local kubectl_sha1_darwin
   local kubectl_link
   local kubectl_os
-  local full_kubectl_version
 
-  case "${LOCAL_KUBECTL_VERSION}" in
-    v1.9)
-      full_kubectl_version=v1.9.11
-      kubectl_sha1_linux=3dedd41a077be12668c2ee322958dd3e9e554861
-      kubectl_sha1_darwin=3b436f60ff0399b3f521d549044513358487ce20
-      ;;
-    v1.10)
-      full_kubectl_version=v1.10.9
-      kubectl_sha1_linux=bf3914630fe45b4f9ec1bc5e56f10fb30047f958
-      kubectl_sha1_darwin=6833874e0b24fa1857925423e4dc8aeaa322b7b3
-      ;;
-    v1.11)
-      full_kubectl_version=v1.11.3
-      kubectl_sha1_linux=5a336ea470a0053b1893fda89a538b6197566137
-      kubectl_sha1_darwin=4f519f6c225f2dd663a26c5c2390849324a577cb
-      ;;
-    v1.12)
-      full_kubectl_version=v1.12.1
-      kubectl_sha1_linux=2135356e8e205816829f612062e1b5b4e1c81a17
-      kubectl_sha1_darwin=a99adb19c1fa0334ab9be37b3918e5de84436acd
-      ;;
-    "")
-      return 0
-      ;;
-    *)
-      echo "Invalid kubectl version" >&2
-      exit 1
-  esac
+  if [[ ! ${DOWNLOAD_KUBECTL:-} ]]; then
+    return 0
+  fi
 
   export PATH="${KUBECTL_DIR}:$PATH"
 
+  eval "$(docker run --entrypoint /bin/bash --rm "${DIND_IMAGE}" -c "cat /dind-env")"
+
   if [ $(uname) = Darwin ]; then
-    kubectl_sha1="${kubectl_sha1_darwin}"
-    kubectl_os=darwin
+    kubectl_sha1="${KUBECTL_DARWIN_SHA1}"
+    kubectl_url="${KUBECTL_DARWIN_URL}"
   else
-    kubectl_sha1="${kubectl_sha1_linux}"
-    kubectl_os=linux
+    kubectl_sha1="${KUBECTL_LINUX_SHA1}"
+    kubectl_url="${KUBECTL_LINUX_URL}"
   fi
-  local link_target="kubectl-${full_kubectl_version}"
+  local link_target="kubectl-${KUBECTL_VERSION}"
   local link_name="${KUBECTL_DIR}"/kubectl
   if [[ -h "${link_name}" && "$(readlink "${link_name}")" = "${link_target}" ]]; then
     return 0
@@ -814,7 +799,7 @@ function dind::ensure-downloaded-kubectl {
   local path="${KUBECTL_DIR}/${link_target}"
   if [[ ! -f "${path}" ]]; then
     mkdir -p "${KUBECTL_DIR}"
-    curl -sSLo "${path}" "https://storage.googleapis.com/kubernetes-release/release/${full_kubectl_version}/bin/${kubectl_os}/amd64/kubectl"
+    curl -sSLo "${path}" "${kubectl_url}"
     echo "${kubectl_sha1}  ${path}" | sha1sum -c
     chmod +x "${path}"
   fi
@@ -894,7 +879,7 @@ function dind::ensure-volume {
 
 function dind::ensure-dns {
     if [[ ${IP_MODE} = "ipv6" ]]; then
-	local dns64_name="bind9$( dind::cluster-suffix )"
+        local dns64_name="bind9$( dind::cluster-suffix )"
         if ! docker inspect ${dns64_name} >&/dev/null; then
             local force_dns64_for=""
             if [[ ! ${DIND_ALLOW_AAAA_USE} ]]; then
@@ -933,19 +918,19 @@ BIND9_EOF
 
 function dind::ensure-nat {
     if [[  ${IP_MODE} = "ipv6" ]]; then
-	local nat64_name="tayga$( dind::cluster-suffix )"
+        local nat64_name="tayga$( dind::cluster-suffix )"
         if ! docker ps | grep ${nat64_name} >&/dev/null; then
             docker run -d --name ${nat64_name} --hostname ${nat64_name} --net "$(dind::net-name)" --label "dind-support$( dind::cluster-suffix )" \
-		   --sysctl net.ipv6.conf.all.disable_ipv6=0 --sysctl net.ipv6.conf.all.forwarding=1 \
-		   --privileged=true --ip ${NAT64_V4_SUBNET_PREFIX}.0.200 --ip6 ${LOCAL_NAT64_SERVER} --dns ${REMOTE_DNS64_V4SERVER} --dns ${dns_server} \
-		   -e TAYGA_CONF_PREFIX=${DNS64_PREFIX_CIDR} -e TAYGA_CONF_IPV4_ADDR=${NAT64_V4_SUBNET_PREFIX}.0.200 \
-		   -e TAYGA_CONF_DYNAMIC_POOL=${NAT64_V4_SUBNET_PREFIX}.0.128/25 danehans/tayga:latest >/dev/null
-	    # Need to check/create, as "clean" may remove route
-	    local route="$(ip route | egrep "^${NAT64_V4_SUBNET_PREFIX}.0.128/25")"
-	    if [[ -z "${route}" ]]; then
-	        docker run --net=host --rm --privileged ${busybox_image} ip route add ${NAT64_V4_SUBNET_PREFIX}.0.128/25 via ${NAT64_V4_SUBNET_PREFIX}.0.200
-	    fi
-	fi
+                   --sysctl net.ipv6.conf.all.disable_ipv6=0 --sysctl net.ipv6.conf.all.forwarding=1 \
+                   --privileged=true --ip ${NAT64_V4_SUBNET_PREFIX}.0.200 --ip6 ${LOCAL_NAT64_SERVER} --dns ${REMOTE_DNS64_V4SERVER} --dns ${dns_server} \
+                   -e TAYGA_CONF_PREFIX=${DNS64_PREFIX_CIDR} -e TAYGA_CONF_IPV4_ADDR=${NAT64_V4_SUBNET_PREFIX}.0.200 \
+                   -e TAYGA_CONF_DYNAMIC_POOL=${NAT64_V4_SUBNET_PREFIX}.0.128/25 danehans/tayga:latest >/dev/null
+            # Need to check/create, as "clean" may remove route
+            local route="$(ip route | egrep "^${NAT64_V4_SUBNET_PREFIX}.0.128/25")"
+            if [[ -z "${route}" ]]; then
+                docker run --net=host --rm --privileged ${busybox_image} ip route add ${NAT64_V4_SUBNET_PREFIX}.0.128/25 via ${NAT64_V4_SUBNET_PREFIX}.0.200
+            fi
+        fi
     fi
 }
 
@@ -1002,7 +987,7 @@ function dind::run {
       n_id=$(printf "%02x00\n" "${node_id}")
     else
       if [[ "${pod_prefixes[$i]: -1}" = ":" ]]; then
-	n_id=$(printf "%x\n" "${node_id}")
+        n_id=$(printf "%x\n" "${node_id}")
       else
         n_id=$(printf "%02x\n" "${node_id}")  # In lower byte, so ensure two chars
       fi
@@ -1061,7 +1046,7 @@ function dind::run {
 
   # Start the new container.
   docker run \
-	 -e IP_MODE="${IP_MODE}" \
+         -e IP_MODE="${IP_MODE}" \
          -e KUBEADM_SOURCE="${KUBEADM_SOURCE}" \
          -e HYPERKUBE_SOURCE="${HYPERKUBE_SOURCE}" \
          -d --privileged \
@@ -1222,7 +1207,7 @@ function dind::verify-image-compatibility {
 }
 
 function dind::check-dns-service-type {
-  if [[ ${DNS_SERVICE} = "kube-dns" ]] && dind::kubeadm-version-at-least 1 14; then
+  if [[ ${DNS_SERVICE} = "kube-dns" ]] && dind::kubeadm-version-at-least 1 13; then
     echo >&2 "WARNING: for 1.13+, only coredns can be used as the DNS service"
     DNS_SERVICE="coredns"
   fi
@@ -1278,10 +1263,7 @@ function dind::init {
     1\.12\.*)
       template="1.12"
       ;;
-    1\.13\.*)
-      template="1.13"
-      ;;
-    *)  # Includes master branch
+    *)  # Includes 1.13 master branch
       # Will make a separate template if/when it becomes incompatible
       template="1.13"
       # CoreDNS can no longer be switched off
@@ -1298,19 +1280,19 @@ function dind::init {
   apiserver_extra_args=""
   for e in $(set -o posix ; set | grep -E "^APISERVER_[a-z_]+=" | cut -d'=' -f 1); do
     opt_name=$(echo ${e#APISERVER_} | sed 's/_/-/g')
-    apiserver_extra_args+="  ${opt_name}: \\\"$(eval echo \$$e)\\\"\\n"
+    apiserver_extra_args+="    ${opt_name}: \\\"$(eval echo \$$e)\\\"\\n"
   done
 
   controller_manager_extra_args=""
   for e in $(set -o posix ; set | grep -E "^CONTROLLER_MANAGER_[a-z_]+=" | cut -d'=' -f 1); do
     opt_name=$(echo ${e#CONTROLLER_MANAGER_} | sed 's/_/-/g')
-    controller_manager_extra_args+="  ${opt_name}: \\\"$(eval echo \$$e)\\\"\\n"
+    controller_manager_extra_args+="    ${opt_name}: \\\"$(eval echo \$$e)\\\"\\n"
   done
 
   scheduler_extra_args=""
   for e in $(set -o posix ; set | grep -E "^SCHEDULER_[a-z_]+=" | cut -d'=' -f 1); do
     opt_name=$(echo ${e#SCHEDULER_} | sed 's/_/-/g')
-    scheduler_extra_args+="  ${opt_name}: \\\"$(eval echo \$$e)\\\"\\n"
+    scheduler_extra_args+="    ${opt_name}: \\\"$(eval echo \$$e)\\\"\\n"
   done
 
   local mgmt_cidr=${mgmt_net_cidrs[0]}
@@ -1430,7 +1412,7 @@ function dind::create-static-routes {
     fi
     for ((j=0; j <= NUM_NODES; j++)); do
       if [[ ${i} -eq ${j} ]]; then
-	continue
+        continue
       fi
       if [[ ${j} -eq 0 ]]; then
         dest_node="$(dind::master-name)"
@@ -1439,21 +1421,21 @@ function dind::create-static-routes {
       fi
       id=$((${j}+1))
       if [[ ${IP_MODE} = "ipv4" || ${IP_MODE} = "dual-stack" ]]; then
-	# Assuming pod subnets will all be /24
+        # Assuming pod subnets will all be /24
         dest="${pod_prefixes[0]}${id}.0/24"
         gw=`docker exec ${dest_node} ip addr show eth0 | grep -w inet | awk '{ print $2 }' | sed 's,/.*,,'`
         docker exec "${node}" ip route add "${dest}" via "${gw}"
       fi
       if [[ ${IP_MODE} = "ipv6" || ${IP_MODE} = "dual-stack" ]]; then
-	local position=0
-	if [[ ${IP_MODE} = "dual-stack" ]]; then
-	    position=1
-	fi
-	instance=$(printf "%02x" ${id})
-	if [[ $((${pod_sizes[$position]} % 16)) -ne 0 ]]; then
-	  instance+="00" # Move node ID to upper byte
-	fi
-	dest="${pod_prefixes[$position]}${instance}::/${pod_sizes[$position]}"
+        local position=0
+        if [[ ${IP_MODE} = "dual-stack" ]]; then
+            position=1
+        fi
+        instance=$(printf "%02x" ${id})
+        if [[ $((${pod_sizes[$position]} % 16)) -ne 0 ]]; then
+          instance+="00" # Move node ID to upper byte
+        fi
+        dest="${pod_prefixes[$position]}${instance}::/${pod_sizes[$position]}"
         gw=`docker exec ${dest_node} ip addr show eth0 | grep -w inet6 | grep -i global | head -1 | awk '{ print $2 }' | sed 's,/.*,,'`
         docker exec "${node}" ip route add "${dest}" via "${gw}"
       fi
@@ -1819,7 +1801,7 @@ function dind::up {
       manifest_base=https://docs.projectcalico.org/${CALICO_VERSION:-v3.3}/getting-started/kubernetes/installation
       dind::retry "${kubectl}" --context "$ctx" apply -f ${manifest_base}/hosted/etcd.yaml
       if [ "${CALICO_VERSION:-v3.3}" != master ]; then
-	  dind::retry "${kubectl}" --context "$ctx" apply -f ${manifest_base}/rbac.yaml
+          dind::retry "${kubectl}" --context "$ctx" apply -f ${manifest_base}/rbac.yaml
       fi
       dind::retry "${kubectl}" --context "$ctx" apply -f ${manifest_base}/hosted/calico.yaml
       dind::retry "${kubectl}" --context "$ctx" apply -f ${manifest_base}/hosted/calicoctl.yaml

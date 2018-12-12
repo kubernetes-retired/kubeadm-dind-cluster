@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright 2017 Mirantis
+# Copyright 2018 Mirantis
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 set -o errexit
 set -o nounset
 set -o pipefail
@@ -21,23 +20,4 @@ set -o errtrace
 DIND_ROOT=$(dirname "${BASH_SOURCE}")/..
 source "$DIND_ROOT/build/funcs.sh"
 
-image_tag_prefix=
-if [[ ${1:-} ]]; then
-  image_tag_prefix="${1}-"
-fi
-
-fixed_dir="${DIND_ROOT}/fixed"
-mkdir -p "${fixed_dir}"
-
-for tag in v1.10 v1.11 v1.12 v1.13; do
-  dest="${fixed_dir}/dind-cluster-${tag}.sh"
-  # $(grep '^[^#]*=' "${DIND_ROOT}/build/buildconf.sh")
-  vars=(EMBEDDED_CONFIG=y
-        DOWNLOAD_KUBECTL=y
-        DIND_K8S_VERSION="${tag}"
-        DIND_COMMIT="$(cd "${DIND_ROOT}" && git rev-parse HEAD)")
-  var_str=$(IFS=';'; echo "${vars[*]}")
-  sed "s@#%CONFIG%@${var_str}@" \
-      "${DIND_ROOT}/dind-cluster.sh" >"${dest}"
-  chmod +x "${dest}"
-done
+release "$@"

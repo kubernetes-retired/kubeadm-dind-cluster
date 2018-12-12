@@ -11,7 +11,7 @@ Environment="KUBELET_EVICTION_ARGS=--eviction-hard='memory.available<100Mi,nodef
 Environment="KUBELET_DIND_ARGS="
 Environment="KUBELET_LOG_ARGS=--v=4"
 # FIXME: this breaks k8s 1.10
-# Environment="KUBELET_CONFIG_ARGS=--config=/var/lib/kubelet/config.yaml"
+Environment="KUBELET_CONFIG_ARGS=--config=/var/lib/kubelet/config.yaml"
 EnvironmentFile=-/var/lib/kubelet/kubeadm-flags.env
 EnvironmentFile=-/etc/default/kubelet
 ExecStart=

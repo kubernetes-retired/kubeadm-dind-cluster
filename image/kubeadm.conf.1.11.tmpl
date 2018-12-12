@@ -7,9 +7,9 @@ api:
   bindPort: 6443
   controlPlaneEndpoint: ""
 apiServerExtraArgs:
-  insecure-bind-address: "{{BIND_ADDR}}"
-  insecure-port: "{{BIND_PORT}}"
-  {{COMPONENT_FEATURE_GATES}}
+    insecure-bind-address: "{{BIND_ADDR}}"
+    insecure-port: "{{BIND_PORT}}"
+    {{COMPONENT_FEATURE_GATES}}
 {{APISERVER_EXTRA_ARGS}}
 apiVersion: kubeadm.k8s.io/v1alpha2
 auditPolicy:
@@ -27,7 +27,7 @@ bootstrapTokens:
 certificatesDir: /etc/kubernetes/pki
 # clusterName: kubernetes
 controllerManagerExtraArgs:
-  {{COMPONENT_FEATURE_GATES}}
+    {{COMPONENT_FEATURE_GATES}}
 {{CONTROLLER_MANAGER_EXTRA_ARGS}}
 etcd:
   local:
@@ -149,6 +149,18 @@ nodeRegistration:
   name: {{KUBE_MASTER_NAME}}
   criSocket: "{{CRI_SOCKET}}"
 schedulerExtraArgs:
-  {{COMPONENT_FEATURE_GATES}}
+    {{COMPONENT_FEATURE_GATES}}
 {{SCHEDULER_EXTRA_ARGS}}
 unifiedControlPlaneImage: mirantis/hypokube:final
+apiServerExtraVolumes:
+- name: hyperkube
+  hostPath: /k8s/hyperkube
+  mountPath: /hyperkube
+controllerManagerExtraVolumes:
+- name: hyperkube
+  hostPath: /k8s/hyperkube
+  mountPath: /hyperkube
+schedulerExtraVolumes:
+- name: hyperkube
+  hostPath: /k8s/hyperkube
+  mountPath: /hyperkube

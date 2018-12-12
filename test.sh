@@ -99,51 +99,6 @@ function test-cluster-src {
   )
 }
 
-function test-case-1.9 {
-  (
-    export KUBEADM_URL="${KUBEADM_URL_1_9}"
-    export KUBEADM_SHA1="${KUBEADM_SHA1_1_9}"
-    export HYPERKUBE_URL="${HYPERKUBE_URL_1_9}"
-    export HYPERKUBE_SHA1="${HYPERKUBE_SHA1_1_9}"
-    if [[ ${NOBUILD} ]]; then
-        export DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.9
-        docker pull "${DIND_IMAGE}"
-    else
-        export LOCAL_KUBECTL_VERSION=v1.9
-    fi
-    test-cluster
-  )
-}
-
-function test-case-1.9-flannel {
-  (
-    export CNI_PLUGIN=flannel
-    test-case-1.9
-  )
-}
-
-function test-case-1.9-calico {
-  (
-    export CNI_PLUGIN=calico
-    test-case-1.9
-  )
-}
-
-function test-case-1.9-calico-kdd {
-  (
-    export CNI_PLUGIN=calico-kdd
-    POD_NETWORK_CIDR="192.168.0.0/16"
-    test-case-1.9
-  )
-}
-
-function test-case-1.9-weave {
-  (
-    export CNI_PLUGIN=weave
-    test-case-1.9
-  )
-}
-
 function test-case-1.10 {
   (
     export KUBEADM_URL="${KUBEADM_URL_1_10}"
@@ -324,8 +279,53 @@ function test-case-1.12-weave {
   )
 }
 
-function test-case-src-1.12 {
-  test-cluster-src release-1.12
+function test-case-1.13 {
+  (
+    export KUBEADM_URL="${KUBEADM_URL_1_13}"
+    export KUBEADM_SHA1="${KUBEADM_SHA1_1_13}"
+    export HYPERKUBE_URL="${HYPERKUBE_URL_1_13}"
+    export HYPERKUBE_SHA1="${HYPERKUBE_SHA1_1_13}"
+    if [[ ${NOBUILD} ]]; then
+        export DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.13
+        docker pull "${DIND_IMAGE}"
+    else
+        export LOCAL_KUBECTL_VERSION=v1.13
+    fi
+    test-cluster
+  )
+}
+
+function test-case-1.13-flannel {
+  (
+    export CNI_PLUGIN=flannel
+    test-case-1.13
+  )
+}
+
+function test-case-1.13-calico {
+  (
+    export CNI_PLUGIN=calico
+    test-case-1.13
+  )
+}
+
+function test-case-1.13-calico-kdd {
+  (
+    export CNI_PLUGIN=calico-kdd
+    POD_NETWORK_CIDR="1132.168.0.0/16"
+    test-case-1.13
+  )
+}
+
+function test-case-1.13-weave {
+  (
+    export CNI_PLUGIN=weave
+    test-case-1.13
+  )
+}
+
+function test-case-src-1.13 {
+  test-cluster-src release-1.13
 }
 
 function test-case-src-master {
@@ -399,11 +399,6 @@ function fail() {
 }
 
 if [[ ! ${TEST_CASE} ]]; then
-  test-case-1.9
-  test-case-1.9-flannel
-  test-case-1.9-calico
-  test-case-1.9-calico-kdd
-  test-case-1.9-weave
   test-case-1.10
   test-case-1.10-flannel
   test-case-1.10-calico
@@ -419,7 +414,12 @@ if [[ ! ${TEST_CASE} ]]; then
   test-case-1.12-calico
   test-case-1.12-calico-kdd
   test-case-1.12-weave
-  test-case-src-1.12
+  test-case-1.13
+  test-case-1.13-flannel
+  test-case-1.13-calico
+  test-case-1.13-calico-kdd
+  test-case-1.13-weave
+  test-case-src-1.13
   test-case-src-master
   # test-case-src-master-flannel
   # test-case-src-master-calico

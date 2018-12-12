@@ -5,13 +5,13 @@
 api:
   advertiseAddress: "{{ADV_ADDR}}"
 apiServerExtraArgs:
-  insecure-bind-address: "{{BIND_ADDR}}"
-  insecure-port: "{{BIND_PORT}}"
-  {{COMPONENT_FEATURE_GATES}}
+    insecure-bind-address: "{{BIND_ADDR}}"
+    insecure-port: "{{BIND_PORT}}"
+    {{COMPONENT_FEATURE_GATES}}
 {{APISERVER_EXTRA_ARGS}}
 apiVersion: kubeadm.k8s.io/v1alpha1
 controllerManagerExtraArgs:
-  {{COMPONENT_FEATURE_GATES}}
+    {{COMPONENT_FEATURE_GATES}}
 {{CONTROLLER_MANAGER_EXTRA_ARGS}}
 featureGates: {{FEATURE_GATES}}
 kind: MasterConfiguration
@@ -22,7 +22,7 @@ networking:
 tokenTTL: 0s
 nodeName: {{KUBE_MASTER_NAME}}
 schedulerExtraArgs:
-  {{COMPONENT_FEATURE_GATES}}
+    {{COMPONENT_FEATURE_GATES}}
 {{SCHEDULER_EXTRA_ARGS}}
 unifiedControlPlaneImage: mirantis/hypokube:final
 criSocket: "{{CRI_SOCKET}}"

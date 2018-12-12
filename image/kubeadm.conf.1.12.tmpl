@@ -15,9 +15,9 @@ nodeRegistration:
     key: node-role.kubernetes.io/master
 ---
 apiServerExtraArgs:
-  insecure-bind-address: "{{BIND_ADDR}}"
-  insecure-port: "{{BIND_PORT}}"
-  {{COMPONENT_FEATURE_GATES}}
+    insecure-bind-address: "{{BIND_ADDR}}"
+    insecure-port: "{{BIND_PORT}}"
+    {{COMPONENT_FEATURE_GATES}}
 {{APISERVER_EXTRA_ARGS}}
 apiVersion: kubeadm.k8s.io/v1alpha3
 auditPolicy:
@@ -27,7 +27,7 @@ auditPolicy:
 certificatesDir: /etc/kubernetes/pki
 controlPlaneEndpoint: ""
 controllerManagerExtraArgs:
-  {{COMPONENT_FEATURE_GATES}}
+    {{COMPONENT_FEATURE_GATES}}
 {{CONTROLLER_MANAGER_EXTRA_ARGS}}
 etcd:
   local:
@@ -41,6 +41,18 @@ networking:
   {{POD_SUBNET_DISABLE}}podSubnet: "{{POD_NETWORK_CIDR}}"
   serviceSubnet: "{{SVC_SUBNET}}"
 schedulerExtraArgs:
-  {{COMPONENT_FEATURE_GATES}}
+    {{COMPONENT_FEATURE_GATES}}
 {{SCHEDULER_EXTRA_ARGS}}
 unifiedControlPlaneImage: mirantis/hypokube:final
+apiServerExtraVolumes:
+- name: hyperkube
+  hostPath: /k8s/hyperkube
+  mountPath: /hyperkube
+controllerManagerExtraVolumes:
+- name: hyperkube
+  hostPath: /k8s/hyperkube
+  mountPath: /hyperkube
+schedulerExtraVolumes:
+- name: hyperkube
+  hostPath: /k8s/hyperkube
+  mountPath: /hyperkube
