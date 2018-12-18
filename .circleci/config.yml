@@ -399,6 +399,69 @@ jobs:
 # Don't remove the "#cut here#" marker below.
 #cut here#
 
+  test_v1.10_bridge_docker:
+    <<: *defaults
+    <<: *test
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.10
+      CNI_PLUGIN: bridge
+      DIND_CRI: docker
+
+  test_v1.10_bridge_containerd:
+    <<: *defaults
+    <<: *test
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.10
+      CNI_PLUGIN: bridge
+      DIND_CRI: containerd
+
+  test_v1.11_bridge_docker:
+    <<: *defaults
+    <<: *test
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.11
+      CNI_PLUGIN: bridge
+      DIND_CRI: docker
+
+  test_v1.11_bridge_containerd:
+    <<: *defaults
+    <<: *test
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.11
+      CNI_PLUGIN: bridge
+      DIND_CRI: containerd
+
+  test_v1.11_kube-router_docker:
+    <<: *defaults
+    <<: *test
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.11
+      CNI_PLUGIN: kube-router
+      DIND_CRI: docker
+
+  test_v1.12_bridge_docker:
+    <<: *defaults
+    <<: *test
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.12
+      CNI_PLUGIN: bridge
+      DIND_CRI: docker
+
+  test_v1.12_bridge_containerd:
+    <<: *defaults
+    <<: *test
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.12
+      CNI_PLUGIN: bridge
+      DIND_CRI: containerd
+
   test_v1.13_bridge_docker:
     <<: *defaults
     <<: *test
@@ -407,6 +470,113 @@ jobs:
       DIND_K8S_VERSION: v1.13
       CNI_PLUGIN: bridge
       DIND_CRI: docker
+
+  test_v1.13_flannel_docker:
+    <<: *defaults
+    <<: *test
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.13
+      CNI_PLUGIN: flannel
+      DIND_CRI: docker
+
+  test_v1.13_calico_docker:
+    <<: *defaults
+    <<: *test
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.13
+      CNI_PLUGIN: calico
+      DIND_CRI: docker
+
+  test_v1.13_calico-kdd_docker:
+    <<: *defaults
+    <<: *test
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.13
+      CNI_PLUGIN: calico-kdd
+      DIND_CRI: docker
+
+  test_v1.13_weave_docker:
+    <<: *defaults
+    <<: *test
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.13
+      CNI_PLUGIN: weave
+      DIND_CRI: docker
+
+  test_v1.13_bridge_containerd:
+    <<: *defaults
+    <<: *test
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.13
+      CNI_PLUGIN: bridge
+      DIND_CRI: containerd
+
+  test_v1.13_ptp_docker:
+    <<: *defaults
+    <<: *test
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.13
+      CNI_PLUGIN: ptp
+      DIND_CRI: docker
+
+  test_multiple_clusters_v1.13_bridge_docker:
+    <<: *defaults
+    <<: *test_multiple_clusters
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.13
+      CNI_PLUGIN: bridge
+      DIND_CRI: docker
+
+  test_ipv4_only_v1.13_bridge_docker:
+    <<: *test_ipv4_only
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.13
+      CNI_PLUGIN: bridge
+      DIND_CRI: docker
+
+  test_ipv6_only_v1.13_bridge_docker:
+    <<: *test_ipv6_only
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.13
+      CNI_PLUGIN: bridge
+      DIND_CRI: docker
+
+  test_ipv6_only_nat64_v1.13_bridge_docker:
+    <<: *test_ipv6_only
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.13
+      CNI_PLUGIN: bridge
+      DIND_CRI: docker
+      NAT64_V4_SUBNET_PREFIX: '10.100'
+
+  test_ipv6_only_ext_aaaa_v1.13_bridge_docker:
+    <<: *test_ipv6_only
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.13
+      CNI_PLUGIN: bridge
+      DIND_CRI: docker
+      DIND_ALLOW_AAAA_USE: 'true'
+
+  test_dual_stack_v4_svc_net_v1.13_bridge_docker:
+    <<: *test_dual_stack
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.13
+      CNI_PLUGIN: bridge
+      DIND_CRI: docker
+      SERVICE_CIDR: '10.96.0.0/12'
+      DIND_ALLOW_AAAA_USE: 'true'
 
 workflows:
   version: 2
@@ -424,7 +594,154 @@ workflows:
               - /^v[0-9].*/
         requires:
         - build
+    - test_v1.10_bridge_docker:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
+        requires:
+        - build
+    - test_v1.10_bridge_containerd:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
+        requires:
+        - build
+    - test_v1.11_bridge_docker:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
+        requires:
+        - build
+    - test_v1.11_bridge_containerd:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
+        requires:
+        - build
+    - test_v1.11_kube-router_docker:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
+        requires:
+        - build
+    - test_v1.12_bridge_docker:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
+        requires:
+        - build
+    - test_v1.12_bridge_containerd:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
+        requires:
+        - build
     - test_v1.13_bridge_docker:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
+        requires:
+        - build
+    - test_v1.13_flannel_docker:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
+        requires:
+        - build
+    - test_v1.13_calico_docker:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
+        requires:
+        - build
+    - test_v1.13_calico-kdd_docker:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
+        requires:
+        - build
+    - test_v1.13_weave_docker:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
+        requires:
+        - build
+    - test_v1.13_bridge_containerd:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
+        requires:
+        - build
+    - test_v1.13_ptp_docker:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
+        requires:
+        - build
+    - test_multiple_clusters_v1.13_bridge_docker:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
+        requires:
+        - build
+    - test_ipv4_only_v1.13_bridge_docker:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
+        requires:
+        - build
+    - test_ipv6_only_v1.13_bridge_docker:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
+        requires:
+        - build
+    - test_ipv6_only_nat64_v1.13_bridge_docker:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
+        requires:
+        - build
+    - test_ipv6_only_ext_aaaa_v1.13_bridge_docker:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
+        requires:
+        - build
+    - test_dual_stack_v4_svc_net_v1.13_bridge_docker:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
+        requires:
+        - build
+    - test_src_release:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
+        requires:
+        - build
+    - test_src_master:
         filters:
           tags:
             only:
@@ -440,4 +757,25 @@ workflows:
               - /^v[0-9].*/
         requires:
         - push
+        - test_v1.10_bridge_docker
+        - test_v1.10_bridge_containerd
+        - test_v1.11_bridge_docker
+        - test_v1.11_bridge_containerd
+        - test_v1.11_kube-router_docker
+        - test_v1.12_bridge_docker
+        - test_v1.12_bridge_containerd
         - test_v1.13_bridge_docker
+        - test_v1.13_flannel_docker
+        - test_v1.13_calico_docker
+        - test_v1.13_calico-kdd_docker
+        - test_v1.13_weave_docker
+        - test_v1.13_bridge_containerd
+        - test_v1.13_ptp_docker
+        - test_multiple_clusters_v1.13_bridge_docker
+        - test_ipv4_only_v1.13_bridge_docker
+        - test_ipv6_only_v1.13_bridge_docker
+        - test_ipv6_only_nat64_v1.13_bridge_docker
+        - test_ipv6_only_ext_aaaa_v1.13_bridge_docker
+        - test_dual_stack_v4_svc_net_v1.13_bridge_docker
+        - test_src_release
+        - test_src_master
