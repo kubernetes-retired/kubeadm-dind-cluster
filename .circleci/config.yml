@@ -341,6 +341,12 @@ jobs:
     - setup_remote_docker
     - run:
         <<: *setup
+    - attach_workspace:
+        at: _save
+    - run:
+        name: Restore images
+        command: |
+          docker load -i _save/images.tar
     - run:
         name: Install github-release
         command: |
@@ -393,15 +399,6 @@ jobs:
 # Don't remove the "#cut here#" marker below.
 #cut here#
 
-  test_v1.10_bridge_docker:
-    <<: *defaults
-    <<: *test
-    environment:
-      <<: *env
-      DIND_K8S_VERSION: v1.10
-      CNI_PLUGIN: bridge
-      DIND_CRI: docker
-
   test_v1.13_bridge_docker:
     <<: *defaults
     <<: *test
@@ -410,33 +407,6 @@ jobs:
       DIND_K8S_VERSION: v1.13
       CNI_PLUGIN: bridge
       DIND_CRI: docker
-
-  test_multiple_clusters_v1.13_bridge_docker:
-    <<: *defaults
-    <<: *test_multiple_clusters
-    environment:
-      <<: *env
-      DIND_K8S_VERSION: v1.13
-      CNI_PLUGIN: bridge
-      DIND_CRI: docker
-
-  test_ipv4_only_v1.13_bridge_docker:
-    <<: *test_ipv4_only
-    environment:
-      <<: *env
-      DIND_K8S_VERSION: v1.13
-      CNI_PLUGIN: bridge
-      DIND_CRI: docker
-
-  test_dual_stack_v4_svc_net_v1.13_bridge_docker:
-    <<: *test_dual_stack
-    environment:
-      <<: *env
-      DIND_K8S_VERSION: v1.13
-      CNI_PLUGIN: bridge
-      DIND_CRI: docker
-      SERVICE_CIDR: '10.96.0.0/12'
-      DIND_ALLOW_AAAA_USE: 'true'
 
 workflows:
   version: 2
@@ -454,42 +424,7 @@ workflows:
               - /^v[0-9].*/
         requires:
         - build
-    - test_v1.10_bridge_docker:
-        filters:
-          tags:
-            only:
-              - /^v[0-9].*/
-        requires:
-        - build
     - test_v1.13_bridge_docker:
-        filters:
-          tags:
-            only:
-              - /^v[0-9].*/
-        requires:
-        - build
-    - test_multiple_clusters_v1.13_bridge_docker:
-        filters:
-          tags:
-            only:
-              - /^v[0-9].*/
-        requires:
-        - build
-    - test_ipv4_only_v1.13_bridge_docker:
-        filters:
-          tags:
-            only:
-              - /^v[0-9].*/
-        requires:
-        - build
-    - test_dual_stack_v4_svc_net_v1.13_bridge_docker:
-        filters:
-          tags:
-            only:
-              - /^v[0-9].*/
-        requires:
-        - build
-    - test_src_master:
         filters:
           tags:
             only:
@@ -505,9 +440,4 @@ workflows:
               - /^v[0-9].*/
         requires:
         - push
-        - test_v1.10_bridge_docker
         - test_v1.13_bridge_docker
-        - test_multiple_clusters_v1.13_bridge_docker
-        - test_ipv4_only_v1.13_bridge_docker
-        - test_dual_stack_v4_svc_net_v1.13_bridge_docker
-        - test_src_master

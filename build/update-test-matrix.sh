@@ -30,7 +30,7 @@ DIND_ROOT=$(dirname "${BASH_SOURCE}")/..
 test_matrix=(
     # "No defaults" should be set for the tests with machine executor
     # Test name                  k8s   CNI         CRI        No defaults
-    "test                        v1.10                          "
+    # "test                        v1.10                          "
     # "test                        v1.10 bridge      containerd   "
     # "test                        v1.11                          "
     # "test                        v1.11 bridge      containerd   "
@@ -44,14 +44,14 @@ test_matrix=(
     # "test                        v1.13 weave                    "
     # "test                        v1.13 bridge      containerd   "
     # "test                        v1.13 ptp                      "
-    "test_multiple_clusters      v1.13                          "
-    "test_ipv4_only              v1.13 bridge      docker      y"
+    # "test_multiple_clusters      v1.13                          "
+    # "test_ipv4_only              v1.13 bridge      docker      y"
     # "test_ipv6_only              v1.13 bridge      docker      y"
     # "test_ipv6_only_nat64        v1.13 bridge      docker      y"
     # "test_ipv6_only_ext_aaaa     v1.13 bridge      docker      y"
-    "test_dual_stack_v4_svc_net  v1.13 bridge      docker      y"
+    # "test_dual_stack_v4_svc_net  v1.13 bridge      docker      y"
     # "test_src_release                                           "
-    "test_src_master                                            "
+    # "test_src_master                                            "
 )
 
 declare -A subst vars

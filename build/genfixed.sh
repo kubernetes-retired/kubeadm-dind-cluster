@@ -31,10 +31,15 @@ mkdir -p "${fixed_dir}"
 
 for tag in v1.10 v1.11 v1.12 v1.13; do
   dest="${fixed_dir}/dind-cluster-${tag}.sh"
-  # $(grep '^[^#]*=' "${DIND_ROOT}/build/buildconf.sh")
+  commit="$(cd "${DIND_ROOT}"; git rev-parse HEAD)"
+  image="mirantis/kubeadm-dind-cluster:${commit}-${tag}"
+  # invoke docker pull to get the digest
+  docker pull "${image}"
+  digest="$(docker inspect --format='{{index .RepoDigests 0}}' "${image}" | sed 's/.*@//')"
   vars=(EMBEDDED_CONFIG=y
         DOWNLOAD_KUBECTL=y
         DIND_K8S_VERSION="${tag}"
+        DIND_IMAGE_DIGEST="${digest}"
         DIND_COMMIT="$(cd "${DIND_ROOT}" && git rev-parse HEAD)")
   var_str=$(IFS=';'; echo "${vars[*]}")
   sed "s@#%CONFIG%@${var_str}@" \
