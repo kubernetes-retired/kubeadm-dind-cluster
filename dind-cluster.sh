@@ -507,7 +507,6 @@ KUBEADM_SOURCE="${KUBEADM_SOURCE-}"
 HYPERKUBE_SOURCE="${HYPERKUBE_SOURCE-}"
 NUM_NODES=${NUM_NODES:-2}
 EXTRA_PORTS="${EXTRA_PORTS:-}"
-LOCAL_KUBECTL_VERSION=${LOCAL_KUBECTL_VERSION:-}
 KUBECTL_DIR="${KUBECTL_DIR:-${HOME}/.kubeadm-dind-cluster}"
 DASHBOARD_URL="${DASHBOARD_URL:-https://rawgit.com/kubernetes/dashboard/bfab10151f012d1acc5dfb1979f3172e2400aa3c/src/deploy/kubernetes-dashboard.yaml}"
 SKIP_SNAPSHOT="${SKIP_SNAPSHOT:-}"
@@ -1801,7 +1800,7 @@ function dind::up {
       manifest_base=https://docs.projectcalico.org/${CALICO_VERSION:-v3.3}/getting-started/kubernetes/installation
       dind::retry "${kubectl}" --context "$ctx" apply -f ${manifest_base}/hosted/etcd.yaml
       if [ "${CALICO_VERSION:-v3.3}" != master ]; then
-          dind::retry "${kubectl}" --context "$ctx" apply -f ${manifest_base}/rbac.yaml
+        dind::retry "${kubectl}" --context "$ctx" apply -f ${manifest_base}/rbac.yaml
       fi
       dind::retry "${kubectl}" --context "$ctx" apply -f ${manifest_base}/hosted/calico.yaml
       dind::retry "${kubectl}" --context "$ctx" apply -f ${manifest_base}/hosted/calicoctl.yaml
@@ -2091,6 +2090,7 @@ function dind::do-run-e2e {
 }
 
 function dind::clean {
+  dind::ensure-downloaded-kubectl
   dind::down
   dind::remove-images "dind-support$( dind::cluster-suffix )"
   dind::remove-volumes
