@@ -134,16 +134,6 @@ function dind::build-image {
            .
 }
 
-# function dind::kubectl-build-var {
-#     local version="${1/v/}"
-#     local platform_suffix=""
-#     if [[ ${2} = darwin ]]; then
-#         platform_suffix="_DARWIN"
-#     fi
-#     local what="${3}"
-#     eval "echo \${KUBECTL${platform_suffix}_${what}_${version//./_}}"
-# }
-
 function release_description {
     local -a tag="${1}"
     shift
@@ -183,17 +173,4 @@ function release {
                        --replace \
                        --file "fixed/${filename}"
     done
-}
-
-# function circle_image_tag_prefix {
-#     image_tag_prefix=
-#     if [[ ${image_tag} ]]; then
-#         tag="$(echo "${CIRCLE_TAG:-${CIRCLE_BRANCH}}"|tr / _)"
-#     fi
-# }
-
-function image_tag_for_version {
-    local k8s_version="${1}" # vX.Y
-    local commit_id="$(git rev-parse HEAD)"
-    echo "${commit_id}-${k8s_version}"
 }
