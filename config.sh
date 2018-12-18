@@ -18,8 +18,16 @@ NUM_NODES=${NUM_NODES:-2}
 # Use non-dockerized build
 # KUBEADM_DIND_LOCAL=
 
-# Use prebuilt DIND image
-# DIND_IMAGE="${DIND_IMAGE:-mirantis/kubeadm-dind-cluster:v1.13}"
+# Image name base for k-d-c
+DIND_IMAGE_BASE="${DIND_IMAGE_BASE:-mirantis/kubeadm-dind-cluster}"
+
+# Specify DIND image to use. mirantis/kubeadm-dind-cluster:local
+# is the one that is built locally using build/build-local.sh
+DIND_IMAGE="${DIND_IMAGE:-${DIND_IMAGE_BASE}:local}"
+
+# Set DOWNLOAD_KUBECTL to non-empty string to download
+# kubectl. Should not be used with BUILD_KUBEADM / BUILD_HYPERKUBE
+# DOWNLOAD_KUBECTL=y
 
 # Set to non-empty string to enable building kubeadm
 # BUILD_KUBEADM=y
