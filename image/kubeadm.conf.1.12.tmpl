@@ -14,6 +14,8 @@ nodeRegistration:
   - effect: NoSchedule
     key: node-role.kubernetes.io/master
 ---
+# The extra indent is important here because of templating issues.
+# 1.13 has extra nesting level here.
 apiServerExtraArgs:
     insecure-bind-address: "{{BIND_ADDR}}"
     insecure-port: "{{BIND_PORT}}"
@@ -26,6 +28,8 @@ auditPolicy:
   path: ""
 certificatesDir: /etc/kubernetes/pki
 controlPlaneEndpoint: ""
+# The extra indent is important here because of templating issues.
+# 1.13 has extra nesting level here.
 controllerManagerExtraArgs:
     {{COMPONENT_FEATURE_GATES}}
 {{CONTROLLER_MANAGER_EXTRA_ARGS}}
@@ -40,6 +44,8 @@ kubernetesVersion: "{{KUBEADM_VERSION}}"
 networking:
   {{POD_SUBNET_DISABLE}}podSubnet: "{{POD_NETWORK_CIDR}}"
   serviceSubnet: "{{SVC_SUBNET}}"
+# The extra indent is important here because of templating issues.
+# 1.13 has extra nesting level here.
 schedulerExtraArgs:
     {{COMPONENT_FEATURE_GATES}}
 {{SCHEDULER_EXTRA_ARGS}}

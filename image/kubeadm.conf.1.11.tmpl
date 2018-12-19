@@ -6,6 +6,8 @@ api:
   advertiseAddress: "{{ADV_ADDR}}"
   bindPort: 6443
   controlPlaneEndpoint: ""
+# The extra indent is important here because of templating issues.
+# 1.13 has extra nesting level here.
 apiServerExtraArgs:
     insecure-bind-address: "{{BIND_ADDR}}"
     insecure-port: "{{BIND_PORT}}"
@@ -26,6 +28,8 @@ bootstrapTokens:
   - authentication
 certificatesDir: /etc/kubernetes/pki
 # clusterName: kubernetes
+# The extra indent is important here because of templating issues.
+# 1.13 has extra nesting level here.
 controllerManagerExtraArgs:
     {{COMPONENT_FEATURE_GATES}}
 {{CONTROLLER_MANAGER_EXTRA_ARGS}}
@@ -148,6 +152,8 @@ networking:
 nodeRegistration:
   name: {{KUBE_MASTER_NAME}}
   criSocket: "{{CRI_SOCKET}}"
+# The extra indent is important here because of templating issues.
+# 1.13 has extra nesting level here.
 schedulerExtraArgs:
     {{COMPONENT_FEATURE_GATES}}
 {{SCHEDULER_EXTRA_ARGS}}

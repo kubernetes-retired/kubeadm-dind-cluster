@@ -72,9 +72,9 @@ $ export PATH="$HOME/.kubeadm-dind-cluster:$PATH"
 
 $ kubectl get nodes
 NAME          STATUS    ROLES     AGE       VERSION
-kube-master   Ready     master    4m        v1.13.1
-kube-node-1   Ready     <none>    2m        v1.13.1
-kube-node-2   Ready     <none>    2m        v1.13.1
+kube-master   Ready     master    4m        v1.13.0
+kube-node-1   Ready     <none>    2m        v1.13.0
+kube-node-2   Ready     <none>    2m        v1.13.0
 
 $ # k8s dashboard available at http://localhost:8080/api/v1/namespaces/kube-system/services/kubernetes-dashboard:/proxy
 

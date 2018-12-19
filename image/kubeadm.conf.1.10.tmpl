@@ -4,12 +4,16 @@
 #   SVC_SUBNET, BIND_ADDR, BIND_PORT, KUBEADM_VERSION
 api:
   advertiseAddress: "{{ADV_ADDR}}"
+# The extra indent is important here because of templating issues.
+# 1.13 has extra nesting level here.
 apiServerExtraArgs:
     insecure-bind-address: "{{BIND_ADDR}}"
     insecure-port: "{{BIND_PORT}}"
     {{COMPONENT_FEATURE_GATES}}
 {{APISERVER_EXTRA_ARGS}}
 apiVersion: kubeadm.k8s.io/v1alpha1
+# The extra indent is important here because of templating issues.
+# 1.13 has extra nesting level here.
 controllerManagerExtraArgs:
     {{COMPONENT_FEATURE_GATES}}
 {{CONTROLLER_MANAGER_EXTRA_ARGS}}
@@ -21,6 +25,8 @@ networking:
   serviceSubnet: "{{SVC_SUBNET}}"
 tokenTTL: 0s
 nodeName: {{KUBE_MASTER_NAME}}
+# The extra indent is important here because of templating issues.
+# 1.13 has extra nesting level here.
 schedulerExtraArgs:
     {{COMPONENT_FEATURE_GATES}}
 {{SCHEDULER_EXTRA_ARGS}}
