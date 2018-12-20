@@ -3,10 +3,10 @@ services: docker
 language: minimal
 
 env:
-  - TEST_CASE=1.9
   - TEST_CASE=1.10
   - TEST_CASE=1.11
   - TEST_CASE=1.12
+  - TEST_CASE=1.13
 
 before_install:
   - sudo apt-get -qq update

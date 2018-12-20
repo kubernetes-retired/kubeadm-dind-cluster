@@ -2,10 +2,11 @@
 # the variables defined herein:
 #   ADV_ADDR, POD_SUBNET_DISABLE, POD_NETWORK_CIDR, KUBE_MASTER_NAME
 #   SVC_SUBNET, BIND_ADDR, BIND_PORT, KUBEADM_VERSION
-apiEndpoint:
+apiVersion: kubeadm.k8s.io/v1beta1
+kind: InitConfiguration
+localAPIEndpoint:
   advertiseAddress: "{{ADV_ADDR}}"
   bindPort: 6443
-apiVersion: kubeadm.k8s.io/v1beta1
 bootstrapTokens:
 - groups:
   - system:bootstrappers:kubeadm:default-node-token
@@ -14,7 +15,6 @@ bootstrapTokens:
   usages:
   - signing
   - authentication
-kind: InitConfiguration
 nodeRegistration:
   criSocket: "{{CRI_SOCKET}}"
   name: {{KUBE_MASTER_NAME}}
@@ -22,38 +22,47 @@ nodeRegistration:
   - effect: NoSchedule
     key: node-role.kubernetes.io/master
 ---
-apiServerExtraArgs:
-  insecure-bind-address: "{{BIND_ADDR}}"
-  insecure-port: "{{BIND_PORT}}"
-  {{COMPONENT_FEATURE_GATES}}
-{{APISERVER_EXTRA_ARGS}}
 apiVersion: kubeadm.k8s.io/v1beta1
-auditPolicy:
-  logDir: /var/log/kubernetes/audit
-  logMaxAge: 2
-  path: ""
+kind: ClusterConfiguration
+apiServer:
+  extraVolumes:
+  - name: hyperkube
+    hostPath: /k8s/hyperkube
+    mountPath: /hyperkube
+  extraArgs:
+    insecure-bind-address: "{{BIND_ADDR}}"
+    insecure-port: "{{BIND_PORT}}"
+    {{COMPONENT_FEATURE_GATES}}
+{{APISERVER_EXTRA_ARGS}}
+controllerManager:
+  extraVolumes:
+  - name: hyperkube
+    hostPath: /k8s/hyperkube
+    mountPath: /hyperkube
+  extraArgs:
+    {{COMPONENT_FEATURE_GATES}}
+{{CONTROLLER_MANAGER_EXTRA_ARGS}}
+scheduler:
+  extraVolumes:
+  - name: hyperkube
+    hostPath: /k8s/hyperkube
+    mountPath: /hyperkube
+  extraArgs:
+    {{COMPONENT_FEATURE_GATES}}
+{{SCHEDULER_EXTRA_ARGS}}
 certificatesDir: /etc/kubernetes/pki
 # clusterName: kubernetes
 controlPlaneEndpoint: ""
-controllerManagerExtraArgs:
-  {{COMPONENT_FEATURE_GATES}}
-{{CONTROLLER_MANAGER_EXTRA_ARGS}}
 etcd:
   local:
     dataDir: /var/lib/etcd
-    image: ""
 featureGates: {{FEATURE_GATES}}
 useHyperKubeImage: true
-kind: ClusterConfiguration
 kubernetesVersion: "{{KUBEADM_VERSION}}"
 networking:
   dnsDomain: cluster.local
   {{POD_SUBNET_DISABLE}}podSubnet: "{{POD_NETWORK_CIDR}}"
   serviceSubnet: "{{SVC_SUBNET}}"
-schedulerExtraArgs:
-  {{COMPONENT_FEATURE_GATES}}
-{{SCHEDULER_EXTRA_ARGS}}
-unifiedControlPlaneImage: mirantis/hypokube:final
 ---
 apiVersion: kubeproxy.config.k8s.io/v1alpha1
 bindAddress: "{{BIND_ADDR}}"

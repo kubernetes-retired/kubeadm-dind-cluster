@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright 2017 Mirantis
+# Copyright 2018 Mirantis
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@ set -o errexit
 set -o nounset
 set -o pipefail
 set -o errtrace
-VERSIONS=(1.9.11 1.10.9 1.11.3 1.12.1)
+VERSIONS=(1.10.11 1.11.5 1.12.3 1.13.0)
 
 first=1
 for version in ${VERSIONS[@]}; do

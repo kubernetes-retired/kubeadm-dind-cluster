@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright 2017 Mirantis
+# Copyright 2018 Mirantis
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,11 +16,15 @@
 source "${DIND_ROOT}/build/buildconf.sh"
 
 IMAGE_CACHE_DIR="${IMAGE_CACHE_DIR:-}"
+IMAGE_NAME="${IMAGE_NAME:-mirantis/kubeadm-dind-cluster}"
 
 KUBEADM_URL="${KUBEADM_URL:-}"
 HYPERKUBE_URL="${HYPERKUBE_URL:-}"
 KUBEADM_SHA1=${KUBEADM_SHA1:-}
 HYPERKUBE_SHA1=${HYPERKUBE_SHA1:-}
+GH_RELEASE_USER="kubernetes-sigs"
+GH_REPO="kubeadm-dind-cluster"
+GH_RELEASE_TEST_USER="ivan4th"
 
 # FIXME: use k8s version specific list of images to pre-pull
 # prepull_images=(gcr.io/google_containers/etcd-amd64:3.0.17
@@ -109,11 +113,64 @@ function dind::build-image {
     dind::build-hypokube
     images+=("${hypokube_base_image}")
 
+    if [[ ${KUBECTL_LINUX_URL} =~ /(v[0-9.]*)/ ]]; then
+        kubectl_version="${BASH_REMATCH[1]}"
+    else
+        echo >&2 "can't get kubectl version from url: ${KUBECTL_LINUX_URL}"
+        exit 1
+    fi
+
     dind::copy-saved-images save.tar.lz4 "${images[@]}"
     docker build -t "${name}" \
            --build-arg KUBEADM_URL="${KUBEADM_URL}" \
            --build-arg KUBEADM_SHA1="${KUBEADM_SHA1}" \
            --build-arg HYPERKUBE_URL="${HYPERKUBE_URL}" \
            --build-arg HYPERKUBE_SHA1="${HYPERKUBE_SHA1}" \
+           --build-arg KUBECTL_VERSION=${kubectl_version} \
+           --build-arg KUBECTL_LINUX_SHA1="${KUBECTL_LINUX_SHA1}" \
+           --build-arg KUBECTL_LINUX_URL="${KUBECTL_LINUX_URL}" \
+           --build-arg KUBECTL_DARWIN_SHA1="${KUBECTL_DARWIN_SHA1}" \
+           --build-arg KUBECTL_DARWIN_URL="${KUBECTL_DARWIN_URL}" \
            .
+}
+
+function release_description {
+    local -a tag="${1}"
+    shift
+    git tag -l --format='%(contents:body)' "${tag}"
+    echo
+    echo "SHA256 sums for the files:"
+    echo '```'
+    (cd fixed && sha256sum "$@")
+    echo '```'
+}
+
+function release {
+    local tag="${1}"
+    shift
+    local gh_user="${GH_RELEASE_USER}"
+    if [[ ${tag} =~ test ]]; then
+        gh_user="${GH_RELEASE_TEST_USER}"
+    fi
+    local -a opts=(--user "${gh_user}" --repo "${GH_REPO}" --tag "${tag}")
+    local -a files=($(cd fixed && ls dind-cluster-v*.sh))
+    local description="$(release_description "${tag}" "${files[@]}")"
+    local pre_release=
+    if [[ ${tag} =~ -(test|pre).*$ ]]; then
+        pre_release="--pre-release"
+    fi
+    if github-release --quiet delete "${opts[@]}"; then
+        echo >&2 "Replacing the old release"
+    fi
+    github-release release "${opts[@]}" \
+                   --name "$(git tag -l --format='%(contents:subject)' "${tag}")" \
+                   --description "${description}" \
+                   ${pre_release}
+    for filename in "${files[@]}"; do
+        echo >&2 "Uploading: ${filename}"
+        github-release upload "${opts[@]}" \
+                       --name "${filename}" \
+                       --replace \
+                       --file "fixed/${filename}"
+    done
 }

@@ -19,9 +19,11 @@ Docker 1.12+ is recommended. If you're not using one of the
 preconfigured scripts (see below) and not building from source, it's
 better to have `kubectl` executable in your path matching the
 version of k8s binaries you're using (i.e. for example better don't
-use `kubectl` 1.10.x with `hyperkube` 1.9.x).
+use `kubectl` 1.13.x with `hyperkube` 1.12.x). As an alternative,
+you can set `DOWNLOAD_KUBECTL` to a non-empty string in your
+config.sh so `kubeadm-dind-cluster` will download it for you.
 
-`kubeadm-dind-cluster` supports k8s versions 1.9.x through 1.12.x.
+`kubeadm-dind-cluster` supports k8s versions 1.10.x through 1.13.x.
 
 **As of now, running `kubeadm-dind-cluster` on Docker with `btrfs`
 storage driver is not supported.**
@@ -49,39 +51,44 @@ IPv6 and thus clusters cannot be formed using IPv6 addresses.
 
 ## Using preconfigured scripts
 `kubeadm-dind-cluster` currently provides preconfigured scripts for
-Kubernetes versions 1.9 through 1.12. This may be convenient for use with
-projects that extend or use Kubernetes. For example, you can start
-Kubernetes 1.12 like this:
+Kubernetes versions 1.10 through 1.13 published as part of GitHub
+releases. Each preconfigured script is pinned to the corresponding
+image tag and SHA256 digest, so it will not be broken by changes
+in kubeadm-dind-cluster master branch.
+
+The preconfigured scripts are convenient for use with projects that
+extend or use Kubernetes. For example, you can start Kubernetes 1.13
+like this:
 
 ```shell
-$ wget https://cdn.rawgit.com/kubernetes-sigs/kubeadm-dind-cluster/master/fixed/dind-cluster-v1.12.sh
-$ chmod +x dind-cluster-v1.12.sh
+$ wget https://github.com/kubernetes-sigs/kubeadm-dind-cluster/releases/download/v0.1.0/dind-cluster-v1.13.sh
+$ chmod +x dind-cluster-v1.13.sh
 
 $ # start the cluster
-$ ./dind-cluster-v1.12.sh up
+$ ./dind-cluster-v1.13.sh up
 
 $ # add kubectl directory to PATH
 $ export PATH="$HOME/.kubeadm-dind-cluster:$PATH"
 
 $ kubectl get nodes
 NAME          STATUS    ROLES     AGE       VERSION
-kube-master   Ready     master    4m        v1.12.1
-kube-node-1   Ready     <none>    2m        v1.12.1
-kube-node-2   Ready     <none>    2m        v1.12.1
+kube-master   Ready     master    4m        v1.13.0
+kube-node-1   Ready     <none>    2m        v1.13.0
+kube-node-2   Ready     <none>    2m        v1.13.0
 
 $ # k8s dashboard available at http://localhost:8080/api/v1/namespaces/kube-system/services/kubernetes-dashboard:/proxy
 
 $ # restart the cluster, this should happen much quicker than initial startup
-$ ./dind-cluster-v1.12.sh up
+$ ./dind-cluster-v1.13.sh up
 
 $ # stop the cluster
-$ ./dind-cluster-v1.12.sh down
+$ ./dind-cluster-v1.13.sh down
 
 $ # remove DIND containers and volumes
-$ ./dind-cluster-v1.12.sh clean
+$ ./dind-cluster-v1.13.sh clean
 ```
 
-Replace 1.12 with 1.9 .. 1.11 to use other Kubernetes versions.
+Replace 1.13 with 1.10 .. 1.12 to use other Kubernetes versions.
 **Important note:** you need to do `./dind-cluster....sh clean` when
 you switch between Kubernetes versions (but no need to do this between
 rebuilds if you use `BUILD_HYPERKUBE=y` like described below).
@@ -196,8 +203,8 @@ To use kube-router, set the CNI_PLUGIN environment variable to "kube-router".
 NOTE: Currently pinning kube-router to v0.2.0, because of issue seen with
 cleanup, when using newer (latest) kube-router.
 
-NOTE: This has only been tested with Kubernetes 1.11, and currently fails,
-when using Kuberentes 1.12 (alpha).
+NOTE: This has only been tested with Kubernetes 1.11, and currently fails
+when using Kuberentes 1.12+
 
 ## IPv6 Mode
 To run Kubernetes in IPv6 only mode, set the environment variable IP_MODE
@@ -509,6 +516,8 @@ case also locally, by just calling the script:
 $ DIND_ALLOW_AAAA_USE='true' TEST_K8S_VER='v1.10' ./test/test-ipv6-only.sh
 ```
 
+CircleCI config can be re-generated using `build/update-test-matrix.sh`
+
 #### TravisCI, `./test.sh`
 
 There are some tests in `./test.sh`, those will run on TravisCI.
@@ -534,7 +543,7 @@ that we have IPv6 available for the test cases. Note, that while internal IPv6
 is configured, external IPv6 is not available.
 
 There are two slightly different kind of tests which run for all version
-starting from `v1.9`:
+starting from `v1.10`:
 
 #### `TEST_K8S_VER='1.x' ./test/test-ipv6-only.sh`
 

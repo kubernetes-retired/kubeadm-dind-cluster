@@ -36,6 +36,7 @@ K8S_PR="${K8S_PR:-}"
 tempdir="$(mktemp -d)"
 export KUBECTL_DIR="${tempdir}"
 export KUBECONFIG="${KUBECTL_DIR}/kube.conf"
+export DOWNLOAD_KUBECTL=y
 
 function cleanup {
   if [[ ${TRAVIS:-} && $? -ne 0 ]]; then
@@ -73,9 +74,9 @@ function test-cluster {
   fi
   bash -x "${DIND_ROOT}"/dind-cluster.sh clean
   time bash -x "${DIND_ROOT}"/dind-cluster.sh up
-  "${kubectl}" --context="$defaultContext" get pods -n kube-system | grep kube-dns
+  "${kubectl}" --context="$defaultContext" get pods --all-namespaces | egrep 'coredns|kube-dns'
   time bash -x "${DIND_ROOT}"/dind-cluster.sh up
-  "${kubectl}" --context="$defaultContext" get pods -n kube-system | grep kube-dns
+  "${kubectl}" --context="$defaultContext" get pods --all-namespaces | egrep 'coredns|kube-dns'
   bash -x "${DIND_ROOT}"/dind-cluster.sh down
   bash -x "${DIND_ROOT}"/dind-cluster.sh clean
 }
@@ -99,93 +100,21 @@ function test-cluster-src {
   )
 }
 
-function test-case-1.9 {
-  (
-    export KUBEADM_URL="${KUBEADM_URL_1_9}"
-    export KUBEADM_SHA1="${KUBEADM_SHA1_1_9}"
-    export HYPERKUBE_URL="${HYPERKUBE_URL_1_9}"
-    export HYPERKUBE_SHA1="${HYPERKUBE_SHA1_1_9}"
-    if [[ ${NOBUILD} ]]; then
-        export DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.9
-        docker pull "${DIND_IMAGE}"
-    else
-        export LOCAL_KUBECTL_VERSION=v1.9
-    fi
-    test-cluster
-  )
-}
-
-function test-case-1.9-flannel {
-  (
-    export CNI_PLUGIN=flannel
-    test-case-1.9
-  )
-}
-
-function test-case-1.9-calico {
-  (
-    export CNI_PLUGIN=calico
-    test-case-1.9
-  )
-}
-
-function test-case-1.9-calico-kdd {
-  (
-    export CNI_PLUGIN=calico-kdd
-    POD_NETWORK_CIDR="192.168.0.0/16"
-    test-case-1.9
-  )
-}
-
-function test-case-1.9-weave {
-  (
-    export CNI_PLUGIN=weave
-    test-case-1.9
-  )
-}
-
 function test-case-1.10 {
   (
     export KUBEADM_URL="${KUBEADM_URL_1_10}"
     export KUBEADM_SHA1="${KUBEADM_SHA1_1_10}"
     export HYPERKUBE_URL="${HYPERKUBE_URL_1_10}"
     export HYPERKUBE_SHA1="${HYPERKUBE_SHA1_1_10}"
+    export KUBECTL_LINUX_URL=${KUBECTL_LINUX_URL_1_10}"
+    export KUBECTL_LINUX_SHA1=${KUBECTL_LINUX_SHA1_1_10}"
+    export KUBECTL_DARWIN_URL=${KUBECTL_DARWIN_URL_1_10}"
+    export KUBECTL_DARWIN_SHA1=${KUBECTL_DARWIN_SHA1_1_10}"
     if [[ ${NOBUILD} ]]; then
-        export DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.10
-        docker pull "${DIND_IMAGE}"
-    else
-        export LOCAL_KUBECTL_VERSION=v1.10
+      export DIND_K8S_VERSION=v1.10
+      docker pull "${DIND_IMAGE}"
     fi
     test-cluster
-  )
-}
-
-function test-case-1.10-flannel {
-  (
-    export CNI_PLUGIN=flannel
-    test-case-1.10
-  )
-}
-
-function test-case-1.10-calico {
-  (
-    export CNI_PLUGIN=calico
-    test-case-1.10
-  )
-}
-
-function test-case-1.10-calico-kdd {
-  (
-    export CNI_PLUGIN=calico-kdd
-    POD_NETWORK_CIDR="192.168.0.0/16"
-    test-case-1.10
-  )
-}
-
-function test-case-1.10-weave {
-  (
-    export CNI_PLUGIN=weave
-    test-case-1.10
   )
 }
 
@@ -195,87 +124,15 @@ function test-case-1.11 {
     export KUBEADM_SHA1="${KUBEADM_SHA1_1_11}"
     export HYPERKUBE_URL="${HYPERKUBE_URL_1_11}"
     export HYPERKUBE_SHA1="${HYPERKUBE_SHA1_1_11}"
+    export KUBECTL_LINUX_URL=${KUBECTL_LINUX_URL_1_11}"
+    export KUBECTL_LINUX_SHA1=${KUBECTL_LINUX_SHA1_1_11}"
+    export KUBECTL_DARWIN_URL=${KUBECTL_DARWIN_URL_1_11}"
+    export KUBECTL_DARWIN_SHA1=${KUBECTL_DARWIN_SHA1_1_11}"
     if [[ ${NOBUILD} ]]; then
-        export DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.11
-        docker pull "${DIND_IMAGE}"
-    else
-        export LOCAL_KUBECTL_VERSION=v1.11
+      export DIND_K8S_VERSION=v1.11
+      docker pull "${DIND_IMAGE}"
     fi
     test-cluster
-  )
-}
-
-function test-case-1.11-flannel {
-  (
-    export CNI_PLUGIN=flannel
-    test-case-1.11
-  )
-}
-
-function test-case-1.11-calico {
-  (
-    export CNI_PLUGIN=calico
-    test-case-1.11
-  )
-}
-
-function test-case-1.11-calico-kdd {
-  (
-    export CNI_PLUGIN=calico-kdd
-    POD_NETWORK_CIDR="192.168.0.0/16"
-    test-case-1.11
-  )
-}
-
-function test-case-1.11-weave {
-  (
-    export CNI_PLUGIN=weave
-    test-case-1.11
-  )
-}
-
-function test-case-1.11 {
-  (
-    export KUBEADM_URL="${KUBEADM_URL_1_11}"
-    export KUBEADM_SHA1="${KUBEADM_SHA1_1_11}"
-    export HYPERKUBE_URL="${HYPERKUBE_URL_1_11}"
-    export HYPERKUBE_SHA1="${HYPERKUBE_SHA1_1_11}"
-    if [[ ${NOBUILD} ]]; then
-        export DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.11
-        docker pull "${DIND_IMAGE}"
-    else
-        export LOCAL_KUBECTL_VERSION=v1.11
-    fi
-    test-cluster
-  )
-}
-
-function test-case-1.11-flannel {
-  (
-    export CNI_PLUGIN=flannel
-    test-case-1.11
-  )
-}
-
-function test-case-1.11-calico {
-  (
-    export CNI_PLUGIN=calico
-    test-case-1.11
-  )
-}
-
-function test-case-1.11-calico-kdd {
-  (
-    export CNI_PLUGIN=calico-kdd
-    POD_NETWORK_CIDR="192.168.0.0/16"
-    test-case-1.11
-  )
-}
-
-function test-case-1.11-weave {
-  (
-    export CNI_PLUGIN=weave
-    test-case-1.11
   )
 }
 
@@ -285,91 +142,38 @@ function test-case-1.12 {
     export KUBEADM_SHA1="${KUBEADM_SHA1_1_12}"
     export HYPERKUBE_URL="${HYPERKUBE_URL_1_12}"
     export HYPERKUBE_SHA1="${HYPERKUBE_SHA1_1_12}"
+    export KUBECTL_LINUX_URL=${KUBECTL_LINUX_URL_1_12}"
+    export KUBECTL_LINUX_SHA1=${KUBECTL_LINUX_SHA1_1_12}"
+    export KUBECTL_DARWIN_URL=${KUBECTL_DARWIN_URL_1_12}"
+    export KUBECTL_DARWIN_SHA1=${KUBECTL_DARWIN_SHA1_1_12}"
     if [[ ${NOBUILD} ]]; then
-      export DIND_IMAGE=mirantis/kubeadm-dind-cluster:v1.12
+      export DIND_K8S_VERSION=v1.12
       docker pull "${DIND_IMAGE}"
-    else
-      export LOCAL_KUBECTL_VERSION=v1.12
     fi
     test-cluster
   )
 }
 
-function test-case-1.12-flannel {
+function test-case-1.13 {
   (
-    export CNI_PLUGIN=flannel
-    test-case-1.12
+    export KUBEADM_URL="${KUBEADM_URL_1_13}"
+    export KUBEADM_SHA1="${KUBEADM_SHA1_1_13}"
+    export HYPERKUBE_URL="${HYPERKUBE_URL_1_13}"
+    export HYPERKUBE_SHA1="${HYPERKUBE_SHA1_1_13}"
+    export KUBECTL_LINUX_URL=${KUBECTL_LINUX_URL_1_13}"
+    export KUBECTL_LINUX_SHA1=${KUBECTL_LINUX_SHA1_1_13}"
+    export KUBECTL_DARWIN_URL=${KUBECTL_DARWIN_URL_1_13}"
+    export KUBECTL_DARWIN_SHA1=${KUBECTL_DARWIN_SHA1_1_13}"
+    if [[ ${NOBUILD} ]]; then
+      export DIND_K8S_VERSION=v1.13
+      docker pull "${DIND_IMAGE}"
+    fi
+    test-cluster
   )
-}
-
-function test-case-1.12-calico {
-  (
-    export CNI_PLUGIN=calico
-    test-case-1.12
-  )
-}
-
-function test-case-1.12-calico-kdd {
-  (
-    export CNI_PLUGIN=calico-kdd
-    POD_NETWORK_CIDR="192.168.0.0/16"
-    test-case-1.12
-  )
-}
-
-function test-case-1.12-weave {
-  (
-    export CNI_PLUGIN=weave
-    test-case-1.12
-  )
-}
-
-function test-case-src-1.12 {
-  test-cluster-src release-1.12
 }
 
 function test-case-src-master {
   test-cluster-src master
-}
-
-function test-case-src-master-flannel {
-  (
-    export CNI_PLUGIN=flannel
-    test-cluster-src
-  )
-}
-
-function test-case-src-master-calico {
-  (
-    export CNI_PLUGIN=calico
-    test-cluster-src
-  )
-}
-
-function test-case-src-master-calico-kdd {
-  (
-    export CNI_PLUGIN=calico-kdd
-    POD_NETWORK_CIDR="192.168.0.0/16"
-    test-cluster-src
-  )
-}
-
-function test-case-src-master-weave {
-  (
-    export CNI_PLUGIN=weave
-    test-cluster-src
-  )
-}
-
-function test-case-src-working-area {
-  test-cluster-src
-}
-
-function test-case-src-master-coredns {
-  (
-    export DNS_SERVICE=coredns
-    test-cluster-src
-  )
 }
 
 function test-case-dump-succeeds() {
@@ -399,33 +203,11 @@ function fail() {
 }
 
 if [[ ! ${TEST_CASE} ]]; then
-  test-case-1.9
-  test-case-1.9-flannel
-  test-case-1.9-calico
-  test-case-1.9-calico-kdd
-  test-case-1.9-weave
   test-case-1.10
-  test-case-1.10-flannel
-  test-case-1.10-calico
-  test-case-1.10-calico-kdd
-  test-case-1.10-weave
   test-case-1.11
-  test-case-1.11-flannel
-  test-case-1.11-calico
-  test-case-1.11-calico-kdd
-  test-case-1.11-weave
   test-case-1.12
-  test-case-1.12-flannel
-  test-case-1.12-calico
-  test-case-1.12-calico-kdd
-  test-case-1.12-weave
-  test-case-src-1.12
-  test-case-src-master
-  # test-case-src-master-flannel
-  # test-case-src-master-calico
-  # test-case-src-calico-kdd
-  # test-case-src-master-weave
-  # test-case-src-master-coredns
+  test-case-1.13
+  # test-case-src-master
   test-case-dump-succeeds
   test-case-restore
 else

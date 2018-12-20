@@ -19,12 +19,30 @@ set -o pipefail
 set -o errtrace
 
 DIND_ROOT=$(dirname "${BASH_SOURCE}")/..
+source "$DIND_ROOT/build/funcs.sh"
+
+image_tag_prefix=
+if [[ ${1:-} ]]; then
+  image_tag_prefix="${1}-"
+fi
 
 fixed_dir="${DIND_ROOT}/fixed"
 mkdir -p "${fixed_dir}"
-for tag in v1.9 v1.10 v1.11 v1.12 stable; do
+
+for tag in v1.10 v1.11 v1.12 v1.13; do
   dest="${fixed_dir}/dind-cluster-${tag}.sh"
-  sed "s@#%CONFIG%@EMBEDDED_CONFIG=y;DIND_IMAGE=mirantis/kubeadm-dind-cluster:${tag}@" \
+  commit="$(cd "${DIND_ROOT}"; git rev-parse HEAD)"
+  image="mirantis/kubeadm-dind-cluster:${commit}-${tag}"
+  # invoke docker pull to get the digest
+  docker pull "${image}"
+  digest="$(docker inspect --format='{{index .RepoDigests 0}}' "${image}" | sed 's/.*@//')"
+  vars=(EMBEDDED_CONFIG=y
+        DOWNLOAD_KUBECTL=y
+        DIND_K8S_VERSION="${tag}"
+        DIND_IMAGE_DIGEST="${digest}"
+        DIND_COMMIT="$(cd "${DIND_ROOT}" && git rev-parse HEAD)")
+  var_str=$(IFS=';'; echo "${vars[*]}")
+  sed "s@#%CONFIG%@${var_str}@" \
       "${DIND_ROOT}/dind-cluster.sh" >"${dest}"
   chmod +x "${dest}"
 done

@@ -1,22 +1,38 @@
+# Use build/update-build-matrix.sh to update test cases & workflows
+# in this file (after "#cut here#" mark below)
+
 defaults: &defaults
   docker:
-    - image: ubuntu:16.04
+  - image: ubuntu:16.04
   working_directory: ~/kubeadm-dind-cluster
+
+prereqs: &prereqs
+  name: Install prerequisites
+  command: |
+    apt-get -qq update
+    apt-get install -qqy curl ca-certificates git bzip2
+
+prereqs_machine: &prereqs_machine
+  name: Install prerequisites
+  command: |
+    sudo apt-get -qq update
+    sudo apt-get install -qqy curl ca-certificates git
 
 env: &env
   DOCKER_VERSION: "17.03.0-ce"
-  KDC_VERSIONS: "1.9 1.10 1.11 1.12"
   IMAGE_NAME: "mirantis/kubeadm-dind-cluster"
   PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.kubeadm-dind-cluster
   # prevent dind-cluster*.sh from trying to pull the image
   # during the tests
   DIND_SKIP_PULL: y
   KUBE_RSYNC_PORT: 8730
-  # which images should be pushed
-  IMAGE_PUSH_FILTER: "mirantis/kubeadm-dind-cluster:v*"
   STABLE_BRANCH: stable
   STABLE_SRC_TAG: "v1.12"
   PRIMARY_BRANCH: master
+  DIND_COMMIT: current
+  DOWNLOAD_KUBECTL: y
+  GITHUB_RELEASE_TOOL_URL: "https://github.com/aktau/github-release/releases/download/v0.7.2/linux-amd64-github-release.tar.bz2"
+  GITHUB_RELEASE_TOOL_SHA256: 3feae868828f57a24d1bb21a5f475de4a116df3063747e3290ad561b4292185c
 
 setup: &setup
   name: Set up the environment
@@ -62,6 +78,8 @@ dump_cluster: &dump_cluster
 
 test: &test
   steps:
+    - run:
+        <<: *prereqs
     - checkout
     - setup_remote_docker
     - run:
@@ -111,6 +129,8 @@ test: &test
 
 test_src: &test_src
   steps:
+    - run:
+        <<: *prereqs
     - checkout
     - setup_remote_docker
     - run:
@@ -189,6 +209,8 @@ test_ipv6_only: &test_ipv6_only
   machine: true
   working_directory: ~/kubeadm-dind-cluster
   steps:
+    - run:
+        <<: *prereqs_machine
     - checkout
     - attach_workspace:
         at: _save
@@ -206,6 +228,8 @@ test_dual_stack: &test_dual_stack
   machine: true
   working_directory: ~/kubeadm-dind-cluster
   steps:
+    - run:
+        <<: *prereqs_machine
     - checkout
     - attach_workspace:
         at: _save
@@ -224,6 +248,8 @@ test_ipv4_only: &test_ipv4_only
   machine: true
   working_directory: ~/kubeadm-dind-cluster
   steps:
+    - run:
+        <<: *prereqs_machine
     - checkout
     - attach_workspace:
         at: _save
@@ -240,6 +266,8 @@ test_ipv4_only: &test_ipv4_only
 
 test_multiple_clusters: &test_multiple_clusters
   steps:
+    - run:
+        <<: *prereqs
     - checkout
     - setup_remote_docker
     - run:
@@ -254,150 +282,7 @@ test_multiple_clusters: &test_multiple_clusters
         name: Bring up multiple clusters in parallel
         no_output_timeout: 35m
         command: |
-          set -eu
-          set -o pipefail
-
-          function test-case-multiple-instances {
-            local defaultLabel='mirantis.kubeadm_dind_cluster_runtime'
-            local secondClusterID="20"
-            local thirdClusterLabel="third"
-            local d="./dind-cluster.sh"
-
-            export DIND_PORT_FORWARDER_WAIT=1
-            export DIND_PORT_FORWARDER="${PWD}/build/portforward.sh"
-
-            "${d}" up
-            CLUSTER_ID="$secondClusterID" "${d}" up
-            DIND_LABEL="$thirdClusterLabel" "${d}" up
-
-            # masters
-            test "$(countContainersWithExactName "kube-master")" -eq 1 || {
-              fail 'Expected exactly one container with name "kube-master" to exist - cluster created with default label'
-            }
-            test "$(countContainersWithExactName "kube-master-cluster-${secondClusterID}")" -eq 1 || {
-              fail "Expected exactly one container with name 'kube-master-cluster-${secondClusterID}' to exist - cluster created with custom ID"
-            }
-            test "$(countContainersWithExactName "kube-master-${thirdClusterLabel}")" -eq 1 || {
-              fail "Expected exactly one container with name 'kube-master-${thirdClusterLabel}' to exist - cluster created with custom label and assigned ID"
-            }
-
-            # nodes
-            test "$(countContainersWithExactName "kube-node-\\d{1}")" -ge 1 || {
-              fail 'Expected at least one container with name "kube-node-<nr>" to exist - cluster created with default label'
-            }
-            test "$(countContainersWithExactName "kube-node-\\d{1}-cluster-${secondClusterID}")" -ge 1 || {
-              fail "Expected at least one container with name 'kube-node-<nr>-cluster-${secondClusterID}' to exist - cluster created with custom ID"
-            }
-            test "$(countContainersWithExactName "kube-node-\\d{1}-${thirdClusterLabel}")" -ge 1 || {
-              fail "Expected at least one container with name 'kube-node-<nr>-${thirdClusterLabel}' to exist - cluster created with custom label and assigned ID"
-            }
-
-            # volumes
-            test "$(countVolumesWithFilter "name=kubeadm-dind-kube-master$")" -eq 1 || {
-              fail 'Expected one volume for the kube master to exist - cluster created with default label'
-            }
-            test "$(countVolumesWithFilter "name=kubeadm-dind-kube-node-\\d+$")" -ge 1 || {
-              fail 'Expected one volume for the kube nodes to exist - cluster created with default label'
-            }
-
-            test "$(countVolumesWithFilter "name=kubeadm-dind-kube-master-cluster-${secondClusterID}$")" -eq 1 || {
-              fail 'Expected one volume for the kube master to exist - cluster created with custom ID'
-            }
-            test "$(countVolumesWithFilter "name=kubeadm-dind-kube-node-\\d+-cluster-${secondClusterID}$")" -ge 1 || {
-              fail 'Expected one volume for the kube nodes to exist - cluster created with custom ID'
-            }
-
-            test "$(countVolumesWithFilter "name=kubeadm-dind-kube-master-${thirdClusterLabel}$")" -eq 1 || {
-              fail 'Expected one volume for the kube master to exist - cluster created with custom label'
-            }
-            test "$(countVolumesWithFilter "name=kubeadm-dind-kube-node-\\d+-${thirdClusterLabel}$")" -ge 1 || {
-              fail 'Expected one volume for the kube nodes to exist - cluster created with custom label'
-            }
-
-            if usesLinuxKit
-            then
-              test "$(countVolumesWithFilter "name=kubeadm-dind-sys$")" -eq 1 || {
-                fail 'Expected one volume for the sys to exist - cluster created with default label'
-              }
-              test "$(countVolumesWithFilter "name=kubeadm-dind-sys-cluster-${secondClusterID}$")" -eq 1 || {
-                fail 'Expected one volume for the sys to exist - cluster created with custom ID'
-              }
-              test "$(countVolumesWithFilter "name=kubeadm-dind-sys-${thirdClusterLabel}$")" -eq 1 || {
-                fail 'Expected one volume for the sys to exist - cluster created with custom label'
-              }
-            fi
-
-            # networks
-            test "$(countNetworksWithFilter "name=kubeadm-dind-net$")" -eq 1 || {
-              fail 'Expected one network to exist - cluster created with default label'
-            }
-            test "$(countNetworksWithFilter "name=kubeadm-dind-net-cluster-${secondClusterID}$")" -eq 1 || {
-              fail 'Expected one network to exist - cluster created with custom ID'
-            }
-            test "$(countNetworksWithFilter "name=kubeadm-dind-net-${thirdClusterLabel}$")" -eq 1 || {
-              fail 'Expected one network to exist - cluster created with custom label'
-            }
-
-            # contexts
-            hasKubeContext "dind" || {
-              fail 'Expected to have context - cluster created with default label'
-            }
-            hasKubeContext "dind-cluster-${secondClusterID}" || {
-              fail 'Expected to have context - cluster created with custom ID'
-            }
-            hasKubeContext "dind-${thirdClusterLabel}" || {
-              fail 'Expected to have context - cluster created with custom label'
-            }
-
-            "${d}" clean
-            CLUSTER_ID="$secondClusterID" "${d}" clean
-            DIND_LABEL="$thirdClusterLabel" "${d}" clean
-          }
-
-          function hasKubeContext() {
-            kubectl config get-contexts --no-headers \
-              | sed 's/^\s*\**\s*//g' \
-              | grep -q "^${1}\\s"
-          }
-
-          function fail() {
-            local msg="$1"
-            echo -e "\033[1;31m${msg}\033[0m" >&2
-            return 1
-          }
-
-          function countNetworksWithFilter() {
-            docker network ls -q --filter="$1" | wc -l | xargs
-          }
-
-          function countVolumesWithFilter() {
-            docker volume ls -q --filter="$1" | wc -l | xargs
-          }
-
-          function countContainersWithExactName() {
-            countContainersWithFilter "name=${1}$"
-          }
-
-          function countContainersWithLabel() {
-            countContainersWithFilter "label=${1}"
-          }
-
-          function countContainersWithFilter() {
-            docker ps -q --filter="${1}" | wc -l | xargs
-          }
-
-          function usesLinuxKit() {
-            if ! docker info|grep -s '^Operating System: .*Docker for Windows' > /dev/null 2>&1 ; then
-              if docker info|grep -s '^Kernel Version: .*-moby$' >/dev/null 2>&1 ||
-                  docker info|grep -s '^Kernel Version: .*-linuxkit-' > /dev/null 2>&1 ; then
-                return 0
-              fi
-            fi
-            return 1
-          }
-
-          test-case-multiple-instances
-
+          "${PWD}/test/test-multiple-clusters.sh"
 
 version: 2
 jobs:
@@ -406,374 +291,30 @@ jobs:
     environment:
       <<: *env
     steps:
+    - run:
+        name: "Install prerequisites (FIXME: rm this)"
+        command: |
+          apt-get -qq update
+          apt-get install -y curl ca-certificates git
+    - run:
+        <<: *prereqs
     - checkout
     - setup_remote_docker
     - run:
         <<: *setup
     - run:
-        name: Check fixed scripts
-        command: |
-          build/genfixed.sh
-          if git status | grep -q "fixed/"; then
-            echo >&2 "*** Fixed scripts not up to date, please update with build/genfixed.sh"
-            exit 1
-          fi
-    - run:
         name: Build images
         command: |
-          DIND_ROOT="${PWD}"
-          . build/funcs.sh
-          dind::build-base
-          images_to_save=(${BARE_IMAGE_NAME})
-          for v in ${KDC_VERSIONS}; do
-            version="${v//./_}"
-            eval "HYPERKUBE_URL=\${HYPERKUBE_URL_${version}}"
-            eval "HYPERKUBE_SHA1=\${HYPERKUBE_SHA1_${version}}"
-            kubeadm_version="${version}"
-            eval "KUBEADM_URL=\${KUBEADM_URL_${version}}"
-            eval "KUBEADM_SHA1=\${KUBEADM_SHA1_${version}}"
-            tag="v${v}"
-            cur_image="${IMAGE_NAME}:${tag}"
-            dind::build-image "${cur_image}"
-            images_to_save+=("${cur_image}")
-          done
-          mkdir -p _save
-          docker save "${images_to_save[@]}" >_save/images.tar
+          build/build-all.sh _save
     - persist_to_workspace:
         root: _save
         paths:
         - images.tar
 
-  test_multiple_clusters_1.9:
-    <<: *defaults
-    environment:
-      <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.9
-    <<: *test_multiple_clusters
-
-  test_multiple_clusters_1.10:
-    <<: *defaults
-    environment:
-      <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.10
-    <<: *test_multiple_clusters
-
-  test_multiple_clusters_1.11:
-    <<: *defaults
-    environment:
-      <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.11
-    <<: *test_multiple_clusters
-
-  test_multiple_clusters_1.11_ipv6:
-    <<: *defaults
-    environment:
-      <<: *env
-      IP_MODE: ipv6
-      # Ensure no collisions for NAT64 V4 mapping subnet prefix. First cluster will use 10.100,
-      # second will use 10.120 (cluster ID 20), and third will use random value from 10.101 to
-      # 10.113 (using legacy DIND_LABEL w/o cluster ID, causes random offet from 1..13 to be
-      # added to base prefix.
-      NAT64_V4_SUBNET_PREFIX: "10.100"
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.11
-    <<: *test_multiple_clusters
-
-  test_multiple_clusters_1.12:
-    <<: *defaults
-    environment:
-      <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.12
-    <<: *test_multiple_clusters
-
-  # TODO: Test multicluster dual stack, when implemented
-
-  test_1.9:
-    <<: *defaults
-    environment:
-      <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.9
-    <<: *test
-
-  test_1.9_flannel:
-    <<: *defaults
-    environment:
-      <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.9
-      CNI_PLUGIN: flannel
-    <<: *test
-
-  test_1.9_calico:
-    <<: *defaults
-    environment:
-      <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.9
-      CNI_PLUGIN: calico
-    <<: *test
-
-  test_1.9_calico_kdd:
-    <<: *defaults
-    environment:
-      <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.9
-      CNI_PLUGIN: calico-kdd
-    <<: *test
-
-  test_1.9_weave:
-    <<: *defaults
-    environment:
-      <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.9
-      CNI_PLUGIN: weave
-    <<: *test
-
-  test_1.10:
-    <<: *defaults
-    environment:
-      <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.10
-    <<: *test
-
-  test_1.10_flannel:
-    <<: *defaults
-    environment:
-      <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.10
-      CNI_PLUGIN: flannel
-    <<: *test
-
-  test_1.10_calico:
-    <<: *defaults
-    environment:
-      <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.10
-      CNI_PLUGIN: calico
-    <<: *test
-
-  test_1.10_calico_kdd:
-    <<: *defaults
-    environment:
-      <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.10
-      CNI_PLUGIN: calico-kdd
-    <<: *test
-
-  test_1.10_weave:
-    <<: *defaults
-    environment:
-      <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.10
-      CNI_PLUGIN: weave
-    <<: *test
-
-  test_1.10_kube_router:
-    <<: *defaults
-    environment:
-      <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.10
-      CNI_PLUGIN: kube-router
-    <<: *test
-
-  test_1.10_ptp:
-    <<: *defaults
-    environment:
-      <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.10
-      CNI_PLUGIN: ptp
-    <<: *test
-
-  test_1.11:
-    <<: *defaults
-    environment:
-      <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.11
-    <<: *test
-
-  test_1.11_containerd:
-    <<: *defaults
-    environment:
-      <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.11
-      DIND_CRI: 'containerd'
-    <<: *test
-
-  test_1.11_flannel:
-    <<: *defaults
-    environment:
-      <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.11
-      CNI_PLUGIN: flannel
-    <<: *test
-
-  test_1.11_calico:
-    <<: *defaults
-    environment:
-      <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.11
-      CNI_PLUGIN: calico
-    <<: *test
-
-  test_1.11_calico_kdd:
-    <<: *defaults
-    environment:
-      <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.11
-      CNI_PLUGIN: calico-kdd
-    <<: *test
-
-  test_1.11_weave:
-    <<: *defaults
-    environment:
-      <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.11
-      CNI_PLUGIN: weave
-    <<: *test
-
-  test_1.11_kube_router:
-    <<: *defaults
-    environment:
-      <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.11
-      CNI_PLUGIN: kube-router
-    <<: *test
-
-  test_1.11_ptp:
-    <<: *defaults
-    environment:
-      <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.11
-      CNI_PLUGIN: ptp
-    <<: *test
-
-  test_1.11_ipv4_only:
-    environment:
-      <<: *env
-      TEST_K8S_VER: 'v1.9'
-    <<: *test_ipv4_only
-
-  test_1.12:
-    <<: *defaults
-    environment:
-      <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.12
-    <<: *test
-
-  test_1.12_containerd:
-    <<: *defaults
-    environment:
-      <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.12
-      DIND_CRI: 'containerd'
-    <<: *test
-
-  test_1.12_flannel:
-    <<: *defaults
-    environment:
-      <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.12
-      CNI_PLUGIN: flannel
-    <<: *test
-
-  test_1.12_calico:
-    <<: *defaults
-    environment:
-      <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.12
-      CNI_PLUGIN: calico
-    <<: *test
-
-  test_1.12_calico_kdd:
-    <<: *defaults
-    environment:
-      <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.12
-      CNI_PLUGIN: calico-kdd
-    <<: *test
-
-  test_1.12_weave:
-    <<: *defaults
-    environment:
-      <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.12
-      CNI_PLUGIN: weave
-    <<: *test
-
-  test_1.12_kube_router:
-    <<: *defaults
-    environment:
-      <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.12
-      CNI_PLUGIN: kube-router
-    <<: *test
-
-  test_1.12_ptp:
-    <<: *defaults
-    environment:
-      <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.12
-      CNI_PLUGIN: ptp
-    <<: *test
-
-  test_1.12_ipv4_only:
-    environment:
-      <<: *env
-      TEST_K8S_VER: 'v1.9'
-    <<: *test_ipv4_only
-
-  test_1.9_ipv6_only_nat64:
-    environment:
-      <<: *env
-      TEST_K8S_VER: 'v1.9'
-    <<: *test_ipv6_only
-
-  test_1.10_ipv6_only_nat64:
-    environment:
-      <<: *env
-      TEST_K8S_VER: 'v1.10'
-    <<: *test_ipv6_only
-
-  test_1.11_ipv6_only_nat64:
-    environment:
-      <<: *env
-      TEST_K8S_VER: 'v1.11'
-    <<: *test_ipv6_only
-
-  test_1.9_ipv6_only_ext_aaaa:
-    environment:
-      <<: *env
-      TEST_K8S_VER: 'v1.9'
-      DIND_ALLOW_AAAA_USE: 'true'
-    <<: *test_ipv6_only
-
-  test_1.10_ipv6_only_ext_aaaa:
-    environment:
-      <<: *env
-      TEST_K8S_VER: 'v1.10'
-      DIND_ALLOW_AAAA_USE: 'true'
-    <<: *test_ipv6_only
-
-  test_1.11_ipv6_only_ext_aaaa:
-    environment:
-      <<: *env
-      TEST_K8S_VER: 'v1.11'
-      DIND_ALLOW_AAAA_USE: 'true'
-    <<: *test_ipv6_only
-
-  test_1.11_dual_stack_v4_svc_net:
-    environment:
-      <<: *env
-      TEST_K8S_VER: 'v1.11'
-      SERVICE_CIDR: "10.96.0.0/12"
-      DIND_ALLOW_AAAA_USE: 'true'
-    <<: *test_dual_stack
-
-  # TODO: test dual stack with IPv6 service network, when implemented
-  # TODO: test dual stack with NAT64/DNS64, if/when implemented
-
   test_src_release:
     <<: *defaults
     environment:
       <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.12
       BUILD_KUBEADM: y
       BUILD_HYPERKUBE: y
       K8S_SRC: y
@@ -784,17 +325,51 @@ jobs:
     <<: *defaults
     environment:
       <<: *env
-      DIND_IMAGE: mirantis/kubeadm-dind-cluster:v1.12
       BUILD_KUBEADM: y
       BUILD_HYPERKUBE: y
       K8S_SRC: y
     <<: *test_src
+
+  release:
+    <<: *defaults
+    environment:
+      <<: *env
+    steps:
+    - run:
+        <<: *prereqs
+    - checkout
+    - setup_remote_docker
+    - run:
+        <<: *setup
+    - attach_workspace:
+        at: _save
+    - run:
+        name: Restore images
+        command: |
+          docker load -i _save/images.tar
+    - run:
+        name: Install github-release
+        command: |
+          curl -sSL -o /tmp/gh-release.tar.bz2 "${GITHUB_RELEASE_TOOL_URL}"
+          echo "${GITHUB_RELEASE_TOOL_SHA256}  /tmp/gh-release.tar.bz2" | sha256sum -c -
+          tar --strip-components=3 -C /usr/local/bin -xvjf /tmp/gh-release.tar.bz2
+    - run:
+        name: Perform the release
+        command: |
+          if [[ ! ${CIRCLE_TAG} ]]; then
+            echo >&2 "*** No CIRCLE_TAG"
+            exit 1
+          fi
+          build/genfixed.sh
+          build/release.sh "${CIRCLE_TAG}"
 
   push:
     <<: *defaults
     environment:
       <<: *env
     steps:
+    - run:
+        <<: *prereqs
     - checkout
     - setup_remote_docker
     - run:
@@ -812,216 +387,395 @@ jobs:
             echo >&2 "*** WARNING: can't push images for outside forks"
             exit 0
           fi
-          if [[ ${CIRCLE_BRANCH:-} != ${STABLE_BRANCH} && ${CIRCLE_BRANCH:-} != ${PRIMARY_BRANCH} ]]; then
-            echo >&2 "*** Not pushing images for the branch: ${CIRCLE_BRANCH}"
-            exit 0
-          fi
           docker login -u "${DOCKER_USER}" -p "${DOCKER_PASS}"
-          if [[ ${CIRCLE_BRANCH} = ${STABLE_BRANCH} ]]; then
-            image="${IMAGE_NAME}:${STABLE_SRC_TAG}"
-            new_name="${IMAGE_NAME}:${STABLE_BRANCH}"
-            docker tag "${image}" "${new_name}"
-            docker push "${new_name}"
-            exit 0
-          fi
           docker images \
                  --format '{{ .Repository }}:{{ .Tag }}' \
-                 --filter=reference="${IMAGE_PUSH_FILTER}" |
+                 --filter=label=mirantis.kubeadm_dind_cluster_final |
               while read image; do
             echo >&2 "*** Pushing: ${image}"
-            if [[ ${RETAG_PREFIX:-} ]]; then
-              new_name="${image/:/:${RETAG_PREFIX}}"
-              docker tag "${image}" "${new_name}"
-              docker push "${new_name}"
-            else
-              docker push "${image}"
-            fi
+            docker push "${image}"
           done
 
-# kube-router tests don't pass for 1.12 (need update)
-# some of the ipv6 tests need to be updated from 1.11
-# to 1.12
-# Also, lots of test cases are disabled to lower the
-# CircleCI requirements (the project is over the limit)
+# Don't remove the "#cut here#" marker below.
+#cut here#
+
+  test_v1.10_bridge_docker:
+    <<: *defaults
+    <<: *test
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.10
+      CNI_PLUGIN: bridge
+      DIND_CRI: docker
+
+  test_v1.10_bridge_containerd:
+    <<: *defaults
+    <<: *test
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.10
+      CNI_PLUGIN: bridge
+      DIND_CRI: containerd
+
+  test_v1.11_bridge_docker:
+    <<: *defaults
+    <<: *test
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.11
+      CNI_PLUGIN: bridge
+      DIND_CRI: docker
+
+  test_v1.11_bridge_containerd:
+    <<: *defaults
+    <<: *test
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.11
+      CNI_PLUGIN: bridge
+      DIND_CRI: containerd
+
+  test_v1.11_kube-router_docker:
+    <<: *defaults
+    <<: *test
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.11
+      CNI_PLUGIN: kube-router
+      DIND_CRI: docker
+
+  test_v1.12_bridge_docker:
+    <<: *defaults
+    <<: *test
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.12
+      CNI_PLUGIN: bridge
+      DIND_CRI: docker
+
+  test_v1.12_bridge_containerd:
+    <<: *defaults
+    <<: *test
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.12
+      CNI_PLUGIN: bridge
+      DIND_CRI: containerd
+
+  test_v1.13_bridge_docker:
+    <<: *defaults
+    <<: *test
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.13
+      CNI_PLUGIN: bridge
+      DIND_CRI: docker
+
+  test_v1.13_flannel_docker:
+    <<: *defaults
+    <<: *test
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.13
+      CNI_PLUGIN: flannel
+      DIND_CRI: docker
+
+  test_v1.13_calico_docker:
+    <<: *defaults
+    <<: *test
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.13
+      CNI_PLUGIN: calico
+      DIND_CRI: docker
+
+  test_v1.13_calico-kdd_docker:
+    <<: *defaults
+    <<: *test
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.13
+      CNI_PLUGIN: calico-kdd
+      DIND_CRI: docker
+
+  test_v1.13_weave_docker:
+    <<: *defaults
+    <<: *test
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.13
+      CNI_PLUGIN: weave
+      DIND_CRI: docker
+
+  test_v1.13_bridge_containerd:
+    <<: *defaults
+    <<: *test
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.13
+      CNI_PLUGIN: bridge
+      DIND_CRI: containerd
+
+  test_v1.13_ptp_docker:
+    <<: *defaults
+    <<: *test
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.13
+      CNI_PLUGIN: ptp
+      DIND_CRI: docker
+
+  test_multiple_clusters_v1.13_bridge_docker:
+    <<: *defaults
+    <<: *test_multiple_clusters
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.13
+      CNI_PLUGIN: bridge
+      DIND_CRI: docker
+
+  test_ipv4_only_v1.13_bridge_docker:
+    <<: *test_ipv4_only
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.13
+      CNI_PLUGIN: bridge
+      DIND_CRI: docker
+
+  test_ipv6_only_v1.13_bridge_docker:
+    <<: *test_ipv6_only
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.13
+      CNI_PLUGIN: bridge
+      DIND_CRI: docker
+
+  test_ipv6_only_nat64_v1.13_bridge_docker:
+    <<: *test_ipv6_only
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.13
+      CNI_PLUGIN: bridge
+      DIND_CRI: docker
+      NAT64_V4_SUBNET_PREFIX: '10.100'
+
+  test_ipv6_only_ext_aaaa_v1.13_bridge_docker:
+    <<: *test_ipv6_only
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.13
+      CNI_PLUGIN: bridge
+      DIND_CRI: docker
+      DIND_ALLOW_AAAA_USE: 'true'
+
+  test_dual_stack_v4_svc_net_v1.13_bridge_docker:
+    <<: *test_dual_stack
+    environment:
+      <<: *env
+      DIND_K8S_VERSION: v1.13
+      CNI_PLUGIN: bridge
+      DIND_CRI: docker
+      SERVICE_CIDR: '10.96.0.0/12'
+      DIND_ALLOW_AAAA_USE: 'true'
+
 workflows:
   version: 2
   build-test-push:
     jobs:
-    - build
-    # - test_multiple_clusters_1.9:
-    #     requires:
-    #     - build
-    # - test_multiple_clusters_1.10:
-    #     requires:
-    #     - build
-    # - test_multiple_clusters_1.11:
-    #     requires:
-    #     - build
-    # - test_multiple_clusters_1.11_ipv6:
-    #     requires:
-    #     - build
-    - test_multiple_clusters_1.12:
+    - build:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
+    - push:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
         requires:
         - build
-    # - test_1.9:
-    #     requires:
-    #     - build
-    # - test_1.9_flannel:
-    #     requires:
-    #     - build
-    # - test_1.9_calico:
-    #     requires:
-    #     - build
-    # - test_1.9_calico_kdd:
-    #     requires:
-    #     - build
-    # - test_1.9_weave:
-    #     requires:
-    #     - build
-    # - test_1.10:
-    #     requires:
-    #     - build
-    # - test_1.10_flannel:
-    #     requires:
-    #     - build
-    # - test_1.10_calico:
-    #     requires:
-    #     - build
-    # - test_1.10_calico_kdd:
-    #     requires:
-    #     - build
-    # - test_1.10_weave:
-    #     requires:
-    #     - build
-    # - test_1.10_kube_router:
-    #     requires:
-    #     - build
-    # - test_1.10_ptp:
-    #     requires:
-    #     - build
-    - test_1.11:
+    - test_v1.10_bridge_docker:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
         requires:
         - build
-    - test_1.11_containerd:
+    - test_v1.10_bridge_containerd:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
         requires:
         - build
-    # - test_1.11_flannel:
-    #     requires:
-    #     - build
-    # - test_1.11_calico:
-    #     requires:
-    #     - build
-    # - test_1.11_calico_kdd:
-    #     requires:
-    #     - build
-    # - test_1.11_weave:
-    #     requires:
-    #     - build
-    - test_1.11_kube_router:
+    - test_v1.11_bridge_docker:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
         requires:
         - build
-    # - test_1.11_ptp:
-    #     requires:
-    #     - build
-    # - test_1.11_ipv4_only:
-    #     requires:
-    #     - build
-    # - test_1.9_ipv6_only_nat64:
-    #     requires:
-    #     - build
-    # - test_1.10_ipv6_only_nat64:
-    #     requires:
-    #     - build
-    - test_1.11_ipv6_only_nat64:
+    - test_v1.11_bridge_containerd:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
         requires:
         - build
-    - test_1.12:
+    - test_v1.11_kube-router_docker:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
         requires:
         - build
-    - test_1.12_containerd:
+    - test_v1.12_bridge_docker:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
         requires:
         - build
-    - test_1.12_flannel:
+    - test_v1.12_bridge_containerd:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
         requires:
         - build
-    - test_1.12_calico:
+    - test_v1.13_bridge_docker:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
         requires:
         - build
-    - test_1.12_calico_kdd:
+    - test_v1.13_flannel_docker:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
         requires:
         - build
-    - test_1.12_weave:
+    - test_v1.13_calico_docker:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
         requires:
         - build
-    # - test_1.12_kube_router:
-    #     requires:
-    #     - build
-    - test_1.12_ptp:
+    - test_v1.13_calico-kdd_docker:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
         requires:
         - build
-    - test_1.12_ipv4_only:
+    - test_v1.13_weave_docker:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
         requires:
         - build
-    # - test_1.9_ipv6_only_ext_aaaa:
-    #     requires:
-    #     - build
-    # - test_1.10_ipv6_only_ext_aaaa:
-    #     requires:
-    #     - build
-    - test_1.11_ipv6_only_ext_aaaa:
+    - test_v1.13_bridge_containerd:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
         requires:
         - build
-    - test_1.11_dual_stack_v4_svc_net:
+    - test_v1.13_ptp_docker:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
+        requires:
+        - build
+    - test_multiple_clusters_v1.13_bridge_docker:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
+        requires:
+        - build
+    - test_ipv4_only_v1.13_bridge_docker:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
+        requires:
+        - build
+    - test_ipv6_only_v1.13_bridge_docker:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
+        requires:
+        - build
+    - test_ipv6_only_nat64_v1.13_bridge_docker:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
+        requires:
+        - build
+    - test_ipv6_only_ext_aaaa_v1.13_bridge_docker:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
+        requires:
+        - build
+    - test_dual_stack_v4_svc_net_v1.13_bridge_docker:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
         requires:
         - build
     - test_src_release:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
         requires:
         - build
     - test_src_master:
+        filters:
+          tags:
+            only:
+              - /^v[0-9].*/
         requires:
         - build
-    - push:
+    - release:
         filters:
           branches:
+            ignore: /.*/
+          tags:
             only:
-            - master
-            - stable
+              - /^v[0-9].*/
         requires:
-        # - test_1.9
-        # - test_1.9_flannel
-        # - test_1.9_calico
-        # - test_1.9_calico_kdd
-        # - test_1.9_weave
-        # - test_1.10
-        # - test_1.10_flannel
-        # - test_1.10_calico
-        # - test_1.10_calico_kdd
-        # - test_1.10_weave
-        # - test_1.10_kube_router
-        # - test_1.10_ptp
-        - test_1.11
-        - test_1.11_containerd
-        # - test_1.11_flannel
-        # - test_1.11_calico
-        # - test_1.11_calico_kdd
-        # - test_1.11_weave
-        - test_1.11_kube_router
-        # - test_1.11_ptp
-        # - test_1.11_ipv4_only
-        - test_1.12
-        - test_1.12_containerd
-        - test_1.12_flannel
-        # calico is the same for 1.12 as for 1.11
-        # - test_1.12_calico
-        - test_1.12_calico_kdd
-        - test_1.12_weave
-        # - test_1.12_kube_router
-        - test_1.12_ptp
-        - test_1.12_ipv4_only
-        # - test_1.9_ipv6_only_nat64
-        # - test_1.10_ipv6_only_nat64
-        - test_1.11_ipv6_only_nat64
-        # - test_1.9_ipv6_only_ext_aaaa
-        # - test_1.10_ipv6_only_ext_aaaa
-        - test_1.11_ipv6_only_ext_aaaa
-        - test_1.11_dual_stack_v4_svc_net
+        - push
+        - test_v1.10_bridge_docker
+        - test_v1.10_bridge_containerd
+        - test_v1.11_bridge_docker
+        - test_v1.11_bridge_containerd
+        - test_v1.11_kube-router_docker
+        - test_v1.12_bridge_docker
+        - test_v1.12_bridge_containerd
+        - test_v1.13_bridge_docker
+        - test_v1.13_flannel_docker
+        - test_v1.13_calico_docker
+        - test_v1.13_calico-kdd_docker
+        - test_v1.13_weave_docker
+        - test_v1.13_bridge_containerd
+        - test_v1.13_ptp_docker
+        - test_multiple_clusters_v1.13_bridge_docker
+        - test_ipv4_only_v1.13_bridge_docker
+        - test_ipv6_only_v1.13_bridge_docker
+        - test_ipv6_only_nat64_v1.13_bridge_docker
+        - test_ipv6_only_ext_aaaa_v1.13_bridge_docker
+        - test_dual_stack_v4_svc_net_v1.13_bridge_docker
+        - test_src_release
+        - test_src_master
