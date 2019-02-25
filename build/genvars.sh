@@ -17,7 +17,7 @@ set -o errexit
 set -o nounset
 set -o pipefail
 set -o errtrace
-VERSIONS=(1.10.11 1.11.5 1.12.3 1.13.0)
+VERSIONS=(1.10.13 1.11.7 1.12.5 1.13.3)
 
 first=1
 for version in ${VERSIONS[@]}; do
@@ -35,8 +35,8 @@ for version in ${VERSIONS[@]}; do
   echo "KUBEADM_SHA1_${suffix}=$(curl -sSL "${linux_url}/kubeadm.sha1")"
   echo "HYPERKUBE_URL_${suffix}='${linux_url}/hyperkube'"
   echo "HYPERKUBE_SHA1_${suffix}=$(curl -sSL "${linux_url}/hyperkube.sha1")"
-  echo "KUBECTL_URL_${suffix}='${linux_url}/kubectl'"
-  echo "KUBECTL_SHA1_${suffix}=$(curl -sSL "${linux_url}/kubectl.sha1")"
+  echo "KUBECTL_LINUX_URL_${suffix}='${linux_url}/kubectl'"
+  echo "KUBECTL_LINUX_SHA1_${suffix}=$(curl -sSL "${linux_url}/kubectl.sha1")"
   echo "KUBECTL_DARWIN_URL_${suffix}='${darwin_url}/kubectl'"
   echo "KUBECTL_DARWIN_SHA1_${suffix}=$(curl -sSL "${darwin_url}/kubectl.sha1")"
 done
