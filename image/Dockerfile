@@ -31,7 +31,7 @@
 
 # ci-xenial-systemd image source: https://github.com/errordeveloper/kubeadm-ci-dind
 # The tag includes commit id
-FROM k8s.gcr.io/debian-base-amd64:0.3
+FROM k8s.gcr.io/debian-base-amd64:0.4.1
 
 STOPSIGNAL SIGRTMIN+3
 
@@ -55,7 +55,7 @@ ENV CONTAINERD_SHA256=9818e3af4f9aac8d55fc3f66114346db1d1acd48d45f88b2cefd3d3baf
 ENV container docker
 
 ARG DEBIAN_FRONTEND=noninteractive
-RUN clean-install apt-utils \
+RUN clean-install \
     apt-transport-https \
     bash \
     bridge-utils \
