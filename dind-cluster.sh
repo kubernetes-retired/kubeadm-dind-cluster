@@ -813,12 +813,10 @@ function dind::ensure-kubectl {
     return 0
   fi
   if [ $(uname) = Darwin ]; then
-    if [ ! -f _output/local/bin/darwin/amd64/kubectl ]; then
-      dind::step "Building kubectl"
-      dind::step "+ make WHAT=cmd/kubectl"
-      make WHAT=cmd/kubectl 2>&1 | dind::filter-make-output
-    fi
-  elif ! force_local=y dind::check-binary kubectl; then
+    dind::step "Building kubectl"
+    dind::step "+ make WHAT=cmd/kubectl"
+    make WHAT=cmd/kubectl 2>&1 | dind::filter-make-output
+  else
     dind::make-for-linux y cmd/kubectl
   fi
 }
