@@ -49,8 +49,8 @@ function snapshot::is-service-running {
 
 function snapshot::scale-down-service {
   local service=$1
-  local n=80
   snapshot::retry kubectl scale deployment --replicas=0 -n kube-system ${service}
+  local n=80
   while snapshot::is-service-running ${service}; do
     if ((--n == 0)); then
       echo "WARNING: controller manager glitch: ${service} won't stop; pods may 'blink' for some time after restore" >&2
@@ -73,7 +73,7 @@ function snapshot::prepare {
     if snapshot::is-service-running kubernetes-dashboard ; then
       snapshot::scale-down-service kubernetes-dashboard
     else
-      echo "kubernetes-dashboard not found, skipped"
+      echo "kubernetes-dashboard not found, skip it"
     fi
 
     mkdir /manifests.bak
