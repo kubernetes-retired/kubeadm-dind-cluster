@@ -49,17 +49,21 @@ function snapshot::is-service-running {
 
 function snapshot::scale-down-service {
   local service=$1
-  local n=80
-  snapshot::retry kubectl scale deployment --replicas=0 -n kube-system ${service}
-  while snapshot::is-service-running ${service}; do
-    if ((--n == 0)); then
-      echo "WARNING: controller manager glitch: ${service} won't stop; pods may 'blink' for some time after restore" >&2
-      systemctl stop kubelet docker
-      snapshot::clean-containerd
-      return
-    fi
-    sleep 0.3
-  done
+  if snapshot::is-service-running ${service} ; then
+    local n=80
+    snapshot::retry kubectl scale deployment --replicas=0 -n kube-system ${service}
+    while snapshot::is-service-running ${service}; do
+      if ((--n == 0)); then
+        echo "WARNING: controller manager glitch: ${service} won't stop; pods may 'blink' for some time after restore" >&2
+        systemctl stop kubelet docker
+        snapshot::clean-containerd
+        return
+      fi
+      sleep 0.3
+    done
+  else
+    echo "${service} not found"
+  fi
 }
 
 function snapshot::prepare {
@@ -70,9 +74,7 @@ function snapshot::prepare {
 
     DNS_SERVICE="$(kubectl get deployment -n kube-system -l k8s-app=kube-dns -o name | cut -d / -f 2)"
     snapshot::scale-down-service ${DNS_SERVICE}
-    if snapshot::is-service-running kubernetes-dashboard ; then
-      snapshot::scale-down-service kubernetes-dashboard
-    fi
+    snapshot::scale-down-service kubernetes-dashboard
 
     mkdir /manifests.bak
     # stop controller manager so it doesn't launch new proxy daemon pods
