@@ -73,7 +73,7 @@ function snapshot::prepare {
     if snapshot::is-service-running kubernetes-dashboard ; then
       snapshot::scale-down-service kubernetes-dashboard
     else
-      echo "${service} not found"
+      echo "kubernetes-dashboard not found, skipped"
     fi
 
     mkdir /manifests.bak
