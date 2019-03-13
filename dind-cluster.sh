@@ -525,9 +525,9 @@ DIND_DAEMON_JSON_FILE="${DIND_DAEMON_JSON_FILE:-/etc/docker/daemon.json}"  # can
 DIND_REGISTRY_MIRROR="${DIND_REGISTRY_MIRROR:-}"  # plain string format
 DIND_INSECURE_REGISTRIES="${DIND_INSECURE_REGISTRIES:-}"  # json list format
 
-FEATURE_GATES="${FEATURE_GATES:-MountPropagation=true}"
-# you can set special value 'none' not to set any kubelet's feature gates.
-KUBELET_FEATURE_GATES="${KUBELET_FEATURE_GATES:-MountPropagation=true,DynamicKubeletConfig=true}"
+# you can set special value 'none' not to set any FEATURE_GATES / KUBELET_FEATURE_GATES.
+FEATURE_GATES="${FEATURE_GATES:-none}"
+KUBELET_FEATURE_GATES="${KUBELET_FEATURE_GATES:-DynamicKubeletConfig=true}"
 
 ENABLE_CEPH="${ENABLE_CEPH:-}"
 
@@ -1320,7 +1320,7 @@ EOF
   if [[ ${BUILD_KUBEADM} || ${BUILD_HYPERKUBE} ]]; then
     docker exec "$master_name" mount --make-shared /k8s
   fi
-  kubeadm_join_flags="$(dind::kubeadm "${container_id}" init "${init_args[@]}" --ignore-preflight-errors=all "$@" | grep '^ *kubeadm join' | sed 's/^ *kubeadm join //')"
+  kubeadm_join_flags="$(dind::kubeadm "${container_id}" init "${init_args[@]}" --ignore-preflight-errors=all "$@" | grep 'kubeadm join.*--token' | tail -1 | sed 's/^.*kubeadm join //')"
   dind::configure-kubectl
   dind::start-port-forwarder
 }
