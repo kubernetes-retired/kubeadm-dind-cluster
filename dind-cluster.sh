@@ -1060,7 +1060,7 @@ function dind::run {
          "${DIND_IMAGE}" \
          ${args[@]+"${args[@]}"}
 
-  if [[ ${DIND_CUSTOM_NETWORKS} ]]; then
+  if [[ -n ${DIND_CUSTOM_NETWORKS} ]]; then
     local cust_nets
     local IFS=','; read -ra cust_nets <<< "${DIND_CUSTOM_NETWORKS}"
     for cust_net in "${cust_nets[@]}"; do
