@@ -1099,7 +1099,7 @@ function dind::configure-kubectl {
     --server="http://${host}:$(dind::apiserver-port)" \
     --insecure-skip-tls-verify=true
   "${kubectl}" config set-context "$context_name" --cluster="$cluster_name"
-  if [[ ${DIND_LABEL} = ${DEFAULT_DIND_LABEL} ]]; then
+  if [[ ${DIND_LABEL} = "${DEFAULT_DIND_LABEL}" ]]; then
       # Single cluster mode
       "${kubectl}" config use-context "$context_name"
   fi
