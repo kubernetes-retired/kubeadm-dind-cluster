@@ -1332,7 +1332,7 @@ EOF
   if [[ ${BUILD_KUBEADM} || ${BUILD_HYPERKUBE} ]]; then
     docker exec "$master_name" mount --make-shared /k8s
   fi
-  kubeadm_join_flags="$(dind::kubeadm "${container_id}" init "${init_args[@]}" --ignore-preflight-errors=all "$@" | grep 'kubeadm join.*--token' | tail -1 | sed 's/^.*kubeadm join //')"
+  kubeadm_join_flags="$(dind::kubeadm "${container_id}" init "${init_args[@]}" --ignore-preflight-errors=all "$@" | grep -A1 'kubeadm join.*--token' | sed 's/^.*kubeadm join //; s/\\$//; N; s/\n//')"
   dind::configure-kubectl
   dind::start-port-forwarder
 }
