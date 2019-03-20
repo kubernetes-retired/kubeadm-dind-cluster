@@ -42,12 +42,12 @@ function snapshot::clean-containerd {
   systemctl stop containerd
 }
 
-function snapshot::join {
+function snapshot::text_join {
   local IFS="$1"; shift; echo "$*"
 }
 
 function snapshot::is-service-running {
-  kubectl get pods -n kube-system -o name | egrep -q "^pods*/($(snapshot::join '|' ${@/%/-}))"
+  kubectl get pods -n kube-system -o name | egrep -q "^pods*/($(snapshot::text_join '|' ${@/%/-}))"
 }
 
 function snapshot::scale-down-service {
@@ -63,7 +63,7 @@ function snapshot::scale-down-service {
   local n=80
   while snapshot::is-service-running $@; do
     if ((--n == 0)); then
-      echo "WARNING: controller manager glitch: $(snapshot::join '&' $@) won't stop; pods may 'blink' for some time after restore" >&2
+      echo "WARNING: controller manager glitch: $(snapshot::text_join '&' $@) won't stop; pods may 'blink' for some time after restore" >&2
       systemctl stop kubelet docker
       snapshot::clean-containerd
       return
