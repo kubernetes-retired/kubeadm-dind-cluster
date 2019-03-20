@@ -42,18 +42,28 @@ function snapshot::clean-containerd {
   systemctl stop containerd
 }
 
+function snapshot::text_join {
+  local IFS="$1"; shift; echo "$*"
+}
+
 function snapshot::is-service-running {
-  local service=$1
-  kubectl get pods -n kube-system -o name | egrep -q "^pods*/(${service}-)"
+  kubectl get pods -n kube-system -o name | egrep -q "^pods*/($(snapshot::text_join '|' ${@/%/-}))"
 }
 
 function snapshot::scale-down-service {
-  local service=$1
-  snapshot::retry kubectl scale deployment --replicas=0 -n kube-system ${service}
+  local service
+  for service in "$@"; do
+    if snapshot::is-service-running ${service} ; then
+      snapshot::retry kubectl scale deployment --replicas=0 -n kube-system ${service}
+    else
+      echo "${service} not found, skip it"
+    fi
+  done
+
   local n=80
-  while snapshot::is-service-running ${service}; do
+  while snapshot::is-service-running $@; do
     if ((--n == 0)); then
-      echo "WARNING: controller manager glitch: ${service} won't stop; pods may 'blink' for some time after restore" >&2
+      echo "WARNING: controller manager glitch: $(snapshot::text_join '&' $@) won't stop; pods may 'blink' for some time after restore" >&2
       systemctl stop kubelet docker
       snapshot::clean-containerd
       return
@@ -69,12 +79,7 @@ function snapshot::prepare {
     # Possibly related: https://github.com/kubernetes/kubernetes/issues/42685
 
     DNS_SERVICE="$(kubectl get deployment -n kube-system -l k8s-app=kube-dns -o name | cut -d / -f 2)"
-    snapshot::scale-down-service ${DNS_SERVICE}
-    if snapshot::is-service-running kubernetes-dashboard ; then
-      snapshot::scale-down-service kubernetes-dashboard
-    else
-      echo "kubernetes-dashboard not found, skip it"
-    fi
+    snapshot::scale-down-service ${DNS_SERVICE} kubernetes-dashboard
 
     mkdir /manifests.bak
     # stop controller manager so it doesn't launch new proxy daemon pods
