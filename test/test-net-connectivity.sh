@@ -24,8 +24,8 @@ set -o errtrace
 function setup-test() {
   export IP_MODE="${IP_MODE:-ipv6}"
 
-  # set TEST_K8S_VER to something specific, by default testing v1.11 for now
-  local v="${TEST_K8S_VER:-v1.13}"
+  # set TEST_K8S_VER to something specific, by default testing v1.14 for now
+  local v="${TEST_K8S_VER:-v1.14}"
   export LOCAL_KUBECTL_VERSION="$v"
   export DIND_K8S_VERSION="${v}"
   if [[ -z ${DIND_SKIP_PULL+x} ]]; then
