@@ -23,7 +23,7 @@ use `kubectl` 1.13.x with `hyperkube` 1.12.x). As an alternative,
 you can set `DOWNLOAD_KUBECTL` to a non-empty string in your
 config.sh so `kubeadm-dind-cluster` will download it for you.
 
-`kubeadm-dind-cluster` supports k8s versions 1.10.x through 1.13.x.
+`kubeadm-dind-cluster` supports k8s versions 1.12.x through 1.14.x.
 
 **As of now, running `kubeadm-dind-cluster` on Docker with `btrfs`
 storage driver is not supported.**
@@ -51,7 +51,7 @@ IPv6 and thus clusters cannot be formed using IPv6 addresses.
 
 ## Using preconfigured scripts
 `kubeadm-dind-cluster` currently provides preconfigured scripts for
-Kubernetes versions 1.10 through 1.13 published as part of GitHub
+Kubernetes versions 1.12 through 1.14 published as part of GitHub
 releases. Each preconfigured script is pinned to the corresponding
 image tag and SHA256 digest, so it will not be broken by changes
 in kubeadm-dind-cluster master branch.
@@ -88,7 +88,7 @@ $ # remove DIND containers and volumes
 $ ./dind-cluster-v1.13.sh clean
 ```
 
-Replace 1.13 with 1.10 .. 1.12 to use other Kubernetes versions.
+Replace 1.13 with 1.12 to use older Kubernetes versions.
 **Important note:** you need to do `./dind-cluster....sh clean` when
 you switch between Kubernetes versions (but no need to do this between
 rebuilds if you use `BUILD_HYPERKUBE=y` like described below).
@@ -543,7 +543,7 @@ that we have IPv6 available for the test cases. Note, that while internal IPv6
 is configured, external IPv6 is not available.
 
 There are two slightly different kind of tests which run for all version
-starting from `v1.10`:
+starting from `v1.12`:
 
 #### `TEST_K8S_VER='1.x' ./test/test-ipv6-only.sh`
 

@@ -190,36 +190,9 @@ function dind::replace {
   awk 'BEGIN{RS="";getline<"-";print>ARGV[1]}' "${path}"
 }
 
-function dind::yq {
-  local filter="$1"
-  local path="$2"
-  # We need to use a temp file here because if you feed an object to
-  # 'kubectl convert' via stdin, you'll get a List object because
-  # multiple input objects are implied
-  tmp="$(mktemp tmp-XXXXXXXXXX.json)"
-  # We set KUBECONFIG here because as of current k8s master kubectl convert --local
-  # requires k8s access. This should be fixed by # https://github.com/kubernetes/kubernetes/pull/45920
-  KUBECONFIG=/etc/kubernetes/admin.conf kubectl convert -f "${path}" --local -o json 2>/dev/null |
-    jq "${filter}" > "${tmp}"
-  KUBECONFIG=/etc/kubernetes/admin.conf kubectl convert -f "${tmp}" --local -o yaml 2>/dev/null >"${path}"
-  rm -f "${tmp}"
-}
-
 function dind::join-filters {
   local IFS="|"
   echo "$*"
-}
-
-function dind::frob-file {
-  local path="$1"
-  shift
-  local filter="$(dind::join-filters "$@")"
-  local status=0
-  dind::yq "${filter}" "${path}" || status=$?
-  if [[ ${status} -ne 0 ]]; then
-    echo "Failed to frob ${path}" >&2
-    return 1
-  fi
 }
 
 function dind::frob-proxy-configmap {
@@ -246,11 +219,8 @@ function dind::frob-proxy-configmap {
   # Use a simple hack described in comments for
   # https://github.com/kubernetes/kubernetes/issues/30558
   # to replace just one key in the configmap
-  # In k8s 1.10, 'kubectl create configmap --dry-run' doesn't set apiVersion
-  # and kind for some reason (they are required for 'kubectl apply').
   kubectl create configmap \
-          -n kube-system --dry-run -o json --from-file=config.conf="${conffile}" kube-proxy |
-          jq '.apiVersion="v1"|.kind|="ConfigMap"' |
+          -n kube-system --dry-run -o yaml --from-file=config.conf="${conffile}" kube-proxy |
     kubectl apply -f -
 
   # only remove the temp dir (inside the container) if the
@@ -287,57 +257,12 @@ function dind::frob-proxy {
   kubectl -n kube-system delete pods --now -l "k8s-app=kube-proxy" || true
 }
 
-function dind::frob-apiserver {
-  local -a filters=("${mount_binaries}" "${apiserver_insecure_bind_address}" "${apiserver_insecure_bind_port}")
-  dind::frob-file "${apiserver_static_pod}" "${filters[@]}"
-}
-
-function dind::frob-scheduler {
-  dind::frob-file "${scheduler_static_pod}" "${mount_binaries}"
-}
-
-function dind::frob-controller-manager {
-  dind::frob-file "${controller_manager_static_pod}" "${mount_binaries}"
-}
-
-function dind::num-apiserver-restarts {
-  kubectl get pod kube-apiserver-kube-master -n kube-system -o 'jsonpath={.status.containerStatuses[0].restartCount}'
-}
-
-function dind::wait-for-apiserver {
-    local docker_ip="$(ip addr show docker0 | grep -w inet | awk '{ print $2; }' | sed 's@/.*@@')"
-    local url="http://${docker_ip}:8080/api"
-    local n=180
-    while ! curl -s "${url}" >&/dev/null; do
-      if ((--n == 0)); then
-        echo "Error: timed out waiting for apiserver to become available" >&2
-      fi
-      sleep 0.5
-    done
-}
-
-function dind::frob-cluster {
-  # with k8s 1.10, trying to mount hyperkube into the image fails
-  if kubeadm version -o short | grep -q '^v1\.10\.'; then
-    systemctl stop kubelet
-    docker ps -a -q --filter=label=io.kubernetes.pod.uid | while read container_id; do
-      docker rm -f "${container_id}"
-    done
-    dind::frob-apiserver
-    dind::frob-scheduler
-    dind::frob-controller-manager
-    start_services kubelet
-    dind::wait-for-apiserver
-  fi
-  dind::frob-proxy
-}
-
 KUBELET_FEATURE_GATES=${KUBELET_FEATURE_GATES:-none}
 if [ "${KUBELET_FEATURE_GATES}" != "none" ]; then
   kubelet_dind_args=(--fail-swap-on=false
                      --bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf
                      --feature-gates=${KUBELET_FEATURE_GATES} )
-else 
+else
   kubelet_dind_args=(--fail-swap-on=false
                      --bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf )
 fi
@@ -345,10 +270,6 @@ fi
 function dind::set-kubelet-dind-args {
   if [[ ${#kubelet_dind_args[@]} -gt 0 ]]; then
     sed -i "s@KUBELET_DIND_ARGS=@KUBELET_DIND_ARGS=${kubelet_dind_args[*]}@" /lib/systemd/system/kubelet.service
-  fi
-  if kubeadm version -o short | grep -q '^v1\.10\.'; then
-    # config is not created by kubeadm 1.10
-    sed -i '/KUBELET_CONFIG_ARGS=--config/d' /lib/systemd/system/kubelet.service
   fi
 }
 
@@ -406,7 +327,7 @@ else
   dind::retry dind::do-kubeadm "$@"
 
   if [[ ${is_master} ]]; then
-    dind::frob-cluster
+    dind::frob-proxy
   fi
 fi
 

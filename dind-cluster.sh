@@ -591,8 +591,8 @@ function dind::retry {
   "$@"
 }
 
-busybox_image="busybox:1.26.2"
-e2e_base_image="golang:1.10.5"
+busybox_image="busybox:1.30.1"
+e2e_base_image="golang:1.12.4"
 sys_volume_args=()
 build_volume_args=()
 
@@ -1263,12 +1263,6 @@ function dind::init {
 
   kubeadm_version="$(dind::kubeadm-version)"
   case "${kubeadm_version}" in
-    1\.9\.* | 1\.10\.*)
-      template="1.10"
-      ;;
-    1\.11\.*)
-      template="1.11"
-      ;;
     1\.12\.*)
       template="1.12"
       ;;
@@ -1332,7 +1326,8 @@ EOF
   if [[ ${BUILD_KUBEADM} || ${BUILD_HYPERKUBE} ]]; then
     docker exec "$master_name" mount --make-shared /k8s
   fi
-  kubeadm_join_flags="$(dind::kubeadm "${container_id}" init "${init_args[@]}" --ignore-preflight-errors=all "$@" | grep -A1 'kubeadm join.*--token' | sed 's/^.*kubeadm join //; s/\\$//; N; s/\n//')"
+  dind::kubeadm "${container_id}" init "${init_args[@]}" --ignore-preflight-errors=all "$@"
+  kubeadm_join_flags="$(docker exec "${container_id}" kubeadm token create --print-join-command | sed 's/^kubeadm join //')"
   dind::configure-kubectl
   dind::start-port-forwarder
 }

@@ -100,42 +100,6 @@ function test-cluster-src {
   )
 }
 
-function test-case-1.10 {
-  (
-    export KUBEADM_URL="${KUBEADM_URL_1_10}"
-    export KUBEADM_SHA1="${KUBEADM_SHA1_1_10}"
-    export HYPERKUBE_URL="${HYPERKUBE_URL_1_10}"
-    export HYPERKUBE_SHA1="${HYPERKUBE_SHA1_1_10}"
-    export KUBECTL_LINUX_URL=${KUBECTL_LINUX_URL_1_10}"
-    export KUBECTL_LINUX_SHA1=${KUBECTL_LINUX_SHA1_1_10}"
-    export KUBECTL_DARWIN_URL=${KUBECTL_DARWIN_URL_1_10}"
-    export KUBECTL_DARWIN_SHA1=${KUBECTL_DARWIN_SHA1_1_10}"
-    if [[ ${NOBUILD} ]]; then
-      export DIND_K8S_VERSION=v1.10
-      docker pull "${DIND_IMAGE}"
-    fi
-    test-cluster
-  )
-}
-
-function test-case-1.11 {
-  (
-    export KUBEADM_URL="${KUBEADM_URL_1_11}"
-    export KUBEADM_SHA1="${KUBEADM_SHA1_1_11}"
-    export HYPERKUBE_URL="${HYPERKUBE_URL_1_11}"
-    export HYPERKUBE_SHA1="${HYPERKUBE_SHA1_1_11}"
-    export KUBECTL_LINUX_URL=${KUBECTL_LINUX_URL_1_11}"
-    export KUBECTL_LINUX_SHA1=${KUBECTL_LINUX_SHA1_1_11}"
-    export KUBECTL_DARWIN_URL=${KUBECTL_DARWIN_URL_1_11}"
-    export KUBECTL_DARWIN_SHA1=${KUBECTL_DARWIN_SHA1_1_11}"
-    if [[ ${NOBUILD} ]]; then
-      export DIND_K8S_VERSION=v1.11
-      docker pull "${DIND_IMAGE}"
-    fi
-    test-cluster
-  )
-}
-
 function test-case-1.12 {
   (
     export KUBEADM_URL="${KUBEADM_URL_1_12}"
@@ -166,6 +130,24 @@ function test-case-1.13 {
     export KUBECTL_DARWIN_SHA1=${KUBECTL_DARWIN_SHA1_1_13}"
     if [[ ${NOBUILD} ]]; then
       export DIND_K8S_VERSION=v1.13
+      docker pull "${DIND_IMAGE}"
+    fi
+    test-cluster
+  )
+}
+
+function test-case-1.14 {
+  (
+    export KUBEADM_URL="${KUBEADM_URL_1_14}"
+    export KUBEADM_SHA1="${KUBEADM_SHA1_1_14}"
+    export HYPERKUBE_URL="${HYPERKUBE_URL_1_14}"
+    export HYPERKUBE_SHA1="${HYPERKUBE_SHA1_1_14}"
+    export KUBECTL_LINUX_URL=${KUBECTL_LINUX_URL_1_14}"
+    export KUBECTL_LINUX_SHA1=${KUBECTL_LINUX_SHA1_1_14}"
+    export KUBECTL_DARWIN_URL=${KUBECTL_DARWIN_URL_1_14}"
+    export KUBECTL_DARWIN_SHA1=${KUBECTL_DARWIN_SHA1_1_14}"
+    if [[ ${NOBUILD} ]]; then
+      export DIND_K8S_VERSION=v1.14
       docker pull "${DIND_IMAGE}"
     fi
     test-cluster
@@ -203,10 +185,9 @@ function fail() {
 }
 
 if [[ ! ${TEST_CASE} ]]; then
-  test-case-1.10
-  test-case-1.11
   test-case-1.12
   test-case-1.13
+  test-case-1.14
   # test-case-src-master
   test-case-dump-succeeds
   test-case-restore
