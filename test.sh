@@ -154,6 +154,24 @@ function test-case-1.14 {
   )
 }
 
+function test-case-1.15 {
+  (
+    export KUBEADM_URL="${KUBEADM_URL_1_15}"
+    export KUBEADM_SHA1="${KUBEADM_SHA1_1_15}"
+    export HYPERKUBE_URL="${HYPERKUBE_URL_1_15}"
+    export HYPERKUBE_SHA1="${HYPERKUBE_SHA1_1_15}"
+    export KUBECTL_LINUX_URL=${KUBECTL_LINUX_URL_1_15}"
+    export KUBECTL_LINUX_SHA1=${KUBECTL_LINUX_SHA1_1_15}"
+    export KUBECTL_DARWIN_URL=${KUBECTL_DARWIN_URL_1_15}"
+    export KUBECTL_DARWIN_SHA1=${KUBECTL_DARWIN_SHA1_1_15}"
+    if [[ ${NOBUILD} ]]; then
+      export DIND_K8S_VERSION=v1.15
+      docker pull "${DIND_IMAGE}"
+    fi
+    test-cluster
+  )
+}
+
 function test-case-src-master {
   test-cluster-src master
 }
@@ -188,6 +206,7 @@ if [[ ! ${TEST_CASE} ]]; then
   test-case-1.12
   test-case-1.13
   test-case-1.14
+  test-case-1.15
   # test-case-src-master
   test-case-dump-succeeds
   test-case-restore

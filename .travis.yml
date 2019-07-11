@@ -6,6 +6,7 @@ env:
   - TEST_CASE=1.12
   - TEST_CASE=1.13
   - TEST_CASE=1.14
+  - TEST_CASE=1.15
 
 before_install:
   - sudo apt-get -qq update

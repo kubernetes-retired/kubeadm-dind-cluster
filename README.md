@@ -23,7 +23,7 @@ use `kubectl` 1.13.x with `hyperkube` 1.12.x). As an alternative,
 you can set `DOWNLOAD_KUBECTL` to a non-empty string in your
 config.sh so `kubeadm-dind-cluster` will download it for you.
 
-`kubeadm-dind-cluster` supports k8s versions 1.12.x through 1.14.x.
+`kubeadm-dind-cluster` supports k8s versions 1.12.x through 1.15.x.
 
 **As of now, running `kubeadm-dind-cluster` on Docker with `btrfs`
 storage driver is not supported.**
@@ -51,7 +51,7 @@ IPv6 and thus clusters cannot be formed using IPv6 addresses.
 
 ## Using preconfigured scripts
 `kubeadm-dind-cluster` currently provides preconfigured scripts for
-Kubernetes versions 1.12 through 1.14 published as part of GitHub
+Kubernetes versions 1.12 through 1.15 published as part of GitHub
 releases. Each preconfigured script is pinned to the corresponding
 image tag and SHA256 digest, so it will not be broken by changes
 in kubeadm-dind-cluster master branch.
