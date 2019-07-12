@@ -155,9 +155,11 @@ function countContainersWithFilter() {
 }
 
 function usesLinuxKit() {
-  if ! docker info|grep -s '^Operating System: .*Docker for Windows' > /dev/null 2>&1 ; then
-    if docker info|grep -s '^Kernel Version: .*-moby$' >/dev/null 2>&1 ||
-        docker info|grep -s '^Kernel Version: .*-linuxkit' > /dev/null 2>&1 ; then
+  local docker_info_output
+  docker_info_output="$(docker info)" || return $?
+  if ! echo "$docker_info_output"|grep -s '^ *Operating System: .*Docker for Windows' > /dev/null 2>&1 ; then
+    if echo "$docker_info_output"|grep -s '^ *Kernel Version: .*-moby$' >/dev/null 2>&1 ||
+        echo "$docker_info_output"|grep -s '^ *Kernel Version: .*-linuxkit' > /dev/null 2>&1 ; then
       return 0
     fi
   fi
