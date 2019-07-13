@@ -257,14 +257,12 @@ function dind::frob-proxy {
   kubectl -n kube-system delete pods --now -l "k8s-app=kube-proxy" || true
 }
 
+kubelet_dind_args=(--fail-swap-on=false
+                   --bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf )
+
 KUBELET_FEATURE_GATES=${KUBELET_FEATURE_GATES:-none}
-if [ "${KUBELET_FEATURE_GATES}" != "none" ]; then
-  kubelet_dind_args=(--fail-swap-on=false
-                     --bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf
-                     --feature-gates=${KUBELET_FEATURE_GATES} )
-else
-  kubelet_dind_args=(--fail-swap-on=false
-                     --bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf )
+if [ "${KUBELET_FEATURE_GATES}" != 'none' ]; then
+  kubelet_dind_args+=(--feature-gates=${KUBELET_FEATURE_GATES})
 fi
 
 function dind::set-kubelet-dind-args {

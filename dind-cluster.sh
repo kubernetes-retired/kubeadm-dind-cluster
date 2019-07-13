@@ -1168,11 +1168,15 @@ function dind::deploy-dashboard {
   dind::retry dind::ensure-dashboard-clusterrolebinding
 }
 
+function dind::version-from-source {
+  (cluster/kubectl.sh version --short 2>/dev/null || true) |
+    grep Client |
+    sed 's/^.*: v\([0-9.]*\).*/\1/'
+}
+
 function dind::kubeadm-version {
   if [[ ${use_k8s_source} ]]; then
-    (cluster/kubectl.sh version --short 2>/dev/null || true) |
-      grep Client |
-      sed 's/^.*: v\([0-9.]*\).*/\1/'
+    dind::version-from-source
   else
     docker exec "$(dind::master-name)" \
            /bin/bash -c 'kubeadm version -o json | jq -r .clientVersion.gitVersion' |
@@ -1180,25 +1184,58 @@ function dind::kubeadm-version {
   fi
 }
 
+function dind::kubelet-version {
+  if [[ ${use_k8s_source} ]]; then
+    dind::version-from-source
+  else
+    docker exec "$(dind::master-name)" \
+           /bin/bash -c 'kubelet --version | sed -E "s/^(kubernetes )?v?([0-9]+(\.[0-9]+){1,2})/\2/I"'
+  fi
+}
+
+# $1 is the name of the software whose version is being compared (eg 'kubeadm')
+# $2 is the version as a string (eg '1.14.5')
+# $3 is the major version it is being compared to
+# $4 is the minor version it is being compared to
+# returns 0 if the 2 versions are equal
+# returns 1 if the string version is greater
+# returns 2 if the other version is greater
+# any other return code is an error
+function dind::compare-versions {
+  local name="$1"
+  local version_str="$2"
+  local cmp_to_major="$3"
+  local cmp_to_minor="$4"
+
+  if [[ ! "$version_str" =~ ^([0-9]+)\.([0-9]+) ]]; then
+    echo >&2 "WARNING: can't parse $name version: $version_str"
+    return 3
+  fi
+  local major="${BASH_REMATCH[1]}"
+  local minor="${BASH_REMATCH[2]}"
+  if [[ $major -gt $cmp_to_major ]]; then
+    return 1
+  fi
+  if [[ $major -lt $cmp_to_major ]]; then
+    return 2
+  fi
+  if [[ $minor -gt $cmp_to_minor ]]; then
+    return 1
+  fi
+  if [[ $minor -lt $cmp_to_minor ]]; then
+    return 2
+  fi
+  return 0
+}
+
 function dind::kubeadm-version-at-least {
   local major="${1}"
   local minor="${2}"
-  if [[ ! ( $(dind::kubeadm-version) =~ ^([0-9]+)\.([0-9]+) ) ]]; then
-    echo >&2 "WARNING: can't parse kubeadm version: $(dind::kubeadm-version)"
-    return 1
-  fi
-  local act_major="${BASH_REMATCH[1]}"
-  local act_minor="${BASH_REMATCH[2]}"
-  if [[ ${act_major} -gt ${major} ]]; then
-    return 0
-  fi
-  if [[ ${act_major} -lt ${major} ]]; then
-    return 1
-  fi
-  if [[ ${act_minor} -ge ${minor} ]]; then
-    return 0
-  fi
-  return 1
+
+  local cmp=0
+  dind::compare-versions 'kubeadm' "$(dind::kubeadm-version)" "$major" "$minor" || cmp=$?
+
+  [[ $cmp -lt 2 ]]
 }
 
 function dind::verify-image-compatibility {
@@ -1220,6 +1257,11 @@ function dind::check-dns-service-type {
     echo >&2 "WARNING: for 1.13+, only coredns can be used as the DNS service"
     DNS_SERVICE="coredns"
   fi
+}
+
+function dind::set-version-specific-flags {
+  local kubelet_version_specific_flags="$1"
+  docker exec "$(dind::master-name)" sed -i "s@KUBELET_VERSION_SPECIFIC_FLAGS=[^\"]*\"@KUBELET_VERSION_SPECIFIC_FLAGS=$kubelet_version_specific_flags\"@" /lib/systemd/system/kubelet.service
 }
 
 function dind::init {
@@ -1274,6 +1316,21 @@ function dind::init {
       ;;
   esac
   dind::check-dns-service-type
+
+  local kubelet_version_specific_flags=()
+  local cmp_kubelet_to_1_15=0
+  dind::compare-versions 'kubelet' "$(dind::kubelet-version)" 1 15 || cmp_kubelet_to_1_15=$?
+  if [[ "$cmp_kubelet_to_1_15" == 2 ]]; then
+    # this option got deprecated in v 1.15
+    kubelet_version_specific_flags+=('--allow-privileged=true')
+  fi
+  # explicit conversion to a string is needed, as calling ${arr[@]} or ${arr[*]}
+  # on an empty array will trigger an error on bash < 4.4 (and Travis is 4.3...)
+  local kubelet_version_specific_flags_as_str=''
+  if [[ ${#kubelet_version_specific_flags[@]} -gt 0 ]]; then
+    kubelet_version_specific_flags_as_str="${kubelet_version_specific_flags[*]}"
+  fi
+  dind::set-version-specific-flags "$kubelet_version_specific_flags_as_str"
 
   component_feature_gates=""
   if [ "${FEATURE_GATES}" != "none" ]; then
