@@ -508,7 +508,6 @@ HYPERKUBE_SOURCE="${HYPERKUBE_SOURCE-}"
 NUM_NODES=${NUM_NODES:-2}
 EXTRA_PORTS="${EXTRA_PORTS:-}"
 KUBECTL_DIR="${KUBECTL_DIR:-${HOME}/.kubeadm-dind-cluster}"
-DASHBOARD_URL="${DASHBOARD_URL:-https://rawgit.com/kubernetes/dashboard/bfab10151f012d1acc5dfb1979f3172e2400aa3c/src/deploy/kubernetes-dashboard.yaml}"
 SKIP_SNAPSHOT="${SKIP_SNAPSHOT:-}"
 E2E_REPORT_DIR="${E2E_REPORT_DIR:-}"
 DIND_NO_PARALLEL_E2E="${DIND_NO_PARALLEL_E2E:-}"
@@ -1161,8 +1160,21 @@ function dind::ensure-dashboard-clusterrolebinding {
 }
 
 function dind::deploy-dashboard {
-  dind::step "Deploying k8s dashboard"
-  dind::retry "${kubectl}" --context "$(dind::context-name)" apply -f "${DASHBOARD_URL}"
+  local url="${DASHBOARD_URL:-}"
+  if [ ! "$url" ]; then
+    local cmp_api_to_1_15=0
+    dind::compare-versions 'kubeapi' "$(dind::kubeapi-version)" 1 15 || cmp_api_to_1_15=$?
+    if [[ $cmp_api_to_1_15 == 2 ]]; then
+      # API version < 1.15
+      url='https://rawgit.com/kubernetes/dashboard/bfab10151f012d1acc5dfb1979f3172e2400aa3c/src/deploy/kubernetes-dashboard.yaml'
+    else
+      # API version >= 1.15
+      url='https://rawgit.com/kubernetes/dashboard/v1.10.1/src/deploy/recommended/kubernetes-dashboard.yaml'
+    fi
+  fi
+
+  dind::step "Deploying k8s dashboard from $url"
+  dind::retry "${kubectl}" --context "$(dind::context-name)" apply -f "$url"
   # https://kubernetes-io-vnext-staging.netlify.com/docs/admin/authorization/rbac/#service-account-permissions
   # Thanks @liggitt for the hint
   dind::retry dind::ensure-dashboard-clusterrolebinding
@@ -1172,6 +1184,15 @@ function dind::version-from-source {
   (cluster/kubectl.sh version --short 2>/dev/null || true) |
     grep Client |
     sed 's/^.*: v\([0-9.]*\).*/\1/'
+}
+
+function dind::kubeapi-version {
+  if [[ ${use_k8s_source} ]]; then
+    dind::version-from-source
+  else
+    docker exec "$(dind::master-name)" \
+           /bin/bash -c 'kubectl version -o json | jq -r .serverVersion.gitVersion | sed "s/^v\([0-9.]*\).*/\1/"'
+  fi
 }
 
 function dind::kubeadm-version {
