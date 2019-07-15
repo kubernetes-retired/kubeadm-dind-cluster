@@ -1963,6 +1963,23 @@ function dind::restore {
   dind::wait-for-ready
 }
 
+function dind::docker-action {
+  action=$1
+  docker $action "$(dind::master-name)"
+  for ((n=1; n <= NUM_NODES; n++)); do
+    docker $action "$(dind::node-name $n)"
+  done
+}
+function dind::pause {
+  dind::step "Pausing the cluster"
+  dind::docker-action pause
+}
+
+function dind::unpause {
+  dind::step "Unpausing the cluster"
+  dind::docker-action unpause
+}
+
 function dind::down {
   dind::remove-images "${DIND_LABEL}"
   if [[ ${CNI_PLUGIN} = "bridge" || ${CNI_PLUGIN} = "ptp" ]]; then
@@ -2360,10 +2377,14 @@ case ${COMMAND} in
     dind::ensure-kubectl
     dind::join "$(dind::create-node-container)" "$@"
     ;;
-  # bare)
-  #   shift
-  #   dind::bare "$@"
-  #   ;;
+  pause)
+    shift
+    dind::pause
+    ;;
+  unpause)
+    shift
+    dind::unpause
+    ;;
   snapshot)
     shift
     dind::snapshot
@@ -2408,8 +2429,11 @@ case ${COMMAND} in
     echo "  $0 down" >&2
     echo "  $0 init kubeadm-args..." >&2
     echo "  $0 join kubeadm-args..." >&2
-    # echo "  $0 bare container_name [docker_options...]"
     echo "  $0 clean"
+    echo "  $0 pause"
+    echo "  $0 unpause"
+    echo "  $0 snapshot"
+    echo "  $0 restore"
     echo "  $0 copy-image [image_name]" >&2
     echo "  $0 e2e [test-name-substring]" >&2
     echo "  $0 e2e-serial [test-name-substring]" >&2
