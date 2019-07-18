@@ -252,11 +252,14 @@ CNI plugin to use via `CNI_PLUGIN` variable (`bridge`, `ptp`,
 You can also edit the version appropriate kubeadm.conf.#.##.tmpl file
 in the image/ directory, to customize how KubeAdm works. This will require
 that you build a new image using build/build-local.sh and then setting this
-env variable:
+environment variable:
 
 ```
-export DIND_IMAGE==mirantis/kubeadm-dind-cluster:local
+export DIND_IMAGE=mirantis/kubeadm-dind-cluster:local
 ```
+
+Note: the DIND_IMAGE environment variable will work only with `./dind-cluster.sh` script.  
+It will not work with preconfigured scripts.
 
 Just keep in mind, there are some parameters in double curly-brackets that
 are used to substitue settings, based on other dind-cluster.sh config settings.
