@@ -29,7 +29,7 @@ fi
 fixed_dir="${DIND_ROOT}/fixed"
 mkdir -p "${fixed_dir}"
 
-for tag in v1.12 v1.13 v1.14; do
+for tag in v1.12 v1.13 v1.14 v1.15; do
   dest="${fixed_dir}/dind-cluster-${tag}.sh"
   commit="$(cd "${DIND_ROOT}"; git rev-parse HEAD)"
   image="mirantis/kubeadm-dind-cluster:${commit}-${tag}"

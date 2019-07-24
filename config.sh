@@ -44,6 +44,8 @@ DIND_K8S_BIN_DIR="${DIND_K8S_BIN_DIR:-}"
 
 # Set custom URL for Dashboard yaml file
 # DASHBOARD_URL="${DASHBOARD_URL:-https://rawgit.com/kubernetes/dashboard/bfab10151f012d1acc5dfb1979f3172e2400aa3c/src/deploy/kubernetes-dashboard.yaml}"
+# or for versions >= 1.15,
+# DASHBOARD_URL="${DASHBOARD_URL:-https://rawgit.com/kubernetes/dashboard/v1.10.1/src/deploy/recommended/kubernetes-dashboard.yaml}"
 
 # CNI plugin to use (bridge, flannel, calico, calico-kdd, weave). Defaults to 'bridge'
 # In case of 'bridge' plugin, additional hacks are employed to bridge
