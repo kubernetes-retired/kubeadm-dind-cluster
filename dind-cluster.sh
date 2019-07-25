@@ -24,8 +24,10 @@ else
 fi
 DIND_ROOT="$(cd $(dirname "$(readlinkf "${BASH_SOURCE}")"); pwd)"
 
+docker_info_output="$(docker info)"
+
 RUN_ON_BTRFS_ANYWAY="${RUN_ON_BTRFS_ANYWAY:-}"
-if [[ ! ${RUN_ON_BTRFS_ANYWAY} ]] && docker info| grep -q '^Storage Driver: btrfs'; then
+if [[ ! ${RUN_ON_BTRFS_ANYWAY} ]] && echo "$docker_info_output"| grep -q '^ *Storage Driver: btrfs'; then
   echo "ERROR: Docker is using btrfs storage driver which is unsupported by kubeadm-dind-cluster" >&2
   echo "Please refer to the documentation for more info." >&2
   echo "Set RUN_ON_BTRFS_ANYWAY to non-empty string to continue anyway." >&2
@@ -36,9 +38,9 @@ fi
 # mount /lib/modules and /boot. Also we'll be using localhost
 # to access the apiserver.
 using_linuxkit=
-if ! docker info|grep -s '^Operating System: .*Docker for Windows' > /dev/null 2>&1 ; then
-    if docker info|grep -s '^Kernel Version: .*-moby$' >/dev/null 2>&1 ||
-         docker info|grep -s '^Kernel Version: .*-linuxkit' > /dev/null 2>&1 ; then
+if ! echo "$docker_info_output"|grep -s '^ *Operating System: .*Docker for Windows' > /dev/null 2>&1 ; then
+    if echo "$docker_info_output"|grep -s '^ *Kernel Version: .*-moby$' >/dev/null 2>&1 ||
+         echo "$docker_info_output"|grep -s '^ *Kernel Version: .*-linuxkit' > /dev/null 2>&1 ; then
         using_linuxkit=1
     fi
 fi
