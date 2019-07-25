@@ -57,39 +57,39 @@ image tag and SHA256 digest, so it will not be broken by changes
 in kubeadm-dind-cluster master branch.
 
 The preconfigured scripts are convenient for use with projects that
-extend or use Kubernetes. For example, you can start Kubernetes 1.13
+extend or use Kubernetes. For example, you can start Kubernetes 1.14
 like this:
 
 ```shell
-$ wget https://github.com/kubernetes-sigs/kubeadm-dind-cluster/releases/download/v0.1.0/dind-cluster-v1.13.sh
-$ chmod +x dind-cluster-v1.13.sh
+$ wget -O dind-cluster.sh https://github.com/kubernetes-sigs/kubeadm-dind-cluster/releases/download/v0.2.0/dind-cluster-v1.14.sh 
+$ chmod +x dind-cluster.sh
 
 $ # start the cluster
-$ ./dind-cluster-v1.13.sh up
+$ ./dind-cluster.sh up
 
 $ # add kubectl directory to PATH
 $ export PATH="$HOME/.kubeadm-dind-cluster:$PATH"
 
 $ kubectl get nodes
 NAME          STATUS    ROLES     AGE       VERSION
-kube-master   Ready     master    4m        v1.13.0
-kube-node-1   Ready     <none>    2m        v1.13.0
-kube-node-2   Ready     <none>    2m        v1.13.0
+kube-master   Ready     master    4m        v1.14.0
+kube-node-1   Ready     <none>    2m        v1.14.0
+kube-node-2   Ready     <none>    2m        v1.14.0
 
-$ # k8s dashboard available at http://localhost:8080/api/v1/namespaces/kube-system/services/kubernetes-dashboard:/proxy
+$ # k8s dashboard available at http://localhost:<DOCKER_EXPOSED_PORT>/api/v1/namespaces/kube-system/services/kubernetes-dashboard:/proxy. See your console for the URL.
 
 $ # restart the cluster, this should happen much quicker than initial startup
-$ ./dind-cluster-v1.13.sh up
+$ ./dind-cluster.sh up
 
 $ # stop the cluster
-$ ./dind-cluster-v1.13.sh down
+$ ./dind-cluster.sh down
 
 $ # remove DIND containers and volumes
-$ ./dind-cluster-v1.13.sh clean
+$ ./dind-cluster.sh clean
 ```
 
-Replace 1.13 with 1.12 to use older Kubernetes versions.
-**Important note:** you need to do `./dind-cluster....sh clean` when
+Replace 1.14 with 1.13 or 1.12 to use older Kubernetes versions.
+**Important note:** you need to do `./dind-cluster.sh clean` when
 you switch between Kubernetes versions (but no need to do this between
 rebuilds if you use `BUILD_HYPERKUBE=y` like described below).
 
