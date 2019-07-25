@@ -311,24 +311,24 @@ jobs:
         paths:
         - images.tar
 
-  test_src_release:
-    <<: *defaults
-    environment:
-      <<: *env
-      BUILD_KUBEADM: y
-      BUILD_HYPERKUBE: y
-      K8S_SRC: y
-      K8S_SRC_VERSION: release-1.15
-    <<: *test_src
+  # test_src_release:
+  #   <<: *defaults
+  #   environment:
+  #     <<: *env
+  #     BUILD_KUBEADM: y
+  #     BUILD_HYPERKUBE: y
+  #     K8S_SRC: y
+  #     K8S_SRC_VERSION: release-1.15
+  #   <<: *test_src
 
-  test_src_master:
-    <<: *defaults
-    environment:
-      <<: *env
-      BUILD_KUBEADM: y
-      BUILD_HYPERKUBE: y
-      K8S_SRC: y
-    <<: *test_src
+  # test_src_master:
+  #   <<: *defaults
+  #   environment:
+  #     <<: *env
+  #     BUILD_KUBEADM: y
+  #     BUILD_HYPERKUBE: y
+  #     K8S_SRC: y
+  #   <<: *test_src
 
   release:
     <<: *defaults
@@ -719,20 +719,20 @@ workflows:
               - /^v[0-9].*/
         requires:
         - build
-    - test_src_release:
-        filters:
-          tags:
-            only:
-              - /^v[0-9].*/
-        requires:
-        - build
-    - test_src_master:
-        filters:
-          tags:
-            only:
-              - /^v[0-9].*/
-        requires:
-        - build
+    # - test_src_release:
+    #     filters:
+    #       tags:
+    #         only:
+    #           - /^v[0-9].*/
+    #     requires:
+    #     - build
+    # - test_src_master:
+    #     filters:
+    #       tags:
+    #         only:
+    #           - /^v[0-9].*/
+    #     requires:
+    #     - build
     - release:
         filters:
           branches:
@@ -761,5 +761,5 @@ workflows:
         - test_ipv6_only_nat64_v1.15_bridge_docker
         - test_ipv6_only_ext_aaaa_v1.15_bridge_docker
         - test_dual_stack_v4_svc_net_v1.15_bridge_docker
-        - test_src_release
-        - test_src_master
+        # - test_src_release
+        # - test_src_master
