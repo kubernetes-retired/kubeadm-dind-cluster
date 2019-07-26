@@ -24,8 +24,10 @@ else
 fi
 DIND_ROOT="$(cd $(dirname "$(readlinkf "${BASH_SOURCE}")"); pwd)"
 
+docker_info_output="$(docker info)"
+
 RUN_ON_BTRFS_ANYWAY="${RUN_ON_BTRFS_ANYWAY:-}"
-if [[ ! ${RUN_ON_BTRFS_ANYWAY} ]] && docker info| grep -q '^Storage Driver: btrfs'; then
+if [[ ! ${RUN_ON_BTRFS_ANYWAY} ]] && echo "$docker_info_output"| grep -q '^ *Storage Driver: btrfs'; then
   echo "ERROR: Docker is using btrfs storage driver which is unsupported by kubeadm-dind-cluster" >&2
   echo "Please refer to the documentation for more info." >&2
   echo "Set RUN_ON_BTRFS_ANYWAY to non-empty string to continue anyway." >&2
@@ -36,9 +38,9 @@ fi
 # mount /lib/modules and /boot. Also we'll be using localhost
 # to access the apiserver.
 using_linuxkit=
-if ! docker info|grep -s '^Operating System: .*Docker for Windows' > /dev/null 2>&1 ; then
-    if docker info|grep -s '^Kernel Version: .*-moby$' >/dev/null 2>&1 ||
-         docker info|grep -s '^Kernel Version: .*-linuxkit' > /dev/null 2>&1 ; then
+if ! echo "$docker_info_output"|grep -s '^ *Operating System: .*Docker for Windows' > /dev/null 2>&1 ; then
+    if echo "$docker_info_output"|grep -s '^ *Kernel Version: .*-moby$' >/dev/null 2>&1 ||
+         echo "$docker_info_output"|grep -s '^ *Kernel Version: .*-linuxkit' > /dev/null 2>&1 ; then
         using_linuxkit=1
     fi
 fi
@@ -49,7 +51,7 @@ if [[ $(uname) == Linux && -z ${DOCKER_HOST:-} ]]; then
     using_local_linuxdocker=1
 fi
 
-EMBEDDED_CONFIG=y;DOWNLOAD_KUBECTL=y;DIND_K8S_VERSION=v1.12;DIND_IMAGE_DIGEST=sha256:a6534a4425b0427c32f420a2d38c09964327c5515da4f5620f82876507cc8afd;DIND_COMMIT=596f7d093470c1dc3a3e4466bcdfb34438a99b90
+EMBEDDED_CONFIG=y;DOWNLOAD_KUBECTL=y;DIND_K8S_VERSION=v1.12;DIND_IMAGE_DIGEST=sha256:17079e95510a65171b408b1200f4e25fb086e616118bfb0ac3308175afaf357b;DIND_COMMIT=62f5a9277678777b63ae55d144bd2f99feb7c824
 
 # dind::localhost provides the local host IP based on the address family used for service subnet.
 function dind::localhost() {
@@ -508,7 +510,6 @@ HYPERKUBE_SOURCE="${HYPERKUBE_SOURCE-}"
 NUM_NODES=${NUM_NODES:-2}
 EXTRA_PORTS="${EXTRA_PORTS:-}"
 KUBECTL_DIR="${KUBECTL_DIR:-${HOME}/.kubeadm-dind-cluster}"
-DASHBOARD_URL="${DASHBOARD_URL:-https://rawgit.com/kubernetes/dashboard/bfab10151f012d1acc5dfb1979f3172e2400aa3c/src/deploy/kubernetes-dashboard.yaml}"
 SKIP_SNAPSHOT="${SKIP_SNAPSHOT:-}"
 E2E_REPORT_DIR="${E2E_REPORT_DIR:-}"
 DIND_NO_PARALLEL_E2E="${DIND_NO_PARALLEL_E2E:-}"
@@ -524,10 +525,14 @@ DIND_NO_PROXY="${DIND_NO_PROXY:-}"
 DIND_DAEMON_JSON_FILE="${DIND_DAEMON_JSON_FILE:-/etc/docker/daemon.json}"  # can be set to /dev/null
 DIND_REGISTRY_MIRROR="${DIND_REGISTRY_MIRROR:-}"  # plain string format
 DIND_INSECURE_REGISTRIES="${DIND_INSECURE_REGISTRIES:-}"  # json list format
+# comma-separated custom network(s) for cluster nodes to join
+DIND_CUSTOM_NETWORKS="${DIND_CUSTOM_NETWORKS:-}"
 
-FEATURE_GATES="${FEATURE_GATES:-MountPropagation=true}"
-# you can set special value 'none' not to set any kubelet's feature gates.
-KUBELET_FEATURE_GATES="${KUBELET_FEATURE_GATES:-MountPropagation=true,DynamicKubeletConfig=true}"
+SKIP_DASHBOARD="${SKIP_DASHBOARD:-}"
+
+# you can set special value 'none' not to set any FEATURE_GATES / KUBELET_FEATURE_GATES.
+FEATURE_GATES="${FEATURE_GATES:-none}"
+KUBELET_FEATURE_GATES="${KUBELET_FEATURE_GATES:-DynamicKubeletConfig=true}"
 
 ENABLE_CEPH="${ENABLE_CEPH:-}"
 
@@ -587,8 +592,8 @@ function dind::retry {
   "$@"
 }
 
-busybox_image="busybox:1.26.2"
-e2e_base_image="golang:1.10.5"
+busybox_image="busybox:1.30.1"
+e2e_base_image="golang:1.12.4"
 sys_volume_args=()
 build_volume_args=()
 
@@ -813,12 +818,10 @@ function dind::ensure-kubectl {
     return 0
   fi
   if [ $(uname) = Darwin ]; then
-    if [ ! -f _output/local/bin/darwin/amd64/kubectl ]; then
-      dind::step "Building kubectl"
-      dind::step "+ make WHAT=cmd/kubectl"
-      make WHAT=cmd/kubectl 2>&1 | dind::filter-make-output
-    fi
-  elif ! force_local=y dind::check-binary kubectl; then
+    dind::step "Building kubectl"
+    dind::step "+ make WHAT=cmd/kubectl"
+    make WHAT=cmd/kubectl 2>&1 | dind::filter-make-output
+  else
     dind::make-for-linux y cmd/kubectl
   fi
 }
@@ -1057,6 +1060,14 @@ function dind::run {
          ${opts[@]+"${opts[@]}"} \
          "${DIND_IMAGE}" \
          ${args[@]+"${args[@]}"}
+
+  if [[ -n ${DIND_CUSTOM_NETWORKS} ]]; then
+    local cust_nets
+    local IFS=','; read -ra cust_nets <<< "${DIND_CUSTOM_NETWORKS}"
+    for cust_net in "${cust_nets[@]}"; do
+      docker network connect ${cust_net} ${container_name} >/dev/null
+    done
+  fi
 }
 
 function dind::kubeadm {
@@ -1099,7 +1110,7 @@ function dind::configure-kubectl {
     --server="http://${host}:$(dind::apiserver-port)" \
     --insecure-skip-tls-verify=true
   "${kubectl}" config set-context "$context_name" --cluster="$cluster_name"
-  if [[ ${DIND_LABEL} = ${DEFAULT_DIND_LABEL} ]]; then
+  if [[ ${DIND_LABEL} = "${DEFAULT_DIND_LABEL}" ]]; then
       # Single cluster mode
       "${kubectl}" config use-context "$context_name"
   fi
@@ -1151,18 +1162,44 @@ function dind::ensure-dashboard-clusterrolebinding {
 }
 
 function dind::deploy-dashboard {
-  dind::step "Deploying k8s dashboard"
-  dind::retry "${kubectl}" --context "$(dind::context-name)" apply -f "${DASHBOARD_URL}"
+  local url="${DASHBOARD_URL:-}"
+  if [ ! "$url" ]; then
+    local cmp_api_to_1_15=0
+    dind::compare-versions 'kubeapi' "$(dind::kubeapi-version)" 1 15 || cmp_api_to_1_15=$?
+    if [[ $cmp_api_to_1_15 == 2 ]]; then
+      # API version < 1.15
+      url='https://rawgit.com/kubernetes/dashboard/bfab10151f012d1acc5dfb1979f3172e2400aa3c/src/deploy/kubernetes-dashboard.yaml'
+    else
+      # API version >= 1.15
+      url='https://rawgit.com/kubernetes/dashboard/v1.10.1/src/deploy/recommended/kubernetes-dashboard.yaml'
+    fi
+  fi
+
+  dind::step "Deploying k8s dashboard from $url"
+  dind::retry "${kubectl}" --context "$(dind::context-name)" apply -f "$url"
   # https://kubernetes-io-vnext-staging.netlify.com/docs/admin/authorization/rbac/#service-account-permissions
   # Thanks @liggitt for the hint
   dind::retry dind::ensure-dashboard-clusterrolebinding
 }
 
+function dind::version-from-source {
+  (cluster/kubectl.sh version --short 2>/dev/null || true) |
+    grep Client |
+    sed 's/^.*: v\([0-9.]*\).*/\1/'
+}
+
+function dind::kubeapi-version {
+  if [[ ${use_k8s_source} ]]; then
+    dind::version-from-source
+  else
+    docker exec "$(dind::master-name)" \
+           /bin/bash -c 'kubectl version -o json | jq -r .serverVersion.gitVersion | sed "s/^v\([0-9.]*\).*/\1/"'
+  fi
+}
+
 function dind::kubeadm-version {
   if [[ ${use_k8s_source} ]]; then
-    (cluster/kubectl.sh version --short 2>/dev/null || true) |
-      grep Client |
-      sed 's/^.*: v\([0-9.]*\).*/\1/'
+    dind::version-from-source
   else
     docker exec "$(dind::master-name)" \
            /bin/bash -c 'kubeadm version -o json | jq -r .clientVersion.gitVersion' |
@@ -1170,25 +1207,58 @@ function dind::kubeadm-version {
   fi
 }
 
+function dind::kubelet-version {
+  if [[ ${use_k8s_source} ]]; then
+    dind::version-from-source
+  else
+    docker exec "$(dind::master-name)" \
+           /bin/bash -c 'kubelet --version | sed -E "s/^(kubernetes )?v?([0-9]+(\.[0-9]+){1,2})/\2/I"'
+  fi
+}
+
+# $1 is the name of the software whose version is being compared (eg 'kubeadm')
+# $2 is the version as a string (eg '1.14.5')
+# $3 is the major version it is being compared to
+# $4 is the minor version it is being compared to
+# returns 0 if the 2 versions are equal
+# returns 1 if the string version is greater
+# returns 2 if the other version is greater
+# any other return code is an error
+function dind::compare-versions {
+  local name="$1"
+  local version_str="$2"
+  local cmp_to_major="$3"
+  local cmp_to_minor="$4"
+
+  if [[ ! "$version_str" =~ ^([0-9]+)\.([0-9]+) ]]; then
+    echo >&2 "WARNING: can't parse $name version: $version_str"
+    return 3
+  fi
+  local major="${BASH_REMATCH[1]}"
+  local minor="${BASH_REMATCH[2]}"
+  if [[ $major -gt $cmp_to_major ]]; then
+    return 1
+  fi
+  if [[ $major -lt $cmp_to_major ]]; then
+    return 2
+  fi
+  if [[ $minor -gt $cmp_to_minor ]]; then
+    return 1
+  fi
+  if [[ $minor -lt $cmp_to_minor ]]; then
+    return 2
+  fi
+  return 0
+}
+
 function dind::kubeadm-version-at-least {
   local major="${1}"
   local minor="${2}"
-  if [[ ! ( $(dind::kubeadm-version) =~ ^([0-9]+)\.([0-9]+) ) ]]; then
-    echo >&2 "WARNING: can't parse kubeadm version: $(dind::kubeadm-version)"
-    return 1
-  fi
-  local act_major="${BASH_REMATCH[1]}"
-  local act_minor="${BASH_REMATCH[2]}"
-  if [[ ${act_major} -gt ${major} ]]; then
-    return 0
-  fi
-  if [[ ${act_major} -lt ${major} ]]; then
-    return 1
-  fi
-  if [[ ${act_minor} -ge ${minor} ]]; then
-    return 0
-  fi
-  return 1
+
+  local cmp=0
+  dind::compare-versions 'kubeadm' "$(dind::kubeadm-version)" "$major" "$minor" || cmp=$?
+
+  [[ $cmp -lt 2 ]]
 }
 
 function dind::verify-image-compatibility {
@@ -1210,6 +1280,11 @@ function dind::check-dns-service-type {
     echo >&2 "WARNING: for 1.13+, only coredns can be used as the DNS service"
     DNS_SERVICE="coredns"
   fi
+}
+
+function dind::set-version-specific-flags {
+  local kubelet_version_specific_flags="$1"
+  docker exec "$(dind::master-name)" sed -i "s@KUBELET_VERSION_SPECIFIC_FLAGS=[^\"]*\"@KUBELET_VERSION_SPECIFIC_FLAGS=$kubelet_version_specific_flags\"@" /lib/systemd/system/kubelet.service
 }
 
 function dind::init {
@@ -1253,12 +1328,6 @@ function dind::init {
 
   kubeadm_version="$(dind::kubeadm-version)"
   case "${kubeadm_version}" in
-    1\.9\.* | 1\.10\.*)
-      template="1.10"
-      ;;
-    1\.11\.*)
-      template="1.11"
-      ;;
     1\.12\.*)
       template="1.12"
       ;;
@@ -1270,6 +1339,21 @@ function dind::init {
       ;;
   esac
   dind::check-dns-service-type
+
+  local kubelet_version_specific_flags=()
+  local cmp_kubelet_to_1_15=0
+  dind::compare-versions 'kubelet' "$(dind::kubelet-version)" 1 15 || cmp_kubelet_to_1_15=$?
+  if [[ "$cmp_kubelet_to_1_15" == 2 ]]; then
+    # this option got deprecated in v 1.15
+    kubelet_version_specific_flags+=('--allow-privileged=true')
+  fi
+  # explicit conversion to a string is needed, as calling ${arr[@]} or ${arr[*]}
+  # on an empty array will trigger an error on bash < 4.4 (and Travis is 4.3...)
+  local kubelet_version_specific_flags_as_str=''
+  if [[ ${#kubelet_version_specific_flags[@]} -gt 0 ]]; then
+    kubelet_version_specific_flags_as_str="${kubelet_version_specific_flags[*]}"
+  fi
+  dind::set-version-specific-flags "$kubelet_version_specific_flags_as_str"
 
   component_feature_gates=""
   if [ "${FEATURE_GATES}" != "none" ]; then
@@ -1322,7 +1406,8 @@ EOF
   if [[ ${BUILD_KUBEADM} || ${BUILD_HYPERKUBE} ]]; then
     docker exec "$master_name" mount --make-shared /k8s
   fi
-  kubeadm_join_flags="$(dind::kubeadm "${container_id}" init "${init_args[@]}" --ignore-preflight-errors=all "$@" | grep '^ *kubeadm join' | sed 's/^ *kubeadm join //')"
+  dind::kubeadm "${container_id}" init "${init_args[@]}" --ignore-preflight-errors=all "$@"
+  kubeadm_join_flags="$(docker exec "${container_id}" kubeadm token create --print-join-command | sed 's/^kubeadm join //')"
   dind::configure-kubectl
   dind::start-port-forwarder
 }
@@ -1497,6 +1582,36 @@ function dind::ip6tables-on-hostnet {
   docker run -v "${mod_path}:${mod_path}" --entrypoint /sbin/ip6tables --net=host --rm --privileged "${DIND_IMAGE}" "$@"
 }
 
+function dind::component-ready-by-labels {
+  local labels=("$@");
+  for label in ${labels[@]}; do
+    dind::component-ready "${label}" && return 0
+  done
+  return 1
+}
+
+function dind::wait-for-service-ready {
+  local service=$1
+  local labels=("${@:2}")
+  local ctx="$(dind::context-name)"
+
+  dind::step "Bringing up ${service}"
+  # on Travis 'scale' sometimes fails with 'error: Scaling the resource failed with: etcdserver: request timed out; Current resource version 442' here
+  dind::retry "${kubectl}" --context "$ctx" scale deployment --replicas=1 -n kube-system ${service}
+
+  local ntries=200
+  while ! dind::component-ready-by-labels ${labels[@]}; do
+    if ((--ntries == 0)); then
+      echo "Error bringing up ${service}" >&2
+      exit 1
+    fi
+    echo -n "." >&2
+    dind::kill-failed-pods
+    sleep 1
+  done
+  echo "[done]" >&2
+}
+
 function dind::wait-for-ready {
   local app="kube-proxy"
   if [[ ${CNI_PLUGIN} = "kube-router" ]]; then
@@ -1537,28 +1652,22 @@ function dind::wait-for-ready {
     sleep 1
   done
 
-  dind::step "Bringing up ${DNS_SERVICE} and kubernetes-dashboard"
-  # on Travis 'scale' sometimes fails with 'error: Scaling the resource failed with: etcdserver: request timed out; Current resource version 442' here
-  dind::retry "${kubectl}" --context "$ctx" scale deployment --replicas=1 -n kube-system ${DNS_SERVICE}
-  dind::retry "${kubectl}" --context "$ctx" scale deployment --replicas=1 -n kube-system kubernetes-dashboard
+  dind::wait-for-service-ready ${DNS_SERVICE} "k8s-app=kube-dns"
 
-  ntries=200
-  while ! dind::component-ready k8s-app=kube-dns || ! dind::component-ready app=kubernetes-dashboard; do
-    if ((--ntries == 0)); then
-      echo "Error bringing up ${DNS_SERVICE} and kubernetes-dashboard" >&2
-      exit 1
-    fi
-    echo -n "." >&2
-    dind::kill-failed-pods
-    sleep 1
-  done
-  echo "[done]" >&2
+  if [[ ! ${SKIP_DASHBOARD} ]]; then
+    local service="kubernetes-dashboard"
+    dind::wait-for-service-ready ${service} "app=${service}" "k8s-app=${service}"
+  fi
 
   dind::retry "${kubectl}" --context "$ctx" get nodes >&2
 
-  local local_host
-  local_host="$( dind::localhost )"
-  dind::step "Access dashboard at:" "http://${local_host}:$(dind::apiserver-port)/api/v1/namespaces/kube-system/services/kubernetes-dashboard:/proxy"
+  if [[ ! ${SKIP_DASHBOARD} ]]; then
+    local local_host
+    local_host="$( dind::localhost )"
+    local base_url="http://${local_host}:$(dind::apiserver-port)/api/v1/namespaces/kube-system/services"
+    dind::step "Access dashboard at:" "${base_url}/kubernetes-dashboard:/proxy"
+    dind::step "Access dashboard at:" "${base_url}/https:kubernetes-dashboard:/proxy (if version>1.6 and HTTPS enabled)"
+  fi
 }
 
 # dind::make-kube-router-yaml creates a temp file with contents of the configuration needed for the kube-router CNI
@@ -1824,7 +1933,11 @@ function dind::up {
       echo "Unsupported CNI plugin '${CNI_PLUGIN}'" >&2
       ;;
   esac
-  dind::deploy-dashboard
+
+  if [[ ! ${SKIP_DASHBOARD} ]]; then
+    dind::deploy-dashboard
+  fi
+
   dind::accelerate-kube-dns
   if [[ (${CNI_PLUGIN} != "bridge" && ${CNI_PLUGIN} != "ptp") || ${SKIP_SNAPSHOT} ]]; then
     # This is especially important in case of Calico -
@@ -1928,6 +2041,23 @@ function dind::restore {
   dind::configure-kubectl
   dind::start-port-forwarder
   dind::wait-for-ready
+}
+
+function dind::docker-action {
+  action=$1
+  docker $action "$(dind::master-name)"
+  for ((n=1; n <= NUM_NODES; n++)); do
+    docker $action "$(dind::node-name $n)"
+  done
+}
+function dind::pause {
+  dind::step "Pausing the cluster"
+  dind::docker-action pause
+}
+
+function dind::unpause {
+  dind::step "Unpausing the cluster"
+  dind::docker-action unpause
 }
 
 function dind::down {
@@ -2327,10 +2457,14 @@ case ${COMMAND} in
     dind::ensure-kubectl
     dind::join "$(dind::create-node-container)" "$@"
     ;;
-  # bare)
-  #   shift
-  #   dind::bare "$@"
-  #   ;;
+  pause)
+    shift
+    dind::pause
+    ;;
+  unpause)
+    shift
+    dind::unpause
+    ;;
   snapshot)
     shift
     dind::snapshot
@@ -2375,8 +2509,11 @@ case ${COMMAND} in
     echo "  $0 down" >&2
     echo "  $0 init kubeadm-args..." >&2
     echo "  $0 join kubeadm-args..." >&2
-    # echo "  $0 bare container_name [docker_options...]"
     echo "  $0 clean"
+    echo "  $0 pause"
+    echo "  $0 unpause"
+    echo "  $0 snapshot"
+    echo "  $0 restore"
     echo "  $0 copy-image [image_name]" >&2
     echo "  $0 e2e [test-name-substring]" >&2
     echo "  $0 e2e-serial [test-name-substring]" >&2
