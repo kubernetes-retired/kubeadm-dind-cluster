@@ -1,4 +1,8 @@
 # kubeadm-dind-cluster [![CircleCI](https://circleci.com/gh/kubernetes-sigs/kubeadm-dind-cluster/tree/master.svg?style=svg)](https://circleci.com/gh/kubernetes-sigs/kubeadm-dind-cluster/tree/master) [![Travis CI](https://travis-ci.org/kubernetes-sigs/kubeadm-dind-cluster.svg?branch=master)](https://travis-ci.org/kubernetes-sigs/kubeadm-dind-cluster)
+
+**NOTE: This project is deprecated in favor of [kind](https://kind.sigs.k8s.io/).
+Try [kind](https://kind.sigs.k8s.io/) today, it's great!**
+
 A Kubernetes multi-node cluster for developer _of_ Kubernetes and
 projects that extend Kubernetes. Based on kubeadm and DIND (Docker in
 Docker).
